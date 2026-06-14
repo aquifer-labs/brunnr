@@ -10,8 +10,9 @@ into only the capabilities you want. Mode is a config choice (`brunnr init` writ
 Exposes durable memory to your agent over MCP (`memory.find` / `memory.store`) plus a session-
 start context injection. You do not change how you prompt or run your agent — you simply gain
 faster, cheaper context because relevant knowledge is *retrieved* instead of re-read. No
-orchestration, no sandbox. `memory.backend` selects `files` (md, zero infra), `sqlite-vec` (local
-hybrid, zero infra), or feature-gated `qdrant` (shared server). See [memory.md](memory.md).
+orchestration, no sandbox. `memory.backend` selects `files` (Open Knowledge Format md bundle, zero
+infra), `sqlite-vec` (local hybrid, zero infra), or feature-gated `qdrant` (shared server). See
+[memory.md](memory.md).
 
 ## `orchestrate` (opt-in)
 
@@ -26,10 +27,10 @@ don't want it. See [task-tracking.md](task-tracking.md).
 
 ## `advanced` (bring-your-own)
 
-For power users who already have a memory layout. Point Brunnr at an **existing** markdown tree or
-vector collection and it adapts and overlays without owning or rewriting your schema: it reads
-your structure, serves retrieval over it, and adds Brunnr capabilities on top. You keep full
-control of your data model; Brunnr meets it where it is.
+For power users who already have a memory layout. Point Brunnr at an **existing** markdown tree
+(including any **OKF** bundle) or vector collection and it adapts and overlays without owning or
+rewriting your schema: it reads your structure, serves retrieval over it, and adds Brunnr
+capabilities on top. You keep full control of your data model; Brunnr meets it where it is.
 
 ---
 

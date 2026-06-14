@@ -209,7 +209,37 @@ The normalized `Filter` (`eq`/`in`/`range`/`exists` with `must`/`should`/`must_n
 `types`/`vector.rs`) is the only query DSL consumers touch; each adapter translates it to native
 filters. Engine specifics (metric names, id types, index knobs) never leak above `VectorStore`.
 
-### 4.1 Structured / graph memory [planned, future]
+### 4.1 On-disk format: Open Knowledge Format (OKF) [planned alignment]
+
+The `FilesBackend` stores memory as a directory of markdown files — the "LLM-wiki" pattern. Brunnr
+aligns this on-disk format with the **Open Knowledge Format (OKF)** (Google Cloud, Apache-2.0): a
+vendor-neutral spec that is *just markdown, just files, just YAML frontmatter*, git-friendly and
+readable with `cat`, with **no vector-DB dependency**. Adopting OKF makes Brunnr's file memory
+interoperable with the wider OKF ecosystem (e.g. the OKF static HTML graph visualizer — a free
+*visual control surface* over memory) and standardizes the md ↔ vector import/export.
+
+OKF requires exactly one frontmatter field, `type`; Brunnr keeps its own fields as allowed
+extensions (consumers tolerate unknown keys):
+
+```yaml
+---
+type: decision            # OKF: concept kind (memory|decision|runbook|reference|…)
+title: RRF k constant     # OKF recommended
+description: Why k=60      # OKF recommended
+tags: [retrieval, rrf]    # OKF recommended
+timestamp: 2026-06-14T00:00:00Z   # OKF recommended (== created_at)
+node_id: node:abc         # Brunnr extension (drill-down handle)
+tier: l2-scenario         # Brunnr extension (L0–L3)
+---
+Body markdown; relationships are plain links to other concepts ([k=60](/retrieval/rrf.md)).
+```
+
+Reserved files follow OKF: `index.md` (directory listing) and `log.md` (chronological update
+history — also where the self-repair anchor/Muninn log lives, see §6). Migration note: the current
+FilesBackend uses TOML `+++` frontmatter; the OKF alignment switches to YAML `---` with a `type`
+field. Ref: OKF v0.1 spec (Apache-2.0).
+
+### 4.2 Structured / graph memory [planned, future]
 
 Vector search finds *similar* text; some questions need *exact* relations ("which tasks block
 X?", "what did decision D change?"). A future `StructuredMemory` backend (behind the same
@@ -351,6 +381,8 @@ store; turning it on adds curation without changing how the agent is driven.
 - LangChain Memory & LlamaIndex Memory — practical short-term buffer/window/summary mechanisms.
 - TencentDB Agent Memory — L0–L3 tiering, hybrid recall, node_id drill-down.
   https://github.com/TencentCloud/TencentDB-Agent-Memory
+- Open Knowledge Format (OKF) v0.1, Google Cloud (Apache-2.0) — portable markdown+YAML knowledge
+  bundles; the `FilesBackend` on-disk format. https://github.com/GoogleCloudPlatform/knowledge-catalog
 - Hogan et al., *Knowledge Graphs* (MIT Press, 2021) — structured/graph memory.
 - Gao et al., *Retrieval-Augmented Generation for LLMs: A Survey* (2023) — retrieval optimization.
   https://arxiv.org/abs/2312.10997

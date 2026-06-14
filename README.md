@@ -78,7 +78,10 @@ Brunnr stands on the shoulders of prior work and public ideas. Brunnr reuses ide
 - **TencentDB Agent Memory** — https://github.com/TencentCloud/TencentDB-Agent-Memory (L0–L3 tiering, hybrid BM25+vector RRF, node_id drill-down, sqlite-vec local-first; `SqliteVecBackend` + `TencentDBBackend`).
 - **OpenAI — Codex Memories & Agent Loop** — https://developers.openai.com/codex/memories · https://openai.com/index/unrolling-the-codex-agent-loop/ (memory model + the agent loop).
 - **Anthropic — Claude Code Agent Memory & Agent Loop** — https://platform.claude.com/docs/en/managed-agents/memory · https://code.claude.com/docs/en/agent-sdk/agent-loop (memory + the agent loop).
+- **Open Knowledge Format (OKF)** — Google Cloud `knowledge-catalog` (Apache-2.0) — https://github.com/GoogleCloudPlatform/knowledge-catalog — the portable markdown+YAML knowledge-bundle format Brunnr's `files` memory backend aligns with.
 - **ApX Machine Learning — Agentic LLM Systems & Memory Architectures** (course) — https://apxml.com/courses/agentic-llm-memory-architectures — an educational reference that helped frame our memory, retrieval, consolidation, planning, and multi-agent design. The underlying techniques are grounded in their **primary sources** (cited per-topic in `docs/`); ApX content is credited and linked, never reproduced.
 
-Prior art also includes OpenAI Symphony and Cursor scaling-agents. All acknowledgments are
-references to public ideas/APIs and link to the sources; no third-party content is reproduced.
+Prior art also includes OpenAI Symphony, Cursor scaling-agents, and the self-correcting /
+long-running coding-agent patterns (e.g. "Autonomous Long-Running Coding Agents"). All
+acknowledgments are references to public ideas/APIs and link to the sources; no third-party
+content is reproduced.

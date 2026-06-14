@@ -25,6 +25,23 @@ the full triad. The master spends its tokens planning and **launches the worker 
 tokens do the heavy lifting**, then the judge gates the result — an agentic loop with a quality
 gate.
 
+### Verifiers define the boundary of trust
+
+The judge does not "vibe-accept" — it gates on **configurable verifiers**: concrete, deterministic
+checks the work must pass before reaching `done`/commit (`Galdr`). Typical verifiers: test suite,
+linter, type-check, build, format. Verifiers are declared in config; only when they pass is the
+worker's output trusted enough to commit. This is what makes long-running autonomy safe: the
+breadth of what an agent may do unattended is exactly the breadth your verifiers cover. Durable
+**loops** (worker → verifier → judge → retry) turn this into self-correcting autonomy.
+
+### Visual artifacts as control surfaces
+
+Long-running agents are steered through **visual artifacts**, not transcripts: the task board
+(Þing), the TUI (Bifröst), an optional macOS tray (Huginn), and the **OKF HTML visualizer** over
+the memory bundle (see [memory.md](memory.md) §4.1). External mirrors (Jira/Linear) give the same
+board in a familiar UI. These surfaces let a human glance, redirect, and approve without reading
+raw logs.
+
 ## Coordination by shared blackboard (not chatter)
 
 Agents do **not** stream long messages to each other (expensive, lossy). They coordinate
