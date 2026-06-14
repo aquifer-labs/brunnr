@@ -53,7 +53,8 @@ fn collect_memory_paths(directory: &Path, paths: &mut Vec<PathBuf>) -> MemoryRes
             collect_memory_paths(&path, paths)?;
         } else if path.extension().is_some_and(|extension| {
             extension.eq_ignore_ascii_case("md") || extension.eq_ignore_ascii_case("json")
-        }) {
+        }) && !is_reserved_okf_file(&path)
+        {
             paths.push(path);
         }
     }
@@ -77,6 +78,11 @@ fn parse_json_memory(text: &str, path: &Path) -> MemoryResult<StoreMemory> {
             tier: record.tier,
             node_id: Some(record.node_id),
             created_at: Some(record.created_at),
+            scope: record.scope,
+            agent_id: record.agent_id,
+            session_id: record.session_id,
+            task_id: record.task_id,
+            user_id: record.user_id,
         });
     }
 
@@ -97,6 +103,11 @@ fn parse_markdown_memory(text: &str, path: &Path) -> MemoryResult<StoreMemory> {
             tier: record.tier,
             node_id: Some(record.node_id),
             created_at: Some(record.created_at),
+            scope: record.scope,
+            agent_id: record.agent_id,
+            session_id: record.session_id,
+            task_id: record.task_id,
+            user_id: record.user_id,
         });
     }
 
@@ -111,6 +122,11 @@ fn parse_markdown_memory(text: &str, path: &Path) -> MemoryResult<StoreMemory> {
         tier: MemoryTier::L1Atom,
         node_id: None,
         created_at,
+        scope: None,
+        agent_id: None,
+        session_id: None,
+        task_id: None,
+        user_id: None,
     })
 }
 
@@ -126,4 +142,10 @@ fn parse_date_tagged_body(text: &str) -> (Option<DateTime<Utc>>, String) {
         .and_then(|date| date.and_hms_opt(0, 0, 0))
         .map(|datetime| DateTime::<Utc>::from_naive_utc_and_offset(datetime, Utc));
     (created_at, content.to_string())
+}
+
+fn is_reserved_okf_file(path: &Path) -> bool {
+    path.file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| matches!(name, "index.md" | "log.md"))
 }

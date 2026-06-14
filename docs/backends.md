@@ -25,7 +25,10 @@ separately and fuses them with the same RRF implementation.
 
 ## FilesBackend
 
-`FilesBackend` stores date-tagged markdown records under `.brunnr/memory/YYYY-MM-DD/<id>.md`.
+`FilesBackend` stores OKF markdown records under `.brunnr/memory/YYYY-MM-DD/<id>.md`. It writes
+YAML `---` frontmatter with required `type: memory`, recommended `tags`/`timestamp`, and Brunnr
+extensions such as `node_id`, `tier`, and optional tenancy fields. It still reads legacy TOML
+`+++` records.
 
 Hybrid behavior:
 
@@ -45,6 +48,7 @@ Storage:
 - SQLite FTS5 provides keyword/BM25 search.
 - Payload JSON is stored beside the vector rows for deterministic `get_node` and idempotent
   backfill.
+- Connections use WAL and `busy_timeout`; writers are serialized inside the process.
 
 Hybrid behavior:
 
@@ -62,6 +66,8 @@ Storage:
 
 - Qdrant owns the collection and vector index.
 - Brunnr stores the normalized memory payload in Qdrant point payload.
+- Upserts use `wait=true` for read-after-write behavior.
+- Payload indexes are created for `node_id` and tenancy fields.
 - The first shared embedding default is pinned to `intfloat/multilingual-e5-small` with 384
   dimensions.
 

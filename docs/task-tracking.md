@@ -9,8 +9,9 @@ Task tracking is a first-class Brunnr component, not just an orchestrator intern
 **standalone** (mode `tasks`) by developers who only want a fast, agent-friendly task queue, and
 the orchestrator (Urðarbrunnr) consumes it **under the hood** when running master/worker/judge.
 
-Status legend: **[planned]** — this document is the design contract; implementation follows in a
-dedicated worker phase.
+Status: the `TaskStore`, `FilesTaskStore`, `VectorTaskStore`, verifier gate, external connector
+seam, and `brunnr task` CLI are implemented in `crates/thingr` and `brunnr-cli`. The full
+orchestrator loop remains future work.
 
 ---
 
@@ -66,7 +67,7 @@ flowchart LR
 A task is dispatch-eligible only when all its blockers are terminal — the standard DAG-ready rule.
 References: Russell & Norvig, *AIMA* Ch. 11 (HTN); linear-vs-DAG task representation.
 
-## 3. Storage seam — `TaskStore` [planned]
+## 3. Storage seam — `TaskStore`
 
 Mirror the memory design exactly: a thin trait with interchangeable backends.
 
@@ -113,20 +114,19 @@ Standalone users get a useful queue with one binary; orchestrate users get the s
 by the agent loop, with the judge as the sole gate to `done`. Because `TaskStore` is one trait,
 md-only teams, vector-indexed teams, and Jira/Linear teams all use the same commands.
 
-## 5. CLI [planned]
+## 5. CLI
 
 ```bash
-brunnr task add "Refactor vector layer" --priority p1
-brunnr task list --state todo
+brunnr task add "Refactor vector layer" --blocker task-123
+brunnr task list
 brunnr task claim <id>            # todo -> doing (single authority)
-brunnr task done <id>             # doing -> done (judge gate in orchestrate mode)
+brunnr task done <id>             # verifier gate, then doing -> done
 brunnr task find "vector backend" # semantic search over tasks (VectorTaskStore)
-brunnr task connect linear        # enable the Linear MCP mirror
 ```
 
 ## 6. Decisions
 
-- Task tracking is a **separate component** (`crates/thingr` [planned]) so it can be used on its
+- Task tracking is a **separate component** (`crates/thingr`) so it can be used on its
   own, and is **composed** by the orchestrator rather than duplicated inside it.
 - Storage parity with memory via a `TaskStore` trait; `FilesTaskStore` is the zero-infra default;
   `VectorTaskStore` reuses Mímisbrunnr; external trackers are connectors, never a hard dependency.

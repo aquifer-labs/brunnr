@@ -75,7 +75,7 @@ on write and to a filter on read.
     multi-user deployments.
   - Index tenancy + frequently-filtered fields; keep payload lean.
 - **sqlite-vec (single host)**
-  - Open in **WAL mode** with a `busy_timeout`; WAL gives concurrent readers + one writer.
+  - Opens in **WAL mode** with a `busy_timeout`; WAL gives concurrent readers + one writer.
   - **Serialize writers through one process** (the `brunnrd` daemon) so multiple local agents don't
     collide; readers may open the file directly. Per-project file = per-project lock.
 - **The few non-idempotent ops** (consolidation/dedup merges, redundancy pruning) run as a
@@ -102,6 +102,9 @@ without each one managing raw DB connections.
 - Append-mostly + idempotent writes ⇒ no lost-update races.
 - Hard isolation by project-collection; soft multi-tenancy by indexed payload + filter; optional
   per-user collections.
+- `StoreMemory`/`MemoryQuery` carry optional `scope`, `agent_id`, `session_id`, `task_id`, and
+  `user_id`; vector backends receive these as normalized payload filters, without changing
+  `VectorStore`.
 - Qdrant for parallel/multi-user; sqlite-vec/files for single-host.
 - Funnel access through `brunnr-mcp`/`brunnrd` for pooling, `wait=true` read-after-write, tenant
   filtering, and per-user keys.

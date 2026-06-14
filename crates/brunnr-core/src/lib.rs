@@ -4,11 +4,18 @@
 
 mod agent;
 mod config;
+mod coordination;
+mod event;
 mod roles;
 
 pub use agent::{
     Agent, AgentCapabilities, AgentError, AgentEvent, AgentEventStream, AgentMessage,
     AgentResponse, AgentResult, AgentSession, SpawnRequest,
 };
-pub use config::{AgentBinding, BrunnrConfig, MemoryBackendKind, MemoryConfig, Mode};
+pub use config::{
+    AgentBinding, BrunnrConfig, CoordinationConfig, MemoryBackendKind, MemoryConfig, Mode,
+    ResourceQuotaConfig,
+};
+pub use coordination::{Barrier, ResourceQuota, TokenAccounting};
+pub use event::{EventEnvelope, EventSender, EventType};
 pub use roles::{Erindi, ErindiStatus, Galdr, Role, RoleParseError, Thing};

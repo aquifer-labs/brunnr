@@ -16,6 +16,8 @@ pub enum MemoryError {
     Encode(#[from] toml::ser::Error),
     #[error("failed to decode metadata: {0}")]
     Decode(#[from] toml::de::Error),
+    #[error("failed to decode OKF front matter: {0}")]
+    YamlDecode(#[from] serde_yaml::Error),
     #[error("failed to convert memory payload: {0}")]
     Payload(#[from] serde_json::Error),
     #[error("invalid memory file: {0}")]
@@ -54,6 +56,26 @@ pub enum MemoryTier {
     L3Project,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum MemoryScope {
+    Shared,
+    Agent,
+    Session,
+    Task,
+}
+
+impl MemoryScope {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Shared => "shared",
+            Self::Agent => "agent",
+            Self::Session => "session",
+            Self::Task => "task",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MemoryRecord {
     pub id: MemoryId,
@@ -63,6 +85,16 @@ pub struct MemoryRecord {
     pub metadata: BTreeMap<String, String>,
     pub tier: MemoryTier,
     pub created_at: DateTime<Utc>,
+    #[serde(default)]
+    pub scope: Option<MemoryScope>,
+    #[serde(default)]
+    pub agent_id: Option<String>,
+    #[serde(default)]
+    pub session_id: Option<String>,
+    #[serde(default)]
+    pub task_id: Option<String>,
+    #[serde(default)]
+    pub user_id: Option<String>,
 }
 
 impl MemoryRecord {
@@ -82,6 +114,11 @@ impl MemoryRecord {
             metadata,
             tier,
             created_at: Utc::now(),
+            scope: None,
+            agent_id: None,
+            session_id: None,
+            task_id: None,
+            user_id: None,
         }
     }
 }
@@ -98,6 +135,16 @@ pub struct StoreMemory {
     pub node_id: Option<String>,
     #[serde(default)]
     pub created_at: Option<DateTime<Utc>>,
+    #[serde(default)]
+    pub scope: Option<MemoryScope>,
+    #[serde(default)]
+    pub agent_id: Option<String>,
+    #[serde(default)]
+    pub session_id: Option<String>,
+    #[serde(default)]
+    pub task_id: Option<String>,
+    #[serde(default)]
+    pub user_id: Option<String>,
 }
 
 impl StoreMemory {
@@ -109,6 +156,11 @@ impl StoreMemory {
             tier: MemoryTier::L1Atom,
             node_id: None,
             created_at: None,
+            scope: None,
+            agent_id: None,
+            session_id: None,
+            task_id: None,
+            user_id: None,
         }
     }
 }
@@ -119,6 +171,16 @@ pub struct MemoryQuery {
     pub limit: usize,
     pub tags: Vec<String>,
     pub node_id: Option<String>,
+    #[serde(default)]
+    pub scope: Option<MemoryScope>,
+    #[serde(default)]
+    pub agent_id: Option<String>,
+    #[serde(default)]
+    pub session_id: Option<String>,
+    #[serde(default)]
+    pub task_id: Option<String>,
+    #[serde(default)]
+    pub user_id: Option<String>,
 }
 
 impl MemoryQuery {
@@ -128,6 +190,11 @@ impl MemoryQuery {
             limit: 10,
             tags: Vec::new(),
             node_id: None,
+            scope: None,
+            agent_id: None,
+            session_id: None,
+            task_id: None,
+            user_id: None,
         }
     }
 

@@ -3,6 +3,7 @@
 use std::{
     path::{Path, PathBuf},
     sync::{Arc, Mutex, Once},
+    time::Duration,
 };
 
 use futures_util::{future::BoxFuture, FutureExt};
@@ -46,6 +47,9 @@ impl SqliteVecVectorStore {
         }
         let connection = Connection::open(&config.path).map_err(sqlite_error)?;
         connection
+            .busy_timeout(Duration::from_secs(5))
+            .map_err(sqlite_error)?;
+        connection
             .execute_batch(
                 "PRAGMA journal_mode = WAL;
                  PRAGMA foreign_keys = ON;",
@@ -60,6 +64,9 @@ impl SqliteVecVectorStore {
     pub fn in_memory() -> MemoryResult<Self> {
         register_sqlite_vec();
         let connection = Connection::open_in_memory().map_err(sqlite_error)?;
+        connection
+            .busy_timeout(Duration::from_secs(5))
+            .map_err(sqlite_error)?;
         Ok(Self {
             config: SqliteVecVectorStoreConfig::new(Path::new(":memory:")),
             connection: Arc::new(Mutex::new(connection)),

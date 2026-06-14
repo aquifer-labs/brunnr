@@ -13,10 +13,15 @@ use brunnr_core::{
 };
 use clap::{Parser, Subcommand, ValueEnum};
 use mimisbrunnr::{
-    backfill_directory, FilesBackend, MemoryBackend, MemoryQuery, MemoryTier, SqliteVecVectorStore,
+    backfill_directory, recover_after_compaction, FilesBackend, MemoryBackend, MemoryQuery,
+    MemoryScope, MemoryTier, MuninnAnchorStore, SessionAnchor, SqliteVecVectorStore,
     SqliteVecVectorStoreConfig, StoreMemory, VectorMemoryBackend, VectorMemoryConfig,
 };
 use serde_json::{json, Value};
+use thingr::{
+    ClaimRequest, CommandVerifier, FilesTaskStore, NewTask, TaskKind, TaskStore, VectorTaskStore,
+    Verifier, VerifierGate,
+};
 use toml_edit::{value, Array, DocumentMut, Item, Table};
 
 #[cfg(feature = "qdrant")]
@@ -60,6 +65,10 @@ enum Command {
         #[command(subcommand)]
         command: MemoryCommand,
     },
+    Task {
+        #[command(subcommand)]
+        command: TaskCommand,
+    },
     Backfill {
         directory: PathBuf,
         #[arg(long, default_value = DEFAULT_CONFIG)]
@@ -72,6 +81,71 @@ enum Command {
 }
 
 #[derive(Debug, Subcommand)]
+enum TaskCommand {
+    Add {
+        title: String,
+        #[arg(long)]
+        id: Option<String>,
+        #[arg(long, default_value = "")]
+        description: String,
+        #[arg(long = "blocker")]
+        blockers: Vec<String>,
+        #[arg(long, value_enum, default_value_t = TaskKindArg::Primitive)]
+        kind: TaskKindArg,
+        #[arg(long, default_value = "worker")]
+        role: String,
+        #[arg(long, default_value = DEFAULT_CONFIG)]
+        config: PathBuf,
+        #[arg(long, default_value = ".brunnr")]
+        root: PathBuf,
+        #[arg(long, value_enum)]
+        backend: Option<BackendArg>,
+    },
+    List {
+        #[arg(long, default_value = ".brunnr")]
+        root: PathBuf,
+    },
+    Claim {
+        id: Option<String>,
+        #[arg(long, default_value = "worker")]
+        claimant: String,
+        #[arg(long, default_value = ".brunnr")]
+        root: PathBuf,
+    },
+    Done {
+        id: String,
+        #[arg(long = "verify-command")]
+        verify_commands: Vec<String>,
+        #[arg(long, default_value = ".brunnr")]
+        root: PathBuf,
+    },
+    Find {
+        query: String,
+        #[arg(long, default_value = DEFAULT_CONFIG)]
+        config: PathBuf,
+        #[arg(long, default_value = ".brunnr")]
+        root: PathBuf,
+        #[arg(long, value_enum)]
+        backend: Option<BackendArg>,
+    },
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum TaskKindArg {
+    Compound,
+    Primitive,
+}
+
+impl From<TaskKindArg> for TaskKind {
+    fn from(value: TaskKindArg) -> Self {
+        match value {
+            TaskKindArg::Compound => Self::Compound,
+            TaskKindArg::Primitive => Self::Primitive,
+        }
+    }
+}
+
+#[derive(Debug, Subcommand)]
 enum MemoryCommand {
     Store {
         content: String,
@@ -79,6 +153,16 @@ enum MemoryCommand {
         tags: Vec<String>,
         #[arg(long)]
         node_id: Option<String>,
+        #[arg(long, value_enum)]
+        scope: Option<ScopeArg>,
+        #[arg(long)]
+        agent_id: Option<String>,
+        #[arg(long)]
+        session_id: Option<String>,
+        #[arg(long)]
+        task_id: Option<String>,
+        #[arg(long)]
+        user_id: Option<String>,
         #[arg(long, default_value = DEFAULT_CONFIG)]
         config: PathBuf,
         #[arg(long, default_value = ".brunnr")]
@@ -92,6 +176,54 @@ enum MemoryCommand {
         limit: usize,
         #[arg(long)]
         node_id: Option<String>,
+        #[arg(long, value_enum)]
+        scope: Option<ScopeArg>,
+        #[arg(long)]
+        agent_id: Option<String>,
+        #[arg(long)]
+        session_id: Option<String>,
+        #[arg(long)]
+        task_id: Option<String>,
+        #[arg(long)]
+        user_id: Option<String>,
+        #[arg(long, default_value = DEFAULT_CONFIG)]
+        config: PathBuf,
+        #[arg(long, default_value = ".brunnr")]
+        root: PathBuf,
+        #[arg(long, value_enum)]
+        backend: Option<BackendArg>,
+    },
+    Anchor {
+        #[command(subcommand)]
+        command: AnchorCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum AnchorCommand {
+    Get {
+        #[arg(long, default_value = DEFAULT_CONFIG)]
+        config: PathBuf,
+        #[arg(long, default_value = ".brunnr")]
+        root: PathBuf,
+    },
+    Set {
+        #[arg(long)]
+        current_task: String,
+        #[arg(long)]
+        next_step: String,
+        #[arg(long)]
+        plan_pointer: Option<String>,
+        #[arg(long = "decision")]
+        last_decisions: Vec<String>,
+        #[arg(long, default_value = DEFAULT_CONFIG)]
+        config: PathBuf,
+        #[arg(long, default_value = ".brunnr")]
+        root: PathBuf,
+    },
+    Recover {
+        #[arg(long, default_value_t = 5)]
+        limit: usize,
         #[arg(long, default_value = DEFAULT_CONFIG)]
         config: PathBuf,
         #[arg(long, default_value = ".brunnr")]
@@ -106,6 +238,25 @@ enum BackendArg {
     Files,
     SqliteVec,
     Qdrant,
+}
+
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum ScopeArg {
+    Shared,
+    Agent,
+    Session,
+    Task,
+}
+
+impl From<ScopeArg> for MemoryScope {
+    fn from(value: ScopeArg) -> Self {
+        match value {
+            ScopeArg::Shared => Self::Shared,
+            ScopeArg::Agent => Self::Agent,
+            ScopeArg::Session => Self::Session,
+            ScopeArg::Task => Self::Task,
+        }
+    }
 }
 
 impl From<BackendArg> for MemoryBackendKind {
@@ -141,6 +292,7 @@ async fn main() -> Result<()> {
         ),
         Command::Spawn { role, agent } => spawn(&role, &agent),
         Command::Memory { command } => memory(command).await,
+        Command::Task { command } => task(command).await,
         Command::Backfill {
             directory,
             config,
@@ -148,6 +300,85 @@ async fn main() -> Result<()> {
             backend,
         } => backfill(directory, config, root, backend).await,
     }
+}
+
+async fn task(command: TaskCommand) -> Result<()> {
+    match command {
+        TaskCommand::Add {
+            title,
+            id,
+            description,
+            blockers,
+            kind,
+            role,
+            config,
+            root,
+            backend,
+        } => {
+            let source = FilesTaskStore::new(&root);
+            let memory = open_backend_for_command(&config, root, backend)?;
+            let store = VectorTaskStore::new(source, memory);
+            let mut task = NewTask::primitive(title);
+            task.id = id;
+            task.description = description;
+            task.blockers = blockers;
+            task.kind = kind.into();
+            task.role = Role::from_str(&role)?;
+            let task = store.create(task).await?;
+            println!("created task id={} status=todo", task.id);
+        }
+        TaskCommand::List { root } => {
+            let store = FilesTaskStore::new(root);
+            for task in store.list().await? {
+                println!("{}\t{:?}\t{}", task.id, task.status, task.title);
+            }
+        }
+        TaskCommand::Claim { id, claimant, root } => {
+            let store = FilesTaskStore::new(root);
+            match store
+                .claim(ClaimRequest {
+                    task_id: id,
+                    claimant,
+                })
+                .await?
+            {
+                Some(task) => println!(
+                    "claimed task id={} claimant={}",
+                    task.id,
+                    task.claimed_by.unwrap_or_default()
+                ),
+                None => println!("no dispatch-eligible task"),
+            }
+        }
+        TaskCommand::Done {
+            id,
+            verify_commands,
+            root,
+        } => {
+            let store = FilesTaskStore::new(root);
+            let verifiers: Vec<Arc<dyn Verifier>> = verify_commands
+                .into_iter()
+                .map(|command| Arc::new(CommandVerifier::new(command.clone(), command)) as _)
+                .collect();
+            let gate = VerifierGate::new(verifiers);
+            let task = gate.mark_done(&store, &id).await?;
+            println!("completed task id={} status=done", task.id);
+        }
+        TaskCommand::Find {
+            query,
+            config,
+            root,
+            backend,
+        } => {
+            let source = FilesTaskStore::new(&root);
+            let memory = open_backend_for_command(&config, root, backend)?;
+            let store = VectorTaskStore::new(source, memory);
+            for task in store.find(&query).await? {
+                println!("{}\t{:?}\t{}", task.id, task.status, task.title);
+            }
+        }
+    }
+    Ok(())
 }
 
 fn init(
@@ -172,6 +403,7 @@ fn init(
             qdrant_api_key_env: Some(qdrant_api_key_env),
         },
         agents,
+        coordination: Default::default(),
     };
     let config_path = Path::new(DEFAULT_CONFIG);
     if !config_path.exists() {
@@ -213,6 +445,11 @@ async fn memory(command: MemoryCommand) -> Result<()> {
             content,
             tags,
             node_id,
+            scope,
+            agent_id,
+            session_id,
+            task_id,
+            user_id,
             config,
             root,
             backend,
@@ -226,6 +463,11 @@ async fn memory(command: MemoryCommand) -> Result<()> {
                     tier: MemoryTier::L1Atom,
                     node_id,
                     created_at: None,
+                    scope: scope.map(Into::into),
+                    agent_id,
+                    session_id,
+                    task_id,
+                    user_id,
                 })
                 .await?;
             println!("stored memory id={} node_id={}", record.id, record.node_id);
@@ -234,6 +476,11 @@ async fn memory(command: MemoryCommand) -> Result<()> {
             query,
             limit,
             node_id,
+            scope,
+            agent_id,
+            session_id,
+            task_id,
+            user_id,
             config,
             root,
             backend,
@@ -241,12 +488,58 @@ async fn memory(command: MemoryCommand) -> Result<()> {
             let backend = open_backend_for_command(&config, root, backend)?;
             let mut memory_query = MemoryQuery::new(query).with_limit(limit);
             memory_query.node_id = node_id;
+            memory_query.scope = scope.map(Into::into);
+            memory_query.agent_id = agent_id;
+            memory_query.session_id = session_id;
+            memory_query.task_id = task_id;
+            memory_query.user_id = user_id;
             for hit in backend.find(memory_query).await? {
                 println!(
                     "{:.4}\t{}\t{}\t{}",
                     hit.score, hit.record.id, hit.record.node_id, hit.record.content
                 );
             }
+        }
+        MemoryCommand::Anchor { command } => anchor(command).await?,
+    }
+    Ok(())
+}
+
+async fn anchor(command: AnchorCommand) -> Result<()> {
+    match command {
+        AnchorCommand::Get { config, root } => {
+            let memory = memory_config_for_command(&config, root, None)?;
+            let store = MuninnAnchorStore::new(&memory.root);
+            println!("{}", serde_json::to_string_pretty(&store.get().await?)?);
+        }
+        AnchorCommand::Set {
+            current_task,
+            next_step,
+            plan_pointer,
+            last_decisions,
+            config,
+            root,
+        } => {
+            let memory = memory_config_for_command(&config, root, None)?;
+            let store = MuninnAnchorStore::new(&memory.root);
+            let mut anchor = SessionAnchor::new(current_task, next_step);
+            anchor.plan_pointer = plan_pointer;
+            anchor.last_decisions = last_decisions;
+            let written = store.set(anchor).await?;
+            println!("{}", serde_json::to_string_pretty(&written)?);
+        }
+        AnchorCommand::Recover {
+            limit,
+            config,
+            root,
+            backend,
+        } => {
+            let memory = memory_config_for_command(&config, root, backend)?;
+            let anchor_store = MuninnAnchorStore::new(&memory.root);
+            let backend = open_memory_backend(&memory)?;
+            let recovered =
+                recover_after_compaction(&anchor_store, backend.as_ref(), limit).await?;
+            println!("{}", serde_json::to_string_pretty(&recovered)?);
         }
     }
     Ok(())
@@ -272,6 +565,15 @@ fn open_backend_for_command(
     root: PathBuf,
     backend: Option<BackendArg>,
 ) -> Result<Arc<dyn MemoryBackend>> {
+    let config = memory_config_for_command(config_path, root, backend)?;
+    open_memory_backend(&config)
+}
+
+fn memory_config_for_command(
+    config_path: &Path,
+    root: PathBuf,
+    backend: Option<BackendArg>,
+) -> Result<MemoryConfig> {
     let config = if config_path.exists() {
         let text = fs::read_to_string(config_path)
             .with_context(|| format!("read {}", config_path.display()))?;
@@ -298,7 +600,7 @@ fn open_backend_for_command(
     } else {
         config
     };
-    open_memory_backend(&config)
+    Ok(config)
 }
 
 fn open_memory_backend(config: &MemoryConfig) -> Result<Arc<dyn MemoryBackend>> {

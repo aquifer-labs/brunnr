@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use brunnr_mcp::{FindRequest, MemoryServer, StoreRequest};
+use brunnr_mcp::{AnchorSetRequest, FindRequest, MemoryServer, StoreRequest, ToolsFindRequest};
 use brunnr_test_support::TempDir;
 use mimisbrunnr::{
     Distance, MemoryResult, SqliteVecVectorStore, TextEmbedder, VectorMemoryBackend,
@@ -20,6 +20,11 @@ async fn memory_tools_store_and_find_with_files_backend() {
             content: "MCP memory tool round trip".to_string(),
             tags: Some(vec!["mcp".to_string()]),
             node_id: Some("node:mcp".to_string()),
+            scope: None,
+            agent_id: None,
+            session_id: None,
+            task_id: None,
+            user_id: None,
         }))
         .await
         .expect("store should succeed")
@@ -30,6 +35,11 @@ async fn memory_tools_store_and_find_with_files_backend() {
             query: "round".to_string(),
             limit: Some(5),
             node_id: Some("node:mcp".to_string()),
+            scope: None,
+            agent_id: None,
+            session_id: None,
+            task_id: None,
+            user_id: None,
         }))
         .await
         .expect("find should succeed")
@@ -39,6 +49,65 @@ async fn memory_tools_store_and_find_with_files_backend() {
     assert_eq!(found.hits.len(), 1);
     assert_eq!(found.hits[0].node_id, "node:mcp");
     assert_eq!(found.hits[0].content, "MCP memory tool round trip");
+}
+
+#[tokio::test]
+async fn memory_anchor_tools_round_trip_with_files_backend() {
+    let tempdir = TempDir::new("mcp-anchor");
+    let server = MemoryServer::new(tempdir.path());
+
+    server
+        .memory_anchor_set(Parameters(AnchorSetRequest {
+            current_task: "implement anchor tools".to_string(),
+            plan_pointer: Some("docs/self-repair.md#muninn".to_string()),
+            last_decisions: Some(vec!["append-only log".to_string()]),
+            next_step: "verify MCP round trip".to_string(),
+        }))
+        .await
+        .expect("anchor set should succeed");
+    let response = server
+        .memory_anchor_get()
+        .await
+        .expect("anchor get should succeed")
+        .0;
+
+    let anchor = response.anchor.expect("anchor should exist");
+    assert_eq!(anchor.current_task, "implement anchor tools");
+    assert_eq!(anchor.next_step, "verify MCP round trip");
+    assert_eq!(anchor.last_decisions, vec!["append-only log"]);
+}
+
+#[tokio::test]
+async fn tools_find_is_opt_in_and_reports_token_delta() {
+    let tempdir = TempDir::new("mcp-tools-find");
+    let disabled = MemoryServer::new(tempdir.path());
+    assert!(
+        disabled
+            .tools_find(Parameters(ToolsFindRequest {
+                task: "resume from anchor and search memory".to_string(),
+                limit: Some(2),
+            }))
+            .await
+            .is_err(),
+        "router should be disabled by default"
+    );
+
+    let enabled = MemoryServer::new(tempdir.path()).with_router_enabled(true);
+    let response = enabled
+        .tools_find(Parameters(ToolsFindRequest {
+            task: "resume from anchor and search memory".to_string(),
+            limit: Some(2),
+        }))
+        .await
+        .expect("tools.find should run when enabled")
+        .0;
+
+    assert!(!response.tools.is_empty());
+    assert!(response.prompt_tokens_delta > 0);
+    assert!(response
+        .tools
+        .iter()
+        .any(|tool| tool.name == "memory.anchor.get" || tool.name == "memory.find"));
 }
 
 #[tokio::test]
@@ -61,6 +130,11 @@ async fn memory_tools_store_and_find_with_sqlite_vec_backend() {
             content: "MCP sqlite vector memory round trip".to_string(),
             tags: Some(vec!["mcp".to_string()]),
             node_id: Some("node:mcp-sqlite".to_string()),
+            scope: None,
+            agent_id: None,
+            session_id: None,
+            task_id: None,
+            user_id: None,
         }))
         .await
         .expect("store should succeed");
@@ -70,6 +144,11 @@ async fn memory_tools_store_and_find_with_sqlite_vec_backend() {
             query: "vector".to_string(),
             limit: Some(5),
             node_id: Some("node:mcp-sqlite".to_string()),
+            scope: None,
+            agent_id: None,
+            session_id: None,
+            task_id: None,
+            user_id: None,
         }))
         .await
         .expect("find should succeed")

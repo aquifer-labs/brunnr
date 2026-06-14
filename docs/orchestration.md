@@ -85,7 +85,8 @@ speak the same language — inspired by agent communication languages (FIPA ACL)
 ```
 
 `correlation_id` links a result/verdict back to its task (no need to replay history). Events are
-written to the blackboard (Þing/memory) and to the run log.
+represented by `brunnr-core::EventEnvelope` and are intended for the blackboard (Þing/memory) and
+run log.
 
 **Coordination mechanisms** (the orchestrator is a centralized coordinator by default — simplest,
 one authority):
@@ -129,9 +130,9 @@ Two routing problems, one embedding-backed mechanism (reuses Mímisbrunnr's embe
    cheap OSS model for formatting, a frontier model for planning). Right-sizing the model per
    sub-task cuts cost.
 2. **Semantic tool selection** — when an agent has many MCP tools, including every tool
-   description in the prompt is wasteful. Brunnr can embed tool descriptions and return only the
-   **relevant subset** for the current task (`tools.find`), materially cutting prompt tokens. This
-   is opt-in and directly serves Brunnr's token-economy mission.
+  description in the prompt is wasteful. Brunnr can return only the **relevant subset** for the
+  current task (`tools.find`), materially cutting prompt tokens. This is opt-in
+  (`coordination.router_enabled = true`) and directly serves Brunnr's token-economy mission.
 
 ```mermaid
 flowchart LR

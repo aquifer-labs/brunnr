@@ -9,9 +9,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     identity::stable_memory_id, reciprocal_rank_fusion, Distance, Filter, MemoryBackend,
-    MemoryError, MemoryId, MemoryQuery, MemoryRecord, MemoryResult, MemoryTier, PayloadIndex,
-    RrfOptions, SearchHit, SearchSource, StoreMemory, VectorCollection, VectorPoint, VectorSearch,
-    VectorSearchHit, VectorSearchSource, VectorStore,
+    MemoryError, MemoryId, MemoryQuery, MemoryRecord, MemoryResult, MemoryScope, MemoryTier,
+    PayloadIndex, RrfOptions, SearchHit, SearchSource, StoreMemory, VectorCollection, VectorPoint,
+    VectorSearch, VectorSearchHit, VectorSearchSource, VectorStore,
 };
 
 pub const PINNED_FASTEMBED_MODEL: &str = "intfloat/multilingual-e5-small";
@@ -120,14 +120,24 @@ impl<V: VectorStore> VectorMemoryBackend<V> {
                 distance: self.config.distance,
             })
             .await?;
-        self.store
-            .ensure_payload_index(
-                &self.config.collection,
-                PayloadIndex {
-                    field: "node_id".to_string(),
-                },
-            )
-            .await
+        for field in [
+            "node_id",
+            "scope",
+            "agent_id",
+            "session_id",
+            "task_id",
+            "user_id",
+        ] {
+            self.store
+                .ensure_payload_index(
+                    &self.config.collection,
+                    PayloadIndex {
+                        field: field.to_string(),
+                    },
+                )
+                .await?;
+        }
+        Ok(())
     }
 
     async fn vector_hits(&self, query: MemoryQuery) -> MemoryResult<Vec<SearchHit>> {
@@ -197,6 +207,11 @@ impl<V: VectorStore> MemoryBackend for VectorMemoryBackend<V> {
                 metadata: memory.metadata,
                 tier: memory.tier,
                 created_at: memory.created_at.unwrap_or_else(Utc::now),
+                scope: memory.scope,
+                agent_id: memory.agent_id,
+                session_id: memory.session_id,
+                task_id: memory.task_id,
+                user_id: memory.user_id,
             };
             let vector = self.embedder.embed_passage(&record.content)?;
             self.store
@@ -285,6 +300,16 @@ struct MemoryPayload {
     metadata: std::collections::BTreeMap<String, String>,
     tier: MemoryTier,
     created_at: chrono::DateTime<Utc>,
+    #[serde(default)]
+    scope: Option<MemoryScope>,
+    #[serde(default)]
+    agent_id: Option<String>,
+    #[serde(default)]
+    session_id: Option<String>,
+    #[serde(default)]
+    task_id: Option<String>,
+    #[serde(default)]
+    user_id: Option<String>,
 }
 
 impl From<&MemoryRecord> for MemoryPayload {
@@ -297,6 +322,11 @@ impl From<&MemoryRecord> for MemoryPayload {
             metadata: record.metadata.clone(),
             tier: record.tier,
             created_at: record.created_at,
+            scope: record.scope,
+            agent_id: record.agent_id.clone(),
+            session_id: record.session_id.clone(),
+            task_id: record.task_id.clone(),
+            user_id: record.user_id.clone(),
         }
     }
 }
@@ -311,15 +341,36 @@ impl From<MemoryPayload> for MemoryRecord {
             metadata: payload.metadata,
             tier: payload.tier,
             created_at: payload.created_at,
+            scope: payload.scope,
+            agent_id: payload.agent_id,
+            session_id: payload.session_id,
+            task_id: payload.task_id,
+            user_id: payload.user_id,
         }
     }
 }
 
 fn filter_from_query(query: &MemoryQuery) -> Filter {
-    query
+    let mut filter = query
         .node_id
         .as_ref()
-        .map_or_else(Filter::default, Filter::node_id)
+        .map_or_else(Filter::default, Filter::node_id);
+    if let Some(scope) = query.scope {
+        filter.must_eq("scope", scope.as_str());
+    }
+    if let Some(agent_id) = &query.agent_id {
+        filter.must_eq("agent_id", agent_id);
+    }
+    if let Some(session_id) = &query.session_id {
+        filter.must_eq("session_id", session_id);
+    }
+    if let Some(task_id) = &query.task_id {
+        filter.must_eq("task_id", task_id);
+    }
+    if let Some(user_id) = &query.user_id {
+        filter.must_eq("user_id", user_id);
+    }
+    filter
 }
 
 fn vector_hits_to_memory_hits(

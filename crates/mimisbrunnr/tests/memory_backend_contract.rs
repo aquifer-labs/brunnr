@@ -9,8 +9,8 @@ use brunnr_test_support::TempDir;
 use futures_util::{future::BoxFuture, FutureExt};
 use mimisbrunnr::{
     Distance, FilesBackend, MemoryBackend, MemoryId, MemoryQuery, MemoryRecord, MemoryResult,
-    MemoryTier, RrfOptions, SearchHit, SqliteVecVectorStore, StoreMemory, TextEmbedder,
-    VectorMemoryBackend, VectorMemoryConfig,
+    MemoryScope, MemoryTier, RrfOptions, SearchHit, SqliteVecVectorStore, StoreMemory,
+    TextEmbedder, VectorMemoryBackend, VectorMemoryConfig,
 };
 
 #[derive(Debug, Default)]
@@ -33,6 +33,23 @@ impl MemoryBackend for MockMemoryBackend {
                             .node_id
                             .as_ref()
                             .is_none_or(|node_id| record.node_id == *node_id)
+                        && query.scope.is_none_or(|scope| record.scope == Some(scope))
+                        && query
+                            .agent_id
+                            .as_ref()
+                            .is_none_or(|agent_id| record.agent_id.as_ref() == Some(agent_id))
+                        && query
+                            .session_id
+                            .as_ref()
+                            .is_none_or(|session_id| record.session_id.as_ref() == Some(session_id))
+                        && query
+                            .task_id
+                            .as_ref()
+                            .is_none_or(|task_id| record.task_id.as_ref() == Some(task_id))
+                        && query
+                            .user_id
+                            .as_ref()
+                            .is_none_or(|user_id| record.user_id.as_ref() == Some(user_id))
                 })
                 .cloned()
                 .map(|record| SearchHit::keyword(record, 1.0))
@@ -45,8 +62,20 @@ impl MemoryBackend for MockMemoryBackend {
     fn store(&self, memory: StoreMemory) -> BoxFuture<'_, MemoryResult<MemoryRecord>> {
         let records = Arc::clone(&self.records);
         async move {
-            let id = MemoryId::new(format!("memory-{}", records.lock().unwrap().len() + 1));
-            let record = MemoryRecord::new(
+            let mut records = records.lock().expect("records lock should not be poisoned");
+            if let Some(existing) = records.iter().find(|record| {
+                record.content == memory.content
+                    && record.node_id == memory.node_id.as_deref().unwrap_or("node:contract")
+                    && record.scope == memory.scope
+                    && record.agent_id == memory.agent_id
+                    && record.session_id == memory.session_id
+                    && record.task_id == memory.task_id
+                    && record.user_id == memory.user_id
+            }) {
+                return Ok(existing.clone());
+            }
+            let id = MemoryId::new(format!("memory-{}", records.len() + 1));
+            let mut record = MemoryRecord::new(
                 id,
                 memory
                     .node_id
@@ -56,7 +85,12 @@ impl MemoryBackend for MockMemoryBackend {
                 memory.metadata,
                 memory.tier,
             );
-            records.lock().unwrap().push(record.clone());
+            record.scope = memory.scope;
+            record.agent_id = memory.agent_id;
+            record.session_id = memory.session_id;
+            record.task_id = memory.task_id;
+            record.user_id = memory.user_id;
+            records.push(record.clone());
             Ok(record)
         }
         .boxed()
@@ -114,6 +148,11 @@ async fn assert_backend_contract<B: MemoryBackend>(backend: &B) {
             tier: MemoryTier::L1Atom,
             node_id: Some("node:test".to_string()),
             created_at: None,
+            scope: None,
+            agent_id: None,
+            session_id: None,
+            task_id: None,
+            user_id: None,
         })
         .await
         .expect("store should succeed");
@@ -126,6 +165,11 @@ async fn assert_backend_contract<B: MemoryBackend>(backend: &B) {
             tier: MemoryTier::L1Atom,
             node_id: Some("node:rrf".to_string()),
             created_at: None,
+            scope: None,
+            agent_id: None,
+            session_id: None,
+            task_id: None,
+            user_id: None,
         })
         .await
         .expect("store should succeed");
@@ -159,6 +203,48 @@ async fn assert_backend_contract<B: MemoryBackend>(backend: &B) {
         hits.iter().any(|hit| hit.record.node_id == "node:rrf"),
         "hybrid RRF should return the retrieval memory, got {hits:?}"
     );
+
+    backend
+        .store(StoreMemory {
+            content: "tenant isolated context".to_string(),
+            tags: Vec::new(),
+            metadata: BTreeMap::new(),
+            tier: MemoryTier::L1Atom,
+            node_id: Some("node:tenant-a".to_string()),
+            created_at: None,
+            scope: Some(MemoryScope::Task),
+            agent_id: None,
+            session_id: None,
+            task_id: Some("task-a".to_string()),
+            user_id: None,
+        })
+        .await
+        .expect("tenant store should succeed");
+    backend
+        .store(StoreMemory {
+            content: "tenant isolated context".to_string(),
+            tags: Vec::new(),
+            metadata: BTreeMap::new(),
+            tier: MemoryTier::L1Atom,
+            node_id: Some("node:tenant-b".to_string()),
+            created_at: None,
+            scope: Some(MemoryScope::Task),
+            agent_id: None,
+            session_id: None,
+            task_id: Some("task-b".to_string()),
+            user_id: None,
+        })
+        .await
+        .expect("tenant store should succeed");
+    let mut tenant_query = MemoryQuery::new("isolated").with_limit(10);
+    tenant_query.scope = Some(MemoryScope::Task);
+    tenant_query.task_id = Some("task-a".to_string());
+    let tenant_hits = backend
+        .find(tenant_query)
+        .await
+        .expect("tenant find should succeed");
+    assert_eq!(tenant_hits.len(), 1);
+    assert_eq!(tenant_hits[0].record.node_id, "node:tenant-a");
 }
 
 const TEST_DIMENSIONS: usize = 8;

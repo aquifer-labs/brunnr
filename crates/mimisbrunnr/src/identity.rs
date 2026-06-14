@@ -11,5 +11,19 @@ pub(crate) fn stable_memory_id(memory: &StoreMemory) -> MemoryId {
     if let Some(node_id) = &memory.node_id {
         hasher.update(node_id.as_bytes());
     }
+    if let Some(scope) = memory.scope {
+        hasher.update(scope.as_str().as_bytes());
+    }
+    for value in [
+        &memory.agent_id,
+        &memory.session_id,
+        &memory.task_id,
+        &memory.user_id,
+    ]
+    .into_iter()
+    .flatten()
+    {
+        hasher.update(value.as_bytes());
+    }
     MemoryId::new(format!("{:x}", hasher.finalize()))
 }

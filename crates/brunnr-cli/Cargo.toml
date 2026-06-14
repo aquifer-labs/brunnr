@@ -14,6 +14,7 @@ clap.workspace = true
 mimisbrunnr = { path = "../mimisbrunnr" }
 serde.workspace = true
 serde_json.workspace = true
+thingr = { path = "../thingr" }
 tokio.workspace = true
 toml.workspace = true
 toml_edit.workspace = true

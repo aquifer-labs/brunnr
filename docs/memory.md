@@ -38,13 +38,13 @@ created to pull.
 ```mermaid
 flowchart LR
   Agent[Agent core]:::agent
-  subgraph STM["Short-term memory · planned"]
+  subgraph STM["Short-term memory · implemented seam"]
     W[Working buffer: recent turns]:::stm
     A[Session anchor: task, plan ptr, next step]:::stm
   end
   subgraph LTM["Long-term memory · implemented"]
     V[(Vector store: tiered records)]:::ltm
-    F[(Files: date-tagged md)]:::ltm
+    F[(Files: OKF md)]:::ltm
   end
   Agent -->|store durable learnings| LTM
   Agent -->|recent state| STM
@@ -214,7 +214,7 @@ The normalized `Filter` (`eq`/`in`/`range`/`exists` with `must`/`should`/`must_n
 `types`/`vector.rs`) is the only query DSL consumers touch; each adapter translates it to native
 filters. Engine specifics (metric names, id types, index knobs) never leak above `VectorStore`.
 
-### 4.1 On-disk format: Open Knowledge Format (OKF) [planned alignment]
+### 4.1 On-disk format: Open Knowledge Format (OKF)
 
 The `FilesBackend` stores memory as a directory of markdown files — the "LLM-wiki" pattern. Brunnr
 aligns this on-disk format with the **Open Knowledge Format (OKF)** (Google Cloud, Apache-2.0): a
@@ -240,9 +240,9 @@ Body markdown; relationships are plain links to other concepts ([k=60](/retrieva
 ```
 
 Reserved files follow OKF: `index.md` (directory listing) and `log.md` (chronological update
-history — also where the self-repair anchor/Muninn log lives, see §6). Migration note: the current
-FilesBackend uses TOML `+++` frontmatter; the OKF alignment switches to YAML `---` with a `type`
-field. Ref: OKF v0.1 spec (Apache-2.0).
+history — also where the self-repair anchor/Muninn log lives, see §6). `FilesBackend` now writes
+YAML `---` OKF files and keeps a backward-compatible reader for legacy TOML `+++` records.
+Ref: OKF v0.1 spec (Apache-2.0).
 
 ### 4.2 Structured / graph memory [planned, future]
 
@@ -257,17 +257,16 @@ Graphs* (2021).
 
 ---
 
-## 5. Short-term memory [planned]
+## 5. Short-term memory
 
 Long-term memory answers "what do we know"; short-term memory answers "what are we doing right
-now". Brunnr will provide three standard mechanisms (see references) behind a `WorkingMemory`
-seam:
+now". Brunnr provides three standard mechanisms behind a `WorkingMemory` seam:
 
 - **buffer** — full recent turns (highest fidelity, smallest horizon);
 - **sliding window** — last $k$ turns, bounded prompt contribution;
-- **summary buffer** — periodically summarize older turns with the judge/worker model, keep
-  recent turns verbatim. Summaries are written down as `L2Scenario`/`L3Project` records, so
-  *short-term consolidation feeds long-term memory* rather than being discarded.
+- **summary buffer** — keep recent turns verbatim and emit older turns as a pending
+  `L2Scenario`/`L3Project` memory only when `summarize_to` is configured. The default buffer and
+  sliding-window modes perform no LLM calls and add no tokens.
 
 ```mermaid
 flowchart LR
@@ -277,11 +276,11 @@ flowchart LR
   SUM -->|write as L2/L3 record| LTM[(Long-term memory)]
 ```
 
-This consolidation path is what makes recall *improve* over time instead of growing unbounded.
+The consolidation path is opt-in; by default, short-term memory is an in-process buffer/window.
 
 ---
 
-## 6. Self-repair across auto-compaction [partly planned]
+## 6. Self-repair across auto-compaction
 
 Long sessions hit auto-compaction: the host summarizes/truncates context and the agent can lose
 its place. Brunnr makes this a non-event (see `docs/self-repair.md`):
@@ -305,6 +304,12 @@ flowchart LR
 The deterministic anchor handles "what is my current step" (vector search is too fuzzy for that);
 the semantic recall restores the surrounding knowledge. Together they make a switch between
 agents (e.g. Claude Code → Codex) lossless.
+
+Implemented surfaces:
+
+- MCP: `memory.anchor.get` / `memory.anchor.set`
+- CLI: `brunnr memory anchor get|set|recover`
+- File: the current Muninn anchor is appended to OKF `log.md`
 
 ---
 

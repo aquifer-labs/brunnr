@@ -47,28 +47,39 @@ async fn main() -> anyhow::Result<()> {
         .with_writer(std::io::stderr)
         .init();
 
-    let config = load_memory_config(&args)?;
-    brunnr_mcp::run_stdio_with_config(&config).await
+    let config = load_runtime_config(&args)?;
+    brunnr_mcp::run_stdio_with_config_and_router(&config.memory, config.router_enabled).await
 }
 
-fn load_memory_config(args: &Args) -> anyhow::Result<MemoryConfig> {
+struct RuntimeConfig {
+    memory: MemoryConfig,
+    router_enabled: bool,
+}
+
+fn load_runtime_config(args: &Args) -> anyhow::Result<RuntimeConfig> {
     if let Some(path) = &args.config {
         let text = fs::read_to_string(path)?;
         let config = BrunnrConfig::from_toml(&text)?;
         if config.mode != Mode::Memory {
             anyhow::bail!("brunnr-mcp requires mode = memory");
         }
-        return Ok(config.memory);
+        return Ok(RuntimeConfig {
+            memory: config.memory,
+            router_enabled: config.coordination.router_enabled,
+        });
     }
 
-    Ok(MemoryConfig {
-        backend: args.backend.into(),
-        root: args.root.display().to_string(),
-        collection: args.collection.clone(),
-        qdrant_url: args
-            .qdrant_url
-            .clone()
-            .or_else(|| env::var("QDRANT_URL").ok()),
-        qdrant_api_key_env: Some(args.qdrant_api_key_env.clone()),
+    Ok(RuntimeConfig {
+        memory: MemoryConfig {
+            backend: args.backend.into(),
+            root: args.root.display().to_string(),
+            collection: args.collection.clone(),
+            qdrant_url: args
+                .qdrant_url
+                .clone()
+                .or_else(|| env::var("QDRANT_URL").ok()),
+            qdrant_api_key_env: Some(args.qdrant_api_key_env.clone()),
+        },
+        router_enabled: false,
     })
 }

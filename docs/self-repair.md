@@ -25,5 +25,7 @@ flowchart LR
   C -->|no| ACT
 ```
 
-Status: the anchor schema and the recall path are designed here; wiring the detection hook and
-the `Muninn` writer is a planned implementation step. See [memory.md](memory.md) §6.
+Status: `MuninnAnchorStore` writes and reads the anchor in OKF `log.md`; MCP exposes
+`memory.anchor.get` / `memory.anchor.set`; the CLI exposes `brunnr memory anchor get|set|recover`.
+The host-specific compaction detector remains an integration concern, but the replay primitive is
+implemented and tested.

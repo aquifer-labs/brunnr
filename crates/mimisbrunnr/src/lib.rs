@@ -2,6 +2,7 @@
 
 //! Mímisbrunnr memory API and local backends.
 
+mod anchor;
 mod backend;
 mod backfill;
 mod files;
@@ -16,7 +17,9 @@ mod types;
 mod vector;
 #[cfg(feature = "vector")]
 mod vector_memory;
+mod working;
 
+pub use anchor::{recover_after_compaction, MuninnAnchorStore, RecoveryContext, SessionAnchor};
 pub use backend::MemoryBackend;
 pub use backfill::{backfill_directory, BackfillStats};
 pub use files::FilesBackend;
@@ -26,8 +29,8 @@ pub use rrf::reciprocal_rank_fusion;
 #[cfg(feature = "sqlite-vec")]
 pub use sqlite_vec::{SqliteVecBackend, SqliteVecVectorStore, SqliteVecVectorStoreConfig};
 pub use types::{
-    MemoryError, MemoryId, MemoryQuery, MemoryRecord, MemoryResult, MemoryTier, RrfOptions,
-    SearchHit, SearchSource, StoreMemory,
+    MemoryError, MemoryId, MemoryQuery, MemoryRecord, MemoryResult, MemoryScope, MemoryTier,
+    RrfOptions, SearchHit, SearchSource, StoreMemory,
 };
 #[cfg(feature = "vector")]
 pub use vector::{
@@ -39,4 +42,7 @@ pub use vector::{
 pub use vector_memory::{
     FastembedTextEmbedder, TextEmbedder, VectorMemoryBackend, VectorMemoryConfig,
     PINNED_FASTEMBED_DIMENSIONS, PINNED_FASTEMBED_MODEL,
+};
+pub use working::{
+    InMemoryWorkingMemory, WorkingMemory, WorkingMemoryMode, WorkingMemoryView, WorkingTurn,
 };

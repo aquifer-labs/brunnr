@@ -41,11 +41,33 @@ pub struct AgentBinding {
     pub model: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct CoordinationConfig {
+    #[serde(default)]
+    pub router_enabled: bool,
+    #[serde(default)]
+    pub quotas: Vec<ResourceQuotaConfig>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct ResourceQuotaConfig {
+    #[serde(default)]
+    pub agent_id: Option<String>,
+    #[serde(default)]
+    pub user_id: Option<String>,
+    #[serde(default)]
+    pub max_prompt_tokens: Option<u64>,
+    #[serde(default)]
+    pub max_requests_per_minute: Option<u32>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BrunnrConfig {
     pub mode: Mode,
     pub memory: MemoryConfig,
     pub agents: Vec<AgentBinding>,
+    #[serde(default)]
+    pub coordination: CoordinationConfig,
 }
 
 impl BrunnrConfig {
@@ -60,6 +82,7 @@ impl BrunnrConfig {
                 qdrant_api_key_env: None,
             },
             agents,
+            coordination: CoordinationConfig::default(),
         }
     }
 

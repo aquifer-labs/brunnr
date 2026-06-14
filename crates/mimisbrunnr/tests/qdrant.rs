@@ -44,6 +44,11 @@ async fn live_qdrant_vector_backend_satisfies_memory_contract() {
             tier: MemoryTier::L1Atom,
             node_id: Some("node:qdrant".to_string()),
             created_at: None,
+            scope: None,
+            agent_id: None,
+            session_id: None,
+            task_id: None,
+            user_id: None,
         })
         .await
         .expect("store should succeed");
@@ -55,6 +60,11 @@ async fn live_qdrant_vector_backend_satisfies_memory_contract() {
             tier: MemoryTier::L1Atom,
             node_id: Some("node:qdrant-rrf".to_string()),
             created_at: None,
+            scope: None,
+            agent_id: None,
+            session_id: None,
+            task_id: None,
+            user_id: None,
         })
         .await
         .expect("second store should succeed");

@@ -57,14 +57,16 @@ pub struct Filter {
 
 impl Filter {
     pub fn node_id(node_id: impl Into<String>) -> Self {
-        Self {
-            must: vec![FilterCondition::Eq {
-                field: "node_id".to_string(),
-                value: FilterValue::String(node_id.into()),
-            }],
-            should: Vec::new(),
-            must_not: Vec::new(),
-        }
+        let mut filter = Self::default();
+        filter.must_eq("node_id", node_id);
+        filter
+    }
+
+    pub fn must_eq(&mut self, field: impl Into<String>, value: impl Into<String>) {
+        self.must.push(FilterCondition::Eq {
+            field: field.into(),
+            value: FilterValue::String(value.into()),
+        });
     }
 
     pub fn is_empty(&self) -> bool {

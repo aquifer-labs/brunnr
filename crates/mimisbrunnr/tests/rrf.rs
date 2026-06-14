@@ -17,6 +17,11 @@ fn record(id: &str, node_id: &str) -> MemoryRecord {
         metadata: BTreeMap::new(),
         tier: MemoryTier::L1Atom,
         created_at: Utc::now(),
+        scope: None,
+        agent_id: None,
+        session_id: None,
+        task_id: None,
+        user_id: None,
     }
 }
 
