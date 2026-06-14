@@ -78,5 +78,7 @@ Brunnr stands on the shoulders of prior work and public ideas. Brunnr reuses ide
 - **TencentDB Agent Memory** — https://github.com/TencentCloud/TencentDB-Agent-Memory (L0–L3 tiering, hybrid BM25+vector RRF, node_id drill-down, sqlite-vec local-first; `SqliteVecBackend` + `TencentDBBackend`).
 - **OpenAI — Codex Memories & Agent Loop** — https://developers.openai.com/codex/memories · https://openai.com/index/unrolling-the-codex-agent-loop/ (memory model + the agent loop).
 - **Anthropic — Claude Code Agent Memory & Agent Loop** — https://platform.claude.com/docs/en/managed-agents/memory · https://code.claude.com/docs/en/agent-sdk/agent-loop (memory + the agent loop).
+- **ApX Machine Learning — Agentic LLM Systems & Memory Architectures** (course) — https://apxml.com/courses/agentic-llm-memory-architectures (conceptual framing for memory, retrieval, consolidation, planning, and multi-agent design; cited per-topic in `docs/`).
 
-Prior art also includes OpenAI Symphony and Cursor scaling-agents.
+Prior art also includes OpenAI Symphony and Cursor scaling-agents. Citations are references to
+public ideas/APIs and link to the sources; no third-party source text is reproduced.

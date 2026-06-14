@@ -209,6 +209,17 @@ The normalized `Filter` (`eq`/`in`/`range`/`exists` with `must`/`should`/`must_n
 `types`/`vector.rs`) is the only query DSL consumers touch; each adapter translates it to native
 filters. Engine specifics (metric names, id types, index knobs) never leak above `VectorStore`.
 
+### 4.1 Structured / graph memory [planned, future]
+
+Vector search finds *similar* text; some questions need *exact* relations ("which tasks block
+X?", "what did decision D change?"). A future `StructuredMemory` backend (behind the same
+`MemoryBackend` contract) will hold a knowledge graph (entities + edges) and/or relational rows,
+queried precisely (Cypher/SQL) and used **hybrid** with vectors: semantic search to find a region,
+then a structured query for exact facts (entity linking, KG-augmented retrieval). The current
+`node_id` drill-down + L0–L3 tiers are already a lightweight graph; a full KG is the next step.
+Any generated query runs read-only/validated (injection-safe). Ref: Hogan et al., *Knowledge
+Graphs* (2021).
+
 ---
 
 ## 5. Short-term memory [planned]
@@ -278,6 +289,18 @@ drill-down fetches raw evidence only on demand, so the common path pays for summ
 transcripts. Local embedding (fastembed) adds bounded latency (~10–50 ms/query) and **zero
 tokens**, so the retrieval path is a net token win, not a cost.
 
+Additional levers Brunnr uses or exposes (each cheap or opt-in):
+
+- **Embedding cache** — passages are embedded once on write; query embeddings can be cached, so
+  repeats cost nothing.
+- **Batching** — bulk reads/writes are batched to cut round-trips.
+- **Index tuning** — HNSW `ef_search`/`ef_construct` trade recall vs latency.
+- **Rerank → smaller k** — an optional reranker (§3.5) lets a smaller final $k$ carry the same
+  relevance, shortening the injected context.
+- **Semantic tool selection** — when an agent has many MCP tools, embed their descriptions and
+  inject only the relevant subset (see [orchestration.md](orchestration.md)); a large prompt-token
+  saving on tool-heavy agents.
+
 ---
 
 ## 8. Memory lifecycle — consolidation, decay, pruning [planned, opt-in]
@@ -328,5 +351,8 @@ store; turning it on adds curation without changing how the agent is driven.
 - LangChain Memory & LlamaIndex Memory — practical short-term buffer/window/summary mechanisms.
 - TencentDB Agent Memory — L0–L3 tiering, hybrid recall, node_id drill-down.
   https://github.com/TencentCloud/TencentDB-Agent-Memory
+- Hogan et al., *Knowledge Graphs* (MIT Press, 2021) — structured/graph memory.
+- Gao et al., *Retrieval-Augmented Generation for LLMs: A Survey* (2023) — retrieval optimization.
+  https://arxiv.org/abs/2312.10997
 - ApX, *Agentic LLM Systems & Memory Architectures*, Chapter 3 — conceptual framing.
   https://apxml.com/courses/agentic-llm-memory-architectures

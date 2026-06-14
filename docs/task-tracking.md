@@ -46,6 +46,26 @@ standalone `tasks` mode the human moves the task. A **single mutation authority*
 state transitions (the orchestrator, or the CLI lock) to prevent duplicate claims — the
 anti-race lesson from Symphony.
 
+### Tasks form a DAG (dependencies → parallelism + targeted retry)
+
+`Erindi.blockers` are edges: tasks form a **directed acyclic graph**, not a flat list. This lets
+independent sub-tasks run in **parallel workers**, encodes prerequisites explicitly, and isolates
+a failed sub-task for retry without restarting the plan. Decomposition (by the planner/master)
+refines **compound** tasks into **primitive** (directly executable) ones — a Hierarchical Task
+Network style — emitting the DAG.
+
+```mermaid
+flowchart LR
+  G[Goal] --> A[subtask A]
+  G --> B[subtask B]
+  A --> C[subtask C depends on A]
+  B --> C
+  C --> D[subtask D]
+```
+
+A task is dispatch-eligible only when all its blockers are terminal — the standard DAG-ready rule.
+References: Russell & Norvig, *AIMA* Ch. 11 (HTN); linear-vs-DAG task representation.
+
 ## 3. Storage seam — `TaskStore` [planned]
 
 Mirror the memory design exactly: a thin trait with interchangeable backends.
