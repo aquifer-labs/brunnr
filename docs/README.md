@@ -14,6 +14,7 @@ Start here, then read the topic you need:
 | [modes.md](modes.md) | Operating modes: `memory`, `orchestrate`, `full`, `advanced` |
 | [memory.md](memory.md) | Mímisbrunnr memory: short/long-term, retrieval math, tiers |
 | [backends.md](backends.md) | Memory backends (Files, sqlite-vec, Qdrant) and RRF per backend |
+| [concurrency.md](concurrency.md) | Concurrency & multi-tenancy: many agents/users, parallel access |
 | [orchestration.md](orchestration.md) | Urðarbrunnr: master/worker/judge, topologies, router |
 | [task-tracking.md](task-tracking.md) | Þing task tracker: DAG, md/vector/external (Jira, Linear) |
 | [self-repair.md](self-repair.md) | Surviving context auto-compaction |

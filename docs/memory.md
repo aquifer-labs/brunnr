@@ -66,7 +66,7 @@ Every long-term unit is a `MemoryRecord` (`crates/mimisbrunnr/src/types.rs`):
 | `id` | content-derived stable id (dedup key) |
 | `node_id` | deterministic handle for drill-down from a summary to ground truth |
 | `content` | the embedded text |
-| `tags`, `metadata` | filterable payload |
+| `tags`, `metadata` | filterable payload (incl. tenancy: `scope`/`agent_id`/`session_id`/`task_id`/`user_id` — see [concurrency.md](concurrency.md)) |
 | `tier` | `L0Raw` \| `L1Atom` \| `L2Scenario` \| `L3Project` |
 | `created_at` | timestamp (date-tagged on disk) |
 
