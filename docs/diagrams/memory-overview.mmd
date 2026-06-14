@@ -1,0 +1,19 @@
+flowchart LR
+  Agent[Agent core]:::agent
+  subgraph STM["Short-term memory"]
+    W[Working buffer: recent turns]:::stm
+    A[Session anchor: task, plan ptr, next step]:::stm
+  end
+  subgraph LTM["Long-term memory"]
+    V[(Vector store: tiered records)]:::ltm
+    F[(Files: OKF md)]:::ltm
+  end
+  Agent -->|store durable learnings| LTM
+  Agent -->|recent state| STM
+  STM -->|consolidate / summarize| LTM
+  LTM -->|find: top-k relevant slice| Agent
+  A -->|self-repair after compaction| Agent
+
+  classDef agent fill:#fef9c3,stroke:#ca8a04,color:#422006;
+  classDef stm fill:#ecfeff,stroke:#06b6d4,color:#083344;
+  classDef ltm fill:#dcfce7,stroke:#16a34a,color:#052e16;
