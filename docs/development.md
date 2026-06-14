@@ -31,3 +31,16 @@ cargo brunnr-build
 
 Use `cargo test --workspace` to verify default features and
 `cargo test --workspace --all-features` to verify optional backends such as Qdrant.
+
+## Diagrams
+
+Hero diagrams live in `docs/diagrams/*.mmd` and are rendered to committed PNGs:
+
+```shell
+just diagrams
+```
+
+The target uses `npx -y @mermaid-js/mermaid-cli`, so no global Mermaid install is required. The
+renderer needs Node.js and a working headless Chromium/Puppeteer runtime; on CI this is provided
+by `ubuntu-latest`, while local Linux systems may need Chromium runtime libraries from the
+distribution package manager.

@@ -47,23 +47,7 @@ raw logs.
 Agents do **not** stream long messages to each other (expensive, lossy). They coordinate
 **indirectly** through shared state — the recommended token-efficient MAS topology:
 
-```mermaid
-flowchart LR
-  M[Óðinn / master]:::master -->|writes tasks| Q[(Þing — task DAG)]:::board
-  Q -->|claim| W[Þórr / worker]:::worker
-  W -->|writes results + learnings| MEM[(Mímisbrunnr — memory)]:::board
-  W -->|done?| J[Týr / judge]:::judge
-  J -->|accept: commit| Q
-  J -->|reject: retry or block| Q
-  MEM -->|find: only relevant slice| M
-  MEM --> W
-  MEM --> J
-
-  classDef master fill:#fef9c3,stroke:#ca8a04,color:#422006;
-  classDef worker fill:#dcfce7,stroke:#16a34a,color:#052e16;
-  classDef judge fill:#fee2e2,stroke:#dc2626,color:#450a0a;
-  classDef board fill:#f1f5f9,stroke:#64748b,color:#0f172a;
-```
+[![Orchestrator blackboard](diagrams/orchestrator-blackboard.png)](diagrams/orchestrator-blackboard.mmd)
 
 A **single mutation authority** serializes task-state changes (anti-race; from Symphony). The
 blackboard is the task DAG (Þing) plus long-term memory (Mímisbrunnr); each agent reads only the

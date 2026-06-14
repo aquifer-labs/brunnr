@@ -4,6 +4,8 @@
 
 Brunnr is a Rust workspace for multi-agent context orchestration. It starts with a non-intrusive memory layer and grows into optional master, worker, judge orchestration with pluggable agents, pluggable memory backends, and MCP-first integration.
 
+[![System map](docs/diagrams/system-map.png)](docs/diagrams/system-map.mmd)
+
 ## Status
 
 This repository is in bootstrap. The working path is `memory` mode with local Files or SqliteVec backends, optional Qdrant integration, and an MCP server exposing `memory.find` and `memory.store`.

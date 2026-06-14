@@ -4,7 +4,8 @@
 
 **Mermaid is the source of truth.** Inline ` ```mermaid ` blocks in the docs render natively on
 GitHub, diff cleanly, and stay editable. For a few **hero** diagrams (README + architecture
-overview) we additionally render polished PNGs with a shared brand theme.
+overview) we additionally render polished PNGs with a shared brand theme. If a hero's inline
+Mermaid and its `.mmd` source ever differ, the `.mmd` source wins.
 
 ## Layout
 

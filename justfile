@@ -20,4 +20,15 @@ build:
     cargo build --workspace
     cargo build --workspace --all-features
 
+diagrams:
+    for source in docs/diagrams/*.mmd; do \
+        output="${source%.mmd}.png"; \
+        npx -y @mermaid-js/mermaid-cli \
+            -i "$source" \
+            -o "$output" \
+            -c docs/diagrams/mermaid-config.json \
+            -b transparent \
+            -s 2; \
+    done
+
 ci: fmt clippy test build

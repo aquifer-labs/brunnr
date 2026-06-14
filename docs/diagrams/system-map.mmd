@@ -1,15 +1,14 @@
-flowchart TD
+flowchart LR
   subgraph agents["Your agents — unchanged workflow"]
-    direction LR
+    direction TB
     CC[Claude Code]:::agent
     CX[Codex]:::agent
     ZD[Zed]:::agent
     OC[opencode]:::agent
   end
-  agents -->|MCP| MCP
 
   subgraph surfaces["Integration surfaces"]
-    direction LR
+    direction TB
     MCP[brunnr-mcp]:::surface
     CLI["brunnr-cli / brunnrd"]:::surface
     TUI["bifrost — TUI"]:::surface
@@ -18,25 +17,27 @@ flowchart TD
   subgraph core["Core"]
     CORE[brunnr-core]:::core
   end
-  MCP --> CORE
-  CLI --> CORE
-  TUI --> CORE
 
   subgraph caps["Capabilities — opt-in"]
-    direction LR
+    direction TB
     MEM[mimisbrunnr — memory]:::cap
     TASKS[thingr — task tracking]:::cap
     SBX[hvergelmir — sandbox]:::cap
   end
-  CORE --> MEM
-  CORE --> TASKS
-  CORE --> SBX
 
   subgraph stores["Memory stores"]
-    direction LR
+    direction TB
     VS[("VectorStore: qdrant / sqlite-vec")]:::store
     FB[("Files: OKF bundle")]:::store
   end
+
+  agents -->|MCP| MCP
+  MCP --> CORE
+  CLI --> CORE
+  TUI --> CORE
+  CORE --> MEM
+  CORE --> TASKS
+  CORE --> SBX
   MEM --> VS
   MEM --> FB
 

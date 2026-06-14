@@ -29,33 +29,13 @@ targeted recall of a few hundred tokens substitutes for thousands of tokens of r
 which is both cheaper and more focused. This is the same lever the Brunnr project itself was
 created to pull.
 
+[![Memory overview](diagrams/memory-overview.png)](diagrams/memory-overview.mmd)
+
 > **Design principle — cheap by default, smart on demand.** The default memory path is a local
 > embedding plus a rank fusion: no extra LLM calls, ~tens of ms, zero added tokens. Every
 > sophistication that costs an LLM call or real latency (reranking, HyDE, multi-query,
 > reflection, consolidation) is **opt-in** and **off by default**, so "memory mode" never changes
 > how you drive your agent — it only makes it cheaper and sharper.
-
-```mermaid
-flowchart LR
-  Agent[Agent core]:::agent
-  subgraph STM["Short-term memory · implemented seam"]
-    W[Working buffer: recent turns]:::stm
-    A[Session anchor: task, plan ptr, next step]:::stm
-  end
-  subgraph LTM["Long-term memory · implemented"]
-    V[(Vector store: tiered records)]:::ltm
-    F[(Files: OKF md)]:::ltm
-  end
-  Agent -->|store durable learnings| LTM
-  Agent -->|recent state| STM
-  STM -->|consolidate / summarize| LTM
-  LTM -->|find: top-k relevant slice| Agent
-  A -->|self-repair after compaction| Agent
-
-  classDef agent fill:#fef9c3,stroke:#ca8a04,color:#422006;
-  classDef stm fill:#ecfeff,stroke:#06b6d4,color:#083344;
-  classDef ltm fill:#dcfce7,stroke:#16a34a,color:#052e16;
-```
 
 ---
 
