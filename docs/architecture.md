@@ -14,19 +14,52 @@ This page is the map; each concern has its own doc.
 
 ```mermaid
 flowchart TD
-  subgraph agents["Your agents (unchanged workflow)"]
-    CC[Claude Code]; CX[Codex]; ZD[Zed]; OC[opencode]
+  subgraph agents["Your agents — unchanged workflow"]
+    direction LR
+    CC[Claude Code]:::agent
+    CX[Codex]:::agent
+    ZD[Zed]:::agent
+    OC[opencode]:::agent
   end
-  agents -->|MCP| MCP[brunnr-mcp]
-  CLI[brunnr-cli / brunnrd]; TUI[bifrost — TUI]
-  MCP --> CORE[brunnr-core]
+  agents -->|MCP| MCP
+
+  subgraph surfaces["Integration surfaces"]
+    direction LR
+    MCP[brunnr-mcp]:::surface
+    CLI["brunnr-cli / brunnrd"]:::surface
+    TUI["bifrost — TUI"]:::surface
+  end
+
+  subgraph core["Core"]
+    CORE[brunnr-core]:::core
+  end
+  MCP --> CORE
   CLI --> CORE
   TUI --> CORE
-  CORE --> MEM[mimisbrunnr — memory]
-  CORE --> TASKS[thingr — task tracking]
-  CORE --> SBX[hvergelmir — optional sandbox]
-  MEM --> VS[(VectorStore: qdrant | sqlite-vec)]
-  MEM --> FB[(Files: OKF bundle)]
+
+  subgraph caps["Capabilities — opt-in"]
+    direction LR
+    MEM[mimisbrunnr — memory]:::cap
+    TASKS[thingr — task tracking]:::cap
+    SBX[hvergelmir — sandbox]:::cap
+  end
+  CORE --> MEM
+  CORE --> TASKS
+  CORE --> SBX
+
+  subgraph stores["Memory stores"]
+    direction LR
+    VS[("VectorStore: qdrant / sqlite-vec")]:::store
+    FB[("Files: OKF bundle")]:::store
+  end
+  MEM --> VS
+  MEM --> FB
+
+  classDef agent fill:#eef2ff,stroke:#6366f1,color:#1e1b4b;
+  classDef surface fill:#ecfeff,stroke:#06b6d4,color:#083344;
+  classDef core fill:#fef9c3,stroke:#ca8a04,color:#422006;
+  classDef cap fill:#dcfce7,stroke:#16a34a,color:#052e16;
+  classDef store fill:#f1f5f9,stroke:#64748b,color:#0f172a;
 ```
 
 ## Crates (strict boundaries, trait seams)

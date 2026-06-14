@@ -37,19 +37,24 @@ created to pull.
 
 ```mermaid
 flowchart LR
-  subgraph STM["Short-term memory [planned]"]
-    W[Working buffer: recent turns]
-    A[Session anchor: task, plan ptr, next step]
+  Agent[Agent core]:::agent
+  subgraph STM["Short-term memory · planned"]
+    W[Working buffer: recent turns]:::stm
+    A[Session anchor: task, plan ptr, next step]:::stm
   end
-  subgraph LTM["Long-term memory [implemented]"]
-    V[(Vector store: tiered records)]
-    F[(Files: date-tagged md)]
+  subgraph LTM["Long-term memory · implemented"]
+    V[(Vector store: tiered records)]:::ltm
+    F[(Files: date-tagged md)]:::ltm
   end
-  Agent[Agent core] -->|store durable learnings| LTM
+  Agent -->|store durable learnings| LTM
   Agent -->|recent state| STM
   STM -->|consolidate / summarize| LTM
   LTM -->|find: top-k relevant slice| Agent
   A -->|self-repair after compaction| Agent
+
+  classDef agent fill:#fef9c3,stroke:#ca8a04,color:#422006;
+  classDef stm fill:#ecfeff,stroke:#06b6d4,color:#083344;
+  classDef ltm fill:#dcfce7,stroke:#16a34a,color:#052e16;
 ```
 
 ---
@@ -105,7 +110,7 @@ Relevance between a query embedding $q$ and a record embedding $d$ is cosine sim
 configured `Distance::Cosine`):
 
 ```math
-\operatorname{sim}(q, d) = \cos\theta = \frac{q \cdot d}{\lVert q\rVert\,\lVert d\rVert}
+\mathrm{sim}(q, d) = \cos\theta = \frac{q \cdot d}{\lVert q\rVert\,\lVert d\rVert}
 = \frac{\sum_{i=1}^{384} q_i d_i}{\sqrt{\sum_{i=1}^{384} q_i^2}\,\sqrt{\sum_{i=1}^{384} d_i^2}}
 ```
 
@@ -121,7 +126,7 @@ paraphrase. Brunnr runs **both channels** and fuses them with Reciprocal Rank Fu
 channel $c$:
 
 ```math
-\operatorname{RRF}(d) = \sum_{c \in \{\text{keyword},\,\text{vector}\}} \frac{1}{k + r_c(d)},
+\mathrm{RRF}(d) = \sum_{c \in \{\text{keyword},\,\text{vector}\}} \frac{1}{k + r_c(d)},
 \qquad k = 60
 ```
 
@@ -142,7 +147,7 @@ sequenceDiagram
   participant Ag as Agent
   participant VM as VectorMemoryBackend
   participant Em as Fastembed (e5-small)
-  participant VS as VectorStore (qdrant | sqlite-vec)
+  participant VS as VectorStore (qdrant / sqlite-vec)
   Ag->>VM: find(query)
   VM->>VS: keyword search (BM25/payload)
   VM->>Em: embed_query("query: …")
@@ -363,11 +368,11 @@ store; turning it on adds curation without changing how the agent is driven.
   convention used here. https://arxiv.org/abs/2402.05672
 - Malkov & Yashunin, *HNSW* (SDM 2018) — the ANN index class vector stores use.
   https://arxiv.org/abs/1603.09320
-- Johnson et al., *Billion-scale similarity search (FAISS)* (CVPR 2017).
-  https://ieeexplore.ieee.org/document/8099859
+- Johnson et al., *Billion-scale similarity search with GPUs (FAISS)* (2017).
+  https://arxiv.org/abs/1702.08734
 - Cormack, Clarke & Büttcher, *Reciprocal Rank Fusion outperforms Condorcet and individual rank
   learning methods* (SIGIR 2009) — RRF and the $k=60$ constant.
-  https://plg.uwaterloo.ca/~gvcormack/cormacksigir09-rrf.pdf
+  https://cormack.uwaterloo.ca/cormacksigir09-rrf.pdf
 - Park et al., *Generative Agents* (2023) — memory stream + reflection (short-term/long-term
   integration; decay-based importance). https://arxiv.org/abs/2304.03442
 - Nogueira & Cho, *Passage Re-ranking with BERT* (2019) — cross-encoder reranking stage.
@@ -383,7 +388,8 @@ store; turning it on adds curation without changing how the agent is driven.
   https://github.com/TencentCloud/TencentDB-Agent-Memory
 - Open Knowledge Format (OKF) v0.1, Google Cloud (Apache-2.0) — portable markdown+YAML knowledge
   bundles; the `FilesBackend` on-disk format. https://github.com/GoogleCloudPlatform/knowledge-catalog
-- Hogan et al., *Knowledge Graphs* (MIT Press, 2021) — structured/graph memory.
+- Hogan et al., *Knowledge Graphs* (2021) — structured/graph memory.
+  https://arxiv.org/abs/2003.02320
 - Gao et al., *Retrieval-Augmented Generation for LLMs: A Survey* (2023) — retrieval optimization.
   https://arxiv.org/abs/2312.10997
 - ApX, *Agentic LLM Systems & Memory Architectures*, Chapter 3 — conceptual framing.

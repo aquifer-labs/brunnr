@@ -49,15 +49,20 @@ Agents do **not** stream long messages to each other (expensive, lossy). They co
 
 ```mermaid
 flowchart LR
-  M[Óðinn / master] -->|writes tasks| Q[(Þing — task DAG)]
-  Q -->|claim| W[Þórr / worker]
-  W -->|writes results + learnings| MEM[(Mímisbrunnr — memory)]
-  W -->|done?| J[Týr / judge]
-  J -->|accept -> commit| Q
-  J -->|reject -> retry/block| Q
+  M[Óðinn / master]:::master -->|writes tasks| Q[(Þing — task DAG)]:::board
+  Q -->|claim| W[Þórr / worker]:::worker
+  W -->|writes results + learnings| MEM[(Mímisbrunnr — memory)]:::board
+  W -->|done?| J[Týr / judge]:::judge
+  J -->|accept: commit| Q
+  J -->|reject: retry or block| Q
   MEM -->|find: only relevant slice| M
   MEM --> W
   MEM --> J
+
+  classDef master fill:#fef9c3,stroke:#ca8a04,color:#422006;
+  classDef worker fill:#dcfce7,stroke:#16a34a,color:#052e16;
+  classDef judge fill:#fee2e2,stroke:#dc2626,color:#450a0a;
+  classDef board fill:#f1f5f9,stroke:#64748b,color:#0f172a;
 ```
 
 A **single mutation authority** serializes task-state changes (anti-race; from Symphony). The
@@ -162,7 +167,7 @@ caching. Orchestration never becomes the bottleneck the literature warns about.
 - Wang et al., *A Survey on LLM-based Autonomous Agents* (2023). https://arxiv.org/abs/2308.11432
 - Smith, *The Contract Net Protocol* (IEEE TC, 1980) — negotiated task allocation.
   https://doi.org/10.1109/TC.1980.1675516
-- FIPA ACL — agent communication language / message acts. http://www.fipa.org/specs/fipa00001/
+- FIPA ACL (FIPA, 2002) — agent communication language / message acts (standard reference).
 - Wu et al., *AutoGen* (2023) — multi-agent conversation/coordination patterns.
   https://arxiv.org/abs/2308.08155
 - ApX, *Agentic LLM Systems & Memory Architectures*, Chapters 4–5 — planning, tools, MAS.
