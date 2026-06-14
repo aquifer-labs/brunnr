@@ -5,8 +5,7 @@ use std::sync::Arc;
 use brunnr_mcp::{AnchorSetRequest, FindRequest, MemoryServer, StoreRequest, ToolsFindRequest};
 use brunnr_test_support::TempDir;
 use mimisbrunnr::{
-    Distance, MemoryResult, SqliteVecVectorStore, TextEmbedder, VectorMemoryBackend,
-    VectorMemoryConfig,
+    MemoryResult, SqliteVecVectorStore, TextEmbedder, VectorMemoryBackend, VectorMemoryConfig,
 };
 use rmcp::handler::server::wrapper::Parameters;
 
@@ -118,7 +117,7 @@ async fn memory_tools_store_and_find_with_sqlite_vec_backend() {
         VectorMemoryConfig {
             collection: "mcp_sqlite".to_string(),
             dimensions: TEST_DIMENSIONS,
-            distance: Distance::Cosine,
+            ..VectorMemoryConfig::new("mcp_sqlite")
         },
         Arc::new(TestEmbedder),
     )

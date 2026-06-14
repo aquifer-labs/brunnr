@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use brunnr_test_support::TempDir;
 use mimisbrunnr::{
-    Distance, FilesBackend, MemoryBackend, MemoryQuery, MemoryResult, MemoryScope, MemoryTier,
+    FilesBackend, MemoryBackend, MemoryQuery, MemoryResult, MemoryScope, MemoryTier,
     SqliteVecVectorStore, StoreMemory, TextEmbedder, VectorMemoryBackend, VectorMemoryConfig,
 };
 
@@ -23,7 +23,7 @@ async fn sqlite_vec_backend_isolates_concurrent_task_scopes() {
         VectorMemoryConfig {
             collection: "concurrency".to_string(),
             dimensions: TEST_DIMENSIONS,
-            distance: Distance::Cosine,
+            ..VectorMemoryConfig::new("concurrency")
         },
         Arc::new(TestEmbedder),
     )

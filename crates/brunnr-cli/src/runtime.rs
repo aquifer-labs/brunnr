@@ -141,6 +141,10 @@ fn open_qdrant_backend(config: &MemoryConfig) -> Result<Arc<dyn MemoryBackend>> 
         .or_else(|| env::var("QDRANT_URL").ok())
         .context("Qdrant backend requires qdrant_url in config or QDRANT_URL")?;
     let mut vector_config = QdrantVectorStoreConfig::new(url);
+    vector_config.rest_url = config
+        .qdrant_rest_url
+        .clone()
+        .or_else(|| env::var("QDRANT_REST_URL").ok());
     if let Some(env_name) = &config.qdrant_api_key_env {
         vector_config.api_key = env::var(env_name).ok();
     }

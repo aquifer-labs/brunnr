@@ -15,8 +15,9 @@ use brunnr_core::{
 use brunnr_process_agent::{ProcessAgent, ProcessAgentConfig};
 use clap::{Parser, Subcommand, ValueEnum};
 use mimisbrunnr::{
-    backfill_directory, recover_after_compaction, MemoryBackend, MemoryQuery, MemoryScope,
-    MemoryTier, MuninnAnchorStore, SessionAnchor, StoreMemory,
+    backfill_directory, default_migration_collection, export_okf_bundle, recover_after_compaction,
+    verify_okf_bundle, CollectionCompat, MemoryBackend, MemoryQuery, MemoryScope, MemoryTier,
+    MigrationPlan, MuninnAnchorStore, SessionAnchor, StoreMemory, VectorMemoryConfig,
 };
 use serde_json::{json, Value};
 use thingr::{
@@ -40,6 +41,16 @@ struct Cli {
     command: Command,
 }
 
+struct InitOptions {
+    memory_root: PathBuf,
+    backend: BackendArg,
+    collection: String,
+    qdrant_url: Option<String>,
+    qdrant_rest_url: Option<String>,
+    qdrant_api_key_env: String,
+    register_mcp: bool,
+}
+
 #[derive(Debug, Subcommand)]
 enum Command {
     Init {
@@ -51,6 +62,8 @@ enum Command {
         collection: String,
         #[arg(long, env = "QDRANT_URL")]
         qdrant_url: Option<String>,
+        #[arg(long, env = "QDRANT_REST_URL")]
+        qdrant_rest_url: Option<String>,
         #[arg(long, default_value = "QDRANT_API_KEY")]
         qdrant_api_key_env: String,
         #[arg(long)]
@@ -103,6 +116,33 @@ enum Command {
         #[arg(long, value_enum)]
         backend: Option<BackendArg>,
     },
+    Migrate {
+        okf_root: PathBuf,
+        #[arg(long, default_value = DEFAULT_CONFIG)]
+        config: PathBuf,
+        #[arg(long)]
+        new_collection: Option<String>,
+        #[arg(long, default_value_t = 30)]
+        retention_days: u32,
+    },
+    Snapshot {
+        #[arg(long, default_value = DEFAULT_CONFIG)]
+        config: PathBuf,
+        #[arg(long)]
+        output_dir: PathBuf,
+        #[arg(long)]
+        collection: Option<String>,
+    },
+    Okf {
+        #[command(subcommand)]
+        command: OkfCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum OkfCommand {
+    Verify { root: PathBuf },
+    Export { source: PathBuf, target: PathBuf },
 }
 
 #[derive(Debug, Subcommand)]
@@ -303,17 +343,21 @@ async fn main() -> Result<()> {
             backend,
             collection,
             qdrant_url,
+            qdrant_rest_url,
             qdrant_api_key_env,
             non_interactive,
             register_mcp,
         } => init(
-            memory_root,
-            backend,
-            collection,
-            qdrant_url,
-            qdrant_api_key_env,
+            InitOptions {
+                memory_root,
+                backend,
+                collection,
+                qdrant_url,
+                qdrant_rest_url,
+                qdrant_api_key_env,
+                register_mcp,
+            },
             non_interactive,
-            register_mcp,
         ),
         Command::Spawn {
             role,
@@ -341,6 +385,18 @@ async fn main() -> Result<()> {
             root,
             backend,
         } => backfill(directory, config, root, backend).await,
+        Command::Migrate {
+            okf_root,
+            config,
+            new_collection,
+            retention_days,
+        } => migrate(okf_root, config, new_collection, retention_days).await,
+        Command::Snapshot {
+            config,
+            output_dir,
+            collection,
+        } => snapshot(config, output_dir, collection).await,
+        Command::Okf { command } => okf(command),
     }
 }
 
@@ -423,26 +479,19 @@ async fn task(command: TaskCommand) -> Result<()> {
     Ok(())
 }
 
-fn init(
-    memory_root: PathBuf,
-    backend: BackendArg,
-    collection: String,
-    qdrant_url: Option<String>,
-    qdrant_api_key_env: String,
-    _non_interactive: bool,
-    register_mcp: bool,
-) -> Result<()> {
-    fs::create_dir_all(memory_root.join("memory"))
-        .with_context(|| format!("create memory root {}", memory_root.display()))?;
+fn init(options: InitOptions, _non_interactive: bool) -> Result<()> {
+    fs::create_dir_all(options.memory_root.join("memory"))
+        .with_context(|| format!("create memory root {}", options.memory_root.display()))?;
     let agents = detect_agents();
     let config = BrunnrConfig {
         mode: brunnr_core::Mode::Memory,
         memory: MemoryConfig {
-            backend: backend.into(),
-            root: memory_root.display().to_string(),
-            collection,
-            qdrant_url,
-            qdrant_api_key_env: Some(qdrant_api_key_env),
+            backend: options.backend.into(),
+            root: options.memory_root.display().to_string(),
+            collection: options.collection,
+            qdrant_url: options.qdrant_url,
+            qdrant_rest_url: options.qdrant_rest_url,
+            qdrant_api_key_env: Some(options.qdrant_api_key_env),
         },
         agents,
         coordination: Default::default(),
@@ -451,12 +500,12 @@ fn init(
     if !config_path.exists() {
         fs::write(config_path, config.to_toml()?)?;
     }
-    if register_mcp {
+    if options.register_mcp {
         write_mcp_registrations(&env::current_dir()?.join(config_path))?;
     }
     println!(
         "initialized Brunnr memory mode at {}",
-        memory_root.display()
+        options.memory_root.display()
     );
     Ok(())
 }
@@ -654,6 +703,120 @@ async fn backfill(
     Ok(())
 }
 
+async fn migrate(
+    okf_root: PathBuf,
+    config_path: PathBuf,
+    new_collection: Option<String>,
+    retention_days: u32,
+) -> Result<()> {
+    let config = load_config(&config_path)?;
+    if config.memory.backend != MemoryBackendKind::Qdrant {
+        bail!("brunnr migrate currently requires backend = qdrant for atomic alias swap");
+    }
+    let vector_config = VectorMemoryConfig::new(&config.memory.collection);
+    let compat = CollectionCompat::from_config(&vector_config);
+    let plan = MigrationPlan {
+        okf_root,
+        alias: config.memory.collection.clone(),
+        new_collection: new_collection
+            .unwrap_or_else(|| default_migration_collection(&config.memory.collection, &compat)),
+        retention_days,
+        config: vector_config,
+    };
+    let report = migrate_qdrant(&config.memory, plan).await?;
+    println!("{}", serde_json::to_string_pretty(&report)?);
+    Ok(())
+}
+
+async fn snapshot(
+    config_path: PathBuf,
+    output_dir: PathBuf,
+    collection: Option<String>,
+) -> Result<()> {
+    let config = load_config(&config_path)?;
+    if config.memory.backend != MemoryBackendKind::Qdrant {
+        bail!(
+            "brunnr snapshot currently requires backend = qdrant; use brunnr okf export for files"
+        );
+    }
+    let collection = collection.unwrap_or_else(|| config.memory.collection.clone());
+    let report = snapshot_qdrant(&config.memory, &collection, &output_dir).await?;
+    println!("{}", serde_json::to_string_pretty(&report)?);
+    Ok(())
+}
+
+fn okf(command: OkfCommand) -> Result<()> {
+    match command {
+        OkfCommand::Verify { root } => {
+            let report = verify_okf_bundle(root)?;
+            println!("{}", serde_json::to_string_pretty(&report)?);
+        }
+        OkfCommand::Export { source, target } => {
+            let report = export_okf_bundle(source, target)?;
+            println!("{}", serde_json::to_string_pretty(&report)?);
+        }
+    }
+    Ok(())
+}
+
+#[cfg(feature = "qdrant")]
+async fn migrate_qdrant(
+    memory: &MemoryConfig,
+    plan: MigrationPlan,
+) -> Result<mimisbrunnr::MigrationReport> {
+    use mimisbrunnr::{migrate_okf_bundle, FastembedTextEmbedder, QdrantVectorStore};
+
+    let store = QdrantVectorStore::connect(qdrant_config(memory)?)?;
+    Ok(migrate_okf_bundle(&store, plan, Arc::new(FastembedTextEmbedder::new()?)).await?)
+}
+
+#[cfg(not(feature = "qdrant"))]
+async fn migrate_qdrant(
+    _memory: &MemoryConfig,
+    _plan: MigrationPlan,
+) -> Result<mimisbrunnr::MigrationReport> {
+    bail!("brunnr migrate requires building brunnr-cli with the qdrant feature")
+}
+
+#[cfg(feature = "qdrant")]
+async fn snapshot_qdrant(
+    memory: &MemoryConfig,
+    collection: &str,
+    output_dir: &Path,
+) -> Result<mimisbrunnr::SnapshotReport> {
+    use mimisbrunnr::{QdrantVectorStore, VectorCollectionAdmin};
+
+    let store = QdrantVectorStore::connect(qdrant_config(memory)?)?;
+    Ok(store.snapshot_collection(collection, output_dir).await?)
+}
+
+#[cfg(not(feature = "qdrant"))]
+async fn snapshot_qdrant(
+    _memory: &MemoryConfig,
+    _collection: &str,
+    _output_dir: &Path,
+) -> Result<mimisbrunnr::SnapshotReport> {
+    bail!("brunnr snapshot requires building brunnr-cli with the qdrant feature")
+}
+
+#[cfg(feature = "qdrant")]
+fn qdrant_config(memory: &MemoryConfig) -> Result<mimisbrunnr::QdrantVectorStoreConfig> {
+    let url = memory
+        .qdrant_url
+        .clone()
+        .or_else(|| env::var("QDRANT_URL").ok())
+        .context("Qdrant backend requires qdrant_url in config or QDRANT_URL")?;
+    let mut config = mimisbrunnr::QdrantVectorStoreConfig::new(url);
+    config.rest_url = memory
+        .qdrant_rest_url
+        .clone()
+        .or_else(|| env::var("QDRANT_REST_URL").ok());
+    if let Some(env_name) = &memory.qdrant_api_key_env {
+        config.api_key = env::var(env_name).ok();
+    }
+    Ok(config)
+}
+
 fn open_backend_for_command(
     config_path: &Path,
     root: PathBuf,
@@ -683,6 +846,7 @@ fn memory_config_for_command(
             root: root.display().to_string(),
             collection: "brunnr-memory".to_string(),
             qdrant_url: env::var("QDRANT_URL").ok(),
+            qdrant_rest_url: env::var("QDRANT_REST_URL").ok(),
             qdrant_api_key_env: Some("QDRANT_API_KEY".to_string()),
         }
     };

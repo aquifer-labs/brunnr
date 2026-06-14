@@ -8,9 +8,9 @@ use std::{
 use brunnr_test_support::TempDir;
 use futures_util::{future::BoxFuture, FutureExt};
 use mimisbrunnr::{
-    Distance, FilesBackend, MemoryBackend, MemoryId, MemoryQuery, MemoryRecord, MemoryResult,
-    MemoryScope, MemoryTier, RrfOptions, SearchHit, SqliteVecVectorStore, StoreMemory,
-    TextEmbedder, VectorMemoryBackend, VectorMemoryConfig,
+    FilesBackend, MemoryBackend, MemoryId, MemoryQuery, MemoryRecord, MemoryResult, MemoryScope,
+    MemoryTier, RrfOptions, SearchHit, SqliteVecVectorStore, StoreMemory, TextEmbedder,
+    VectorMemoryBackend, VectorMemoryConfig,
 };
 
 #[derive(Debug, Default)]
@@ -130,7 +130,7 @@ async fn sqlite_vec_backend_satisfies_memory_contract() {
         VectorMemoryConfig {
             collection: "contract".to_string(),
             dimensions: TEST_DIMENSIONS,
-            distance: Distance::Cosine,
+            ..VectorMemoryConfig::new("contract")
         },
         Arc::new(TestEmbedder),
     )

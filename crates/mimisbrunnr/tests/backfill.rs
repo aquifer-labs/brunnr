@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use brunnr_test_support::TempDir;
 use mimisbrunnr::{
-    backfill_directory, Distance, FilesBackend, MemoryBackend, MemoryQuery, MemoryResult,
+    backfill_directory, FilesBackend, MemoryBackend, MemoryQuery, MemoryResult,
     SqliteVecVectorStore, TextEmbedder, VectorMemoryBackend, VectorMemoryConfig,
 };
 
@@ -40,7 +40,7 @@ async fn backfill_is_idempotent_for_sqlite_vec_backend() {
         VectorMemoryConfig {
             collection: "backfill".to_string(),
             dimensions: TEST_DIMENSIONS,
-            distance: Distance::Cosine,
+            ..VectorMemoryConfig::new("backfill")
         },
         Arc::new(TestEmbedder),
     )

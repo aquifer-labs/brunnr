@@ -1,0 +1,5 @@
+arm,runs,success_rate,mean_total_tokens,tokens_per_success,precision,recall
+A-baseline-full-context,6,1,170,170.0,0.333333,1.0
+B-brunnr-memory-find,6,1,68.666667,68.66666666666667,1.0,1.0
+C-built-in-memory,6,1,114,114.0,0.666667,1.0
+D-no-memory,6,0,17.333333,None,0.0,0.0

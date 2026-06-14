@@ -1488,6 +1488,7 @@ dependencies = [
  "fastembed",
  "futures-util",
  "qdrant-client",
+ "reqwest",
  "rusqlite",
  "serde",
  "serde_json",

@@ -18,6 +18,8 @@ struct Args {
     collection: String,
     #[arg(long, env = "QDRANT_URL")]
     qdrant_url: Option<String>,
+    #[arg(long, env = "QDRANT_REST_URL")]
+    qdrant_rest_url: Option<String>,
     #[arg(long, default_value = "QDRANT_API_KEY")]
     qdrant_api_key_env: String,
 }
@@ -78,6 +80,10 @@ fn load_runtime_config(args: &Args) -> anyhow::Result<RuntimeConfig> {
                 .qdrant_url
                 .clone()
                 .or_else(|| env::var("QDRANT_URL").ok()),
+            qdrant_rest_url: args
+                .qdrant_rest_url
+                .clone()
+                .or_else(|| env::var("QDRANT_REST_URL").ok()),
             qdrant_api_key_env: Some(args.qdrant_api_key_env.clone()),
         },
         router_enabled: false,

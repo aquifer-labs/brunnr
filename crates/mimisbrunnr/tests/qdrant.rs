@@ -13,9 +13,10 @@ use mimisbrunnr::{
 
 #[test]
 fn qdrant_vector_backend_pins_fastembed_model_and_dimensions() {
-    let config = QdrantVectorStoreConfig::new("http://127.0.0.1:6333");
+    let config = QdrantVectorStoreConfig::new("http://127.0.0.1:6334");
 
-    assert_eq!(config.url, "http://127.0.0.1:6333");
+    assert_eq!(config.url, "http://127.0.0.1:6334");
+    assert_eq!(config.rest_url, None);
     assert_eq!(PINNED_FASTEMBED_MODEL, "intfloat/multilingual-e5-small");
     assert_eq!(PINNED_FASTEMBED_DIMENSIONS, 384);
 }

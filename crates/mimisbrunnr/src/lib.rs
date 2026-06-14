@@ -5,6 +5,7 @@
 mod anchor;
 mod backend;
 mod backfill;
+mod compat;
 mod files;
 mod identity;
 #[cfg(feature = "qdrant")]
@@ -13,6 +14,7 @@ mod rrf;
 #[cfg(feature = "sqlite-vec")]
 mod sqlite_vec;
 mod types;
+mod upgrade;
 #[cfg(feature = "vector")]
 mod vector;
 #[cfg(feature = "vector")]
@@ -22,6 +24,7 @@ mod working;
 pub use anchor::{recover_after_compaction, MuninnAnchorStore, RecoveryContext, SessionAnchor};
 pub use backend::MemoryBackend;
 pub use backfill::{backfill_directory, BackfillStats};
+pub use compat::{CollectionCompat, COMPAT_POINT_ID, OKF_VERSION};
 pub use files::FilesBackend;
 #[cfg(feature = "qdrant")]
 pub use qdrant::{QdrantBackend, QdrantVectorStore, QdrantVectorStoreConfig};
@@ -31,6 +34,11 @@ pub use sqlite_vec::{SqliteVecBackend, SqliteVecVectorStore, SqliteVecVectorStor
 pub use types::{
     MemoryError, MemoryId, MemoryQuery, MemoryRecord, MemoryResult, MemoryScope, MemoryTier,
     RrfOptions, SearchHit, SearchSource, StoreMemory,
+};
+pub use upgrade::{
+    default_migration_collection, export_okf_bundle, migrate_okf_bundle, migration_manifest_path,
+    verify_okf_bundle, MigrationPlan, MigrationReport, OkfExportReport, OkfVerifyReport,
+    SnapshotReport, VectorCollectionAdmin,
 };
 #[cfg(feature = "vector")]
 pub use vector::{

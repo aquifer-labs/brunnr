@@ -9,8 +9,7 @@ fmt:
     cargo fmt --all --check
 
 clippy:
-    cargo clippy --workspace --all-targets -- -D warnings
-    cargo clippy -p mimisbrunnr --features qdrant --all-targets -- -D warnings
+    cargo clippy --workspace --all-targets --all-features -- -D warnings
 
 test:
     cargo test --workspace
@@ -30,5 +29,8 @@ diagrams:
             -b transparent \
             -s 2; \
     done
+
+bench:
+    python3 benchmarks/harness/run.py
 
 ci: fmt clippy test build

@@ -184,6 +184,48 @@ pub trait VectorStore: Send + Sync {
     fn capabilities(&self) -> VectorStoreCapabilities;
 }
 
+impl<T: VectorStore + ?Sized> VectorStore for &T {
+    fn ensure_collection(&self, collection: VectorCollection) -> BoxFuture<'_, MemoryResult<()>> {
+        (**self).ensure_collection(collection)
+    }
+
+    fn ensure_payload_index(
+        &self,
+        collection: &str,
+        index: PayloadIndex,
+    ) -> BoxFuture<'_, MemoryResult<()>> {
+        (**self).ensure_payload_index(collection, index)
+    }
+
+    fn upsert(
+        &self,
+        collection: &str,
+        points: Vec<VectorPoint>,
+    ) -> BoxFuture<'_, MemoryResult<()>> {
+        (**self).upsert(collection, points)
+    }
+
+    fn search(
+        &self,
+        collection: &str,
+        search: VectorSearch,
+    ) -> BoxFuture<'_, MemoryResult<Vec<VectorSearchHit>>> {
+        (**self).search(collection, search)
+    }
+
+    fn get(
+        &self,
+        collection: &str,
+        point_id: &str,
+    ) -> BoxFuture<'_, MemoryResult<Option<VectorPoint>>> {
+        (**self).get(collection, point_id)
+    }
+
+    fn capabilities(&self) -> VectorStoreCapabilities {
+        (**self).capabilities()
+    }
+}
+
 pub(crate) fn payload_matches_filter(payload: &Value, filter: &Filter) -> bool {
     let must = filter
         .must

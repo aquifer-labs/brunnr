@@ -1,0 +1,5 @@
+Tokens per success (lower is better)
+A-baseline-full-context        170.00 ########
+B-brunnr-memory-find            68.67 ###
+C-built-in-memory              114.00 #####
+D-no-memory                      0.00 #

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::collections::HashMap;
+use std::path::Path;
 
 use futures_util::{future::BoxFuture, FutureExt};
 use qdrant_client::{
@@ -16,9 +17,9 @@ use sha2::{Digest, Sha256};
 
 use crate::{
     vector::payload_matches_filter, Distance, Filter as MemoryFilter, FilterCondition, FilterValue,
-    MemoryError, MemoryResult, PayloadIndex, RangeFilter, VectorCollection, VectorMemoryBackend,
-    VectorMemoryConfig, VectorPoint, VectorSearch, VectorSearchHit, VectorSearchSource,
-    VectorStore, VectorStoreCapabilities,
+    MemoryError, MemoryResult, PayloadIndex, RangeFilter, SnapshotReport, VectorCollection,
+    VectorCollectionAdmin, VectorMemoryBackend, VectorMemoryConfig, VectorPoint, VectorSearch,
+    VectorSearchHit, VectorSearchSource, VectorStore, VectorStoreCapabilities,
 };
 
 pub type QdrantBackend = VectorMemoryBackend<QdrantVectorStore>;
@@ -26,6 +27,7 @@ pub type QdrantBackend = VectorMemoryBackend<QdrantVectorStore>;
 #[derive(Debug, Clone)]
 pub struct QdrantVectorStoreConfig {
     pub url: String,
+    pub rest_url: Option<String>,
     pub api_key: Option<String>,
 }
 
@@ -33,6 +35,7 @@ impl QdrantVectorStoreConfig {
     pub fn new(url: impl Into<String>) -> Self {
         Self {
             url: url.into(),
+            rest_url: None,
             api_key: None,
         }
     }
@@ -249,6 +252,104 @@ impl VectorStore for QdrantVectorStore {
     }
 }
 
+impl VectorCollectionAdmin for QdrantVectorStore {
+    fn active_collection(&self, alias: &str) -> BoxFuture<'_, MemoryResult<Option<String>>> {
+        let alias = alias.to_string();
+        async move {
+            let aliases = self.client.list_aliases().await.map_err(qdrant_error)?;
+            Ok(aliases
+                .aliases
+                .into_iter()
+                .find(|candidate| candidate.alias_name == alias)
+                .map(|candidate| candidate.collection_name))
+        }
+        .boxed()
+    }
+
+    fn swap_alias(
+        &self,
+        alias: &str,
+        old_collection: Option<&str>,
+        new_collection: &str,
+    ) -> BoxFuture<'_, MemoryResult<()>> {
+        let alias = alias.to_string();
+        let old_collection = old_collection.map(str::to_string);
+        let new_collection = new_collection.to_string();
+        async move {
+            if old_collection.as_deref() == Some(new_collection.as_str()) {
+                return Ok(());
+            }
+            let mut actions = Vec::new();
+            if old_collection.is_some() {
+                actions.push(serde_json::json!({
+                    "delete_alias": {
+                        "alias_name": alias
+                    }
+                }));
+            }
+            actions.push(serde_json::json!({
+                "create_alias": {
+                    "collection_name": new_collection,
+                    "alias_name": alias
+                }
+            }));
+            let client = reqwest::Client::new();
+            let mut request = client
+                .post(format!("{}/collections/aliases", rest_url(&self.config)))
+                .json(&serde_json::json!({ "actions": actions }));
+            if let Some(api_key) = &self.config.api_key {
+                request = request.header("api-key", api_key);
+            }
+            let response = request
+                .send()
+                .await
+                .map_err(|error| MemoryError::BackendUnavailable(error.to_string()))?;
+            if !response.status().is_success() {
+                let status = response.status();
+                let text = response.text().await.unwrap_or_default();
+                return Err(MemoryError::BackendUnavailable(format!(
+                    "Qdrant alias swap failed with {status}: {text}"
+                )));
+            }
+            Ok(())
+        }
+        .boxed()
+    }
+
+    fn snapshot_collection(
+        &self,
+        collection: &str,
+        target_dir: &Path,
+    ) -> BoxFuture<'_, MemoryResult<SnapshotReport>> {
+        let collection = collection.to_string();
+        let target_dir = target_dir.to_path_buf();
+        async move {
+            std::fs::create_dir_all(&target_dir)?;
+            let snapshot = self
+                .client
+                .create_snapshot(collection.clone())
+                .await
+                .map_err(qdrant_error)?
+                .snapshot_description
+                .ok_or_else(|| {
+                    MemoryError::BackendUnavailable(
+                        "Qdrant returned no snapshot description".to_string(),
+                    )
+                })?;
+            let path = target_dir.join(&snapshot.name);
+            download_snapshot_file(&self.config, &collection, &snapshot.name, &path).await?;
+            Ok(SnapshotReport {
+                collection,
+                snapshot_name: snapshot.name,
+                path,
+                size_bytes: u64::try_from(snapshot.size).ok(),
+                checksum: snapshot.checksum,
+            })
+        }
+        .boxed()
+    }
+}
+
 fn qdrant_distance(distance: Distance) -> qdrant_client::qdrant::Distance {
     match distance {
         Distance::Cosine => qdrant_client::qdrant::Distance::Cosine,
@@ -452,4 +553,50 @@ fn qdrant_point_id(memory_id: &str) -> String {
 
 fn qdrant_error(error: qdrant_client::QdrantError) -> MemoryError {
     MemoryError::BackendUnavailable(error.to_string())
+}
+
+async fn download_snapshot_file(
+    config: &QdrantVectorStoreConfig,
+    collection: &str,
+    snapshot_name: &str,
+    path: &Path,
+) -> MemoryResult<()> {
+    let url = format!(
+        "{}/collections/{}/snapshots/{}",
+        rest_url(config),
+        collection,
+        snapshot_name
+    );
+    let client = reqwest::Client::new();
+    let mut request = client.get(url);
+    if let Some(api_key) = &config.api_key {
+        request = request.header("api-key", api_key);
+    }
+    let response = request
+        .send()
+        .await
+        .map_err(|error| MemoryError::BackendUnavailable(error.to_string()))?;
+    if !response.status().is_success() {
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return Err(MemoryError::BackendUnavailable(format!(
+            "Qdrant snapshot download failed with {status}: {text}"
+        )));
+    }
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(|error| MemoryError::BackendUnavailable(error.to_string()))?;
+    std::fs::write(path, bytes)?;
+    Ok(())
+}
+
+fn rest_url(config: &QdrantVectorStoreConfig) -> String {
+    if let Some(rest_url) = &config.rest_url {
+        return rest_url.trim_end_matches('/').to_string();
+    }
+    if let Some(prefix) = config.url.strip_suffix(":6334") {
+        return format!("{prefix}:6333");
+    }
+    config.url.trim_end_matches('/').to_string()
 }

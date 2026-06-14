@@ -328,7 +328,7 @@ fn vector_search(
     let rows = statement
         .query_map(params![vector_to_blob(vector), limit as i64], |row| {
             let point = row_to_point(row)?;
-            let distance = row.get::<_, f64>(2)?;
+            let distance = row.get::<_, Option<f64>>(2)?.unwrap_or(f64::INFINITY);
             Ok((point, distance))
         })
         .map_err(sqlite_error)?;
@@ -360,7 +360,7 @@ fn keyword_search(
     let query = fts_query(text);
     let mut statement = connection
         .prepare(&format!(
-            "SELECT records.id, records.payload, bm25(fts) AS rank
+            "SELECT records.id, records.payload, bm25({fts}) AS rank
              FROM {fts} AS fts
              JOIN {records} AS records ON records.id = fts.id
              WHERE fts.content MATCH ?1
@@ -404,7 +404,7 @@ fn scan(
         ))
         .map_err(sqlite_error)?;
     let rows = statement
-        .query_map([limit.max(1) as i64], row_to_point)
+        .query_map([(limit.max(1) * 10) as i64], row_to_point)
         .map_err(sqlite_error)?;
 
     let mut hits = Vec::new();

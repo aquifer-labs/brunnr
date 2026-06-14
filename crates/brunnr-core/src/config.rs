@@ -31,6 +31,8 @@ pub struct MemoryConfig {
     #[serde(default)]
     pub qdrant_url: Option<String>,
     #[serde(default)]
+    pub qdrant_rest_url: Option<String>,
+    #[serde(default)]
     pub qdrant_api_key_env: Option<String>,
 }
 
@@ -103,6 +105,7 @@ impl BrunnrConfig {
                 root: root.into(),
                 collection: default_memory_collection(),
                 qdrant_url: None,
+                qdrant_rest_url: None,
                 qdrant_api_key_env: None,
             },
             agents,

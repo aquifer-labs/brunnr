@@ -12,6 +12,7 @@ chrono.workspace = true
 fastembed = { workspace = true, optional = true }
 futures-util.workspace = true
 qdrant-client = { workspace = true, optional = true }
+reqwest = { workspace = true, optional = true }
 rusqlite = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true
@@ -24,7 +25,7 @@ toml.workspace = true
 
 [features]
 default = ["sqlite-vec"]
-qdrant = ["vector", "dep:qdrant-client"]
+qdrant = ["vector", "dep:qdrant-client", "dep:reqwest"]
 sqlite-vec = ["vector", "dep:rusqlite", "dep:sqlite-vec"]
 vector = ["dep:fastembed"]
 

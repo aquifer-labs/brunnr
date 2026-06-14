@@ -71,6 +71,9 @@ Brunnr is licensed under Apache-2.0. Contributions must include a DCO sign-off.
 Brunnr uses crate-level integration tests, shared test helpers, and repo-level tooling modeled on
 mature Rust workspaces. See [docs/development.md](docs/development.md).
 
+The public memory benchmark is in [benchmarks/README.md](benchmarks/README.md) and runs with
+`just bench`.
+
 ## Acknowledgments
 
 Brunnr stands on the shoulders of prior work and public ideas. Brunnr reuses ideas and APIs where appropriate, not third-party source code.

@@ -31,6 +31,7 @@ fastembed = { version = "5.16.1", default-features = false, features = ["hf-hub-
 futures-core = "0.3"
 futures-util = "0.3"
 qdrant-client = { version = "1.18.0", default-features = false, features = ["serde"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 rmcp = "1.7.0"
 rusqlite = { version = "0.40.1", features = ["bundled"] }
 schemars = "1.1"

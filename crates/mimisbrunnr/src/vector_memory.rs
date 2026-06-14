@@ -8,10 +8,11 @@ use futures_util::{future::BoxFuture, FutureExt};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    identity::stable_memory_id, reciprocal_rank_fusion, Distance, Filter, MemoryBackend,
-    MemoryError, MemoryId, MemoryQuery, MemoryRecord, MemoryResult, MemoryScope, MemoryTier,
-    PayloadIndex, RrfOptions, SearchHit, SearchSource, StoreMemory, VectorCollection, VectorPoint,
-    VectorSearch, VectorSearchHit, VectorSearchSource, VectorStore,
+    identity::stable_memory_id, reciprocal_rank_fusion, CollectionCompat, Distance, Filter,
+    FilterCondition, FilterValue, MemoryBackend, MemoryError, MemoryId, MemoryQuery, MemoryRecord,
+    MemoryResult, MemoryScope, MemoryTier, PayloadIndex, RrfOptions, SearchHit, SearchSource,
+    StoreMemory, VectorCollection, VectorPoint, VectorSearch, VectorSearchHit, VectorSearchSource,
+    VectorStore, COMPAT_POINT_ID,
 };
 
 pub const PINNED_FASTEMBED_MODEL: &str = "intfloat/multilingual-e5-small";
@@ -64,9 +65,10 @@ impl TextEmbedder for FastembedTextEmbedder {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VectorMemoryConfig {
     pub collection: String,
+    pub embedding_model: String,
     pub dimensions: usize,
     pub distance: Distance,
 }
@@ -75,6 +77,7 @@ impl VectorMemoryConfig {
     pub fn new(collection: impl Into<String>) -> Self {
         Self {
             collection: collection.into(),
+            embedding_model: PINNED_FASTEMBED_MODEL.to_string(),
             dimensions: PINNED_FASTEMBED_DIMENSIONS,
             distance: Distance::Cosine,
         }
@@ -137,7 +140,37 @@ impl<V: VectorStore> VectorMemoryBackend<V> {
                 )
                 .await?;
         }
+        self.ensure_compat_metadata().await?;
         Ok(())
+    }
+
+    async fn ensure_compat_metadata(&self) -> MemoryResult<()> {
+        let expected = CollectionCompat::from_config(&self.config);
+        if let Some(point) = self
+            .store
+            .get(&self.config.collection, COMPAT_POINT_ID)
+            .await?
+        {
+            let payload: CompatPayload = serde_json::from_value(point.payload)?;
+            payload.compat.validate_compatible(&expected)?;
+            return Ok(());
+        }
+
+        self.store
+            .upsert(
+                &self.config.collection,
+                vec![VectorPoint {
+                    id: COMPAT_POINT_ID.to_string(),
+                    vector: vec![0.0; self.config.dimensions],
+                    payload: serde_json::to_value(CompatPayload {
+                        kind: compat_payload_kind(),
+                        id: compat_point_id(),
+                        node_id: compat_point_id(),
+                        compat: expected,
+                    })?,
+                }],
+            )
+            .await
     }
 
     async fn vector_hits(&self, query: MemoryQuery) -> MemoryResult<Vec<SearchHit>> {
@@ -255,8 +288,8 @@ impl<V: VectorStore> MemoryBackend for VectorMemoryBackend<V> {
                 return vector_hits_to_memory_hits(hits, SearchSource::Hybrid);
             }
 
-            let keyword_hits = self.keyword_hits(keyword_query).await.unwrap_or_default();
-            let vector_hits = self.vector_hits(vector_query).await.unwrap_or_default();
+            let keyword_hits = self.keyword_hits(keyword_query).await?;
+            let vector_hits = self.vector_hits(vector_query).await?;
             Ok(reciprocal_rank_fusion(
                 &[keyword_hits, vector_hits],
                 options,
@@ -312,6 +345,26 @@ struct MemoryPayload {
     user_id: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct CompatPayload {
+    #[serde(default = "compat_payload_kind")]
+    kind: String,
+    #[serde(default = "compat_point_id")]
+    id: String,
+    #[serde(default = "compat_point_id")]
+    node_id: String,
+    #[serde(flatten)]
+    compat: CollectionCompat,
+}
+
+fn compat_payload_kind() -> String {
+    "brunnr.compat".to_string()
+}
+
+fn compat_point_id() -> String {
+    COMPAT_POINT_ID.to_string()
+}
+
 impl From<&MemoryRecord> for MemoryPayload {
     fn from(record: &MemoryRecord) -> Self {
         Self {
@@ -355,6 +408,10 @@ fn filter_from_query(query: &MemoryQuery) -> Filter {
         .node_id
         .as_ref()
         .map_or_else(Filter::default, Filter::node_id);
+    filter.must_not.push(FilterCondition::Eq {
+        field: "node_id".to_string(),
+        value: FilterValue::String(COMPAT_POINT_ID.to_string()),
+    });
     if let Some(scope) = query.scope {
         filter.must_eq("scope", scope.as_str());
     }

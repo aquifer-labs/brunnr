@@ -1,0 +1,46 @@
+{
+  "A-baseline-full-context": {
+    "mean_retrieval_precision": 0.333333,
+    "mean_retrieval_recall": 1.0,
+    "mean_total_tokens": 170,
+    "mean_wall_clock_ms": 20.0,
+    "runs": 6,
+    "success_rate": 1,
+    "success_rate_ci95": 0.0,
+    "tokens_per_success": 170.0,
+    "total_tokens_variance": 0.8
+  },
+  "B-brunnr-memory-find": {
+    "mean_retrieval_precision": 1.0,
+    "mean_retrieval_recall": 1.0,
+    "mean_total_tokens": 68.666667,
+    "mean_wall_clock_ms": 7.866667,
+    "runs": 6,
+    "success_rate": 1,
+    "success_rate_ci95": 0.0,
+    "tokens_per_success": 68.66666666666667,
+    "total_tokens_variance": 187.466667
+  },
+  "C-built-in-memory": {
+    "mean_retrieval_precision": 0.666667,
+    "mean_retrieval_recall": 1.0,
+    "mean_total_tokens": 114,
+    "mean_wall_clock_ms": 13.066667,
+    "runs": 6,
+    "success_rate": 1,
+    "success_rate_ci95": 0.0,
+    "tokens_per_success": 114.0,
+    "total_tokens_variance": 477.6
+  },
+  "D-no-memory": {
+    "mean_retrieval_precision": 0.0,
+    "mean_retrieval_recall": 0.0,
+    "mean_total_tokens": 17.333333,
+    "mean_wall_clock_ms": 1.733333,
+    "runs": 6,
+    "success_rate": 0,
+    "success_rate_ci95": 0.0,
+    "tokens_per_success": null,
+    "total_tokens_variance": 1.866667
+  }
+}

@@ -26,6 +26,13 @@ pub enum MemoryError {
     Database(String),
     #[error("backend is not available in this build: {0}")]
     BackendUnavailable(String),
+    #[error("collection embedding metadata mismatch: collection={collection_model}/{collection_dimensions}, configured={configured_model}/{configured_dimensions}; run brunnr migrate before reading or writing")]
+    CompatMismatch {
+        collection_model: String,
+        collection_dimensions: usize,
+        configured_model: String,
+        configured_dimensions: usize,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
