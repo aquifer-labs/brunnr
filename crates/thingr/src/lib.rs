@@ -7,7 +7,7 @@ mod store;
 mod vector;
 mod verifier;
 
-pub use files::FilesTaskStore;
+pub use files::{FilesTaskStore, TaskImportOutcome};
 pub use store::{
     ClaimRequest, NewTask, Task, TaskError, TaskKind, TaskResult, TaskStatus, TaskStore,
     TransitionTask,

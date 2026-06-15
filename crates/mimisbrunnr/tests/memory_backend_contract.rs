@@ -139,6 +139,78 @@ async fn sqlite_vec_backend_satisfies_memory_contract() {
     assert_backend_contract(&backend).await;
 }
 
+#[tokio::test]
+async fn vector_collections_isolate_two_projects_on_one_store() {
+    let store = SqliteVecVectorStore::in_memory().expect("sqlite-vec store should open");
+    let project_a = VectorMemoryBackend::with_embedder(
+        store.clone(),
+        VectorMemoryConfig {
+            collection: "project-a".to_string(),
+            dimensions: TEST_DIMENSIONS,
+            ..VectorMemoryConfig::new("project-a")
+        },
+        Arc::new(TestEmbedder),
+    )
+    .expect("project A backend should construct");
+    let project_b = VectorMemoryBackend::with_embedder(
+        store,
+        VectorMemoryConfig {
+            collection: "project-b".to_string(),
+            dimensions: TEST_DIMENSIONS,
+            ..VectorMemoryConfig::new("project-b")
+        },
+        Arc::new(TestEmbedder),
+    )
+    .expect("project B backend should construct");
+
+    project_a
+        .store(StoreMemory {
+            content: "shared query term belongs to project alpha".to_string(),
+            tags: Vec::new(),
+            metadata: BTreeMap::new(),
+            tier: MemoryTier::L1Atom,
+            node_id: Some("node:project-a".to_string()),
+            created_at: None,
+            scope: Some(MemoryScope::Shared),
+            agent_id: None,
+            session_id: None,
+            task_id: None,
+            user_id: Some("user-a".to_string()),
+        })
+        .await
+        .expect("project A store should succeed");
+    project_b
+        .store(StoreMemory {
+            content: "shared query term belongs to project beta".to_string(),
+            tags: Vec::new(),
+            metadata: BTreeMap::new(),
+            tier: MemoryTier::L1Atom,
+            node_id: Some("node:project-b".to_string()),
+            created_at: None,
+            scope: Some(MemoryScope::Shared),
+            agent_id: None,
+            session_id: None,
+            task_id: None,
+            user_id: Some("user-b".to_string()),
+        })
+        .await
+        .expect("project B store should succeed");
+
+    let hits_a = project_a
+        .find(MemoryQuery::new("shared query term").with_limit(10))
+        .await
+        .expect("project A find should succeed");
+    let hits_b = project_b
+        .find(MemoryQuery::new("shared query term").with_limit(10))
+        .await
+        .expect("project B find should succeed");
+
+    assert_eq!(hits_a.len(), 1);
+    assert_eq!(hits_a[0].record.node_id, "node:project-a");
+    assert_eq!(hits_b.len(), 1);
+    assert_eq!(hits_b[0].record.node_id, "node:project-b");
+}
+
 async fn assert_backend_contract<B: MemoryBackend>(backend: &B) {
     let stored = backend
         .store(StoreMemory {

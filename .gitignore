@@ -9,9 +9,11 @@
 .vscode/
 *.log
 /junit.xml
+/benchmarks/results/*/timing.jsonl
 *.tmp
 *.swp
 *.swo
 *.env
 *.env.*
 !.env.example
+/benchmarks/results/*/raw.jsonl

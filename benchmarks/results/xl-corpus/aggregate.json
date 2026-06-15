@@ -1,0 +1,1298 @@
+{
+  "suite_version": "seed-honest-v1",
+  "tokenizer": "cl100k_base (tiktoken-rs)",
+  "embedding_model": "intfloat/multilingual-e5-small/384",
+  "backend": "SqliteVecVectorStore via VectorMemoryBackend",
+  "aggregate": {
+    "A-full-replay": {
+      "runs": 80,
+      "success_rate": 1.0,
+      "success_rate_ci95": 0.0,
+      "mean_total_tokens": 12902.25,
+      "total_tokens_variance": 1.506329,
+      "tokens_per_success": 12902.25,
+      "mean_retrieval_precision": 0.005319,
+      "mean_retrieval_recall": 1.0,
+      "by_difficulty": {
+        "easy": {
+          "runs": 28,
+          "success_rate": 1.0,
+          "success_rate_ci95": 0.0,
+          "mean_total_tokens": 12902.285714,
+          "total_tokens_variance": 1.248677,
+          "tokens_per_success": 12902.285714,
+          "mean_retrieval_precision": 0.005319,
+          "mean_retrieval_recall": 1.0
+        },
+        "hard": {
+          "runs": 26,
+          "success_rate": 1.0,
+          "success_rate_ci95": 0.0,
+          "mean_total_tokens": 12902.307692,
+          "total_tokens_variance": 1.661538,
+          "tokens_per_success": 12902.307692,
+          "mean_retrieval_precision": 0.005319,
+          "mean_retrieval_recall": 1.0
+        },
+        "medium": {
+          "runs": 26,
+          "success_rate": 1.0,
+          "success_rate_ci95": 0.0,
+          "mean_total_tokens": 12902.153846,
+          "total_tokens_variance": 1.735385,
+          "tokens_per_success": 12902.153846,
+          "mean_retrieval_precision": 0.005319,
+          "mean_retrieval_recall": 1.0
+        }
+      }
+    },
+    "A-full-replay-cold-session": {
+      "runs": 80,
+      "success_rate": 1.0,
+      "success_rate_ci95": 0.0,
+      "mean_total_tokens": 12905.25,
+      "total_tokens_variance": 1.506329,
+      "tokens_per_success": 12905.25,
+      "mean_retrieval_precision": 0.005319,
+      "mean_retrieval_recall": 1.0,
+      "by_difficulty": {
+        "easy": {
+          "runs": 28,
+          "success_rate": 1.0,
+          "success_rate_ci95": 0.0,
+          "mean_total_tokens": 12905.285714,
+          "total_tokens_variance": 1.248677,
+          "tokens_per_success": 12905.285714,
+          "mean_retrieval_precision": 0.005319,
+          "mean_retrieval_recall": 1.0
+        },
+        "hard": {
+          "runs": 26,
+          "success_rate": 1.0,
+          "success_rate_ci95": 0.0,
+          "mean_total_tokens": 12905.307692,
+          "total_tokens_variance": 1.661538,
+          "tokens_per_success": 12905.307692,
+          "mean_retrieval_precision": 0.005319,
+          "mean_retrieval_recall": 1.0
+        },
+        "medium": {
+          "runs": 26,
+          "success_rate": 1.0,
+          "success_rate_ci95": 0.0,
+          "mean_total_tokens": 12905.153846,
+          "total_tokens_variance": 1.735385,
+          "tokens_per_success": 12905.153846,
+          "mean_retrieval_precision": 0.005319,
+          "mean_retrieval_recall": 1.0
+        }
+      }
+    },
+    "B-default-brunnr": {
+      "runs": 80,
+      "success_rate": 1.0,
+      "success_rate_ci95": 0.0,
+      "mean_total_tokens": 875.975,
+      "total_tokens_variance": 164.936076,
+      "tokens_per_success": 875.975,
+      "mean_retrieval_precision": 0.333333,
+      "mean_retrieval_recall": 1.0,
+      "by_difficulty": {
+        "easy": {
+          "runs": 28,
+          "success_rate": 1.0,
+          "success_rate_ci95": 0.0,
+          "mean_total_tokens": 872.857143,
+          "total_tokens_variance": 190.349206,
+          "tokens_per_success": 872.857143,
+          "mean_retrieval_precision": 0.333333,
+          "mean_retrieval_recall": 1.0
+        },
+        "hard": {
+          "runs": 26,
+          "success_rate": 1.0,
+          "success_rate_ci95": 0.0,
+          "mean_total_tokens": 882.692308,
+          "total_tokens_variance": 151.421538,
+          "tokens_per_success": 882.692308,
+          "mean_retrieval_precision": 0.333333,
+          "mean_retrieval_recall": 1.0
+        },
+        "medium": {
+          "runs": 26,
+          "success_rate": 1.0,
+          "success_rate_ci95": 0.0,
+          "mean_total_tokens": 872.615385,
+          "total_tokens_variance": 94.646154,
+          "tokens_per_success": 872.615385,
+          "mean_retrieval_precision": 0.333333,
+          "mean_retrieval_recall": 1.0
+        }
+      }
+    },
+    "B-default-brunnr-cold-session": {
+      "runs": 80,
+      "success_rate": 1.0,
+      "success_rate_ci95": 0.0,
+      "mean_total_tokens": 878.975,
+      "total_tokens_variance": 164.936076,
+      "tokens_per_success": 878.975,
+      "mean_retrieval_precision": 0.333333,
+      "mean_retrieval_recall": 1.0,
+      "by_difficulty": {
+        "easy": {
+          "runs": 28,
+          "success_rate": 1.0,
+          "success_rate_ci95": 0.0,
+          "mean_total_tokens": 875.857143,
+          "total_tokens_variance": 190.349206,
+          "tokens_per_success": 875.857143,
+          "mean_retrieval_precision": 0.333333,
+          "mean_retrieval_recall": 1.0
+        },
+        "hard": {
+          "runs": 26,
+          "success_rate": 1.0,
+          "success_rate_ci95": 0.0,
+          "mean_total_tokens": 885.692308,
+          "total_tokens_variance": 151.421538,
+          "tokens_per_success": 885.692308,
+          "mean_retrieval_precision": 0.333333,
+          "mean_retrieval_recall": 1.0
+        },
+        "medium": {
+          "runs": 26,
+          "success_rate": 1.0,
+          "success_rate_ci95": 0.0,
+          "mean_total_tokens": 875.615385,
+          "total_tokens_variance": 94.646154,
+          "tokens_per_success": 875.615385,
+          "mean_retrieval_precision": 0.333333,
+          "mean_retrieval_recall": 1.0
+        }
+      }
+    },
+    "B-plus-debate": {
+      "runs": 80,
+      "success_rate": 1.0,
+      "success_rate_ci95": 0.0,
+      "mean_total_tokens": 907.225,
+      "total_tokens_variance": 149.69557,
+      "tokens_per_success": 907.225,
+      "mean_retrieval_precision": 0.333333,
+      "mean_retrieval_recall": 1.0,
+      "by_difficulty": {
+        "easy": {
+          "runs": 28,
+          "success_rate": 1.0,
+          "success_rate_ci95": 0.0,
+          "mean_total_tokens": 904.142857,
+          "total_tokens_variance": 168.275132,
+          "tokens_per_success": 904.142857,
+          "mean_retrieval_precision": 0.333333,
+          "mean_retrieval_recall": 1.0
+        },
+        "hard": {
+          "runs": 26,
+          "success_rate": 1.0,
+          "success_rate_ci95": 0.0,
+          "mean_total_tokens": 914.0,
+          "total_tokens_variance": 143.2,
+          "tokens_per_success": 914.0,
+          "mean_retrieval_precision": 0.333333,
+          "mean_retrieval_recall": 1.0
+        },
+        "medium": {
+          "runs": 26,
+          "success_rate": 1.0,
+          "success_rate_ci95": 0.0,
+          "mean_total_tokens": 903.769231,
+          "total_tokens_variance": 77.304615,
+          "tokens_per_success": 903.769231,
+          "mean_retrieval_precision": 0.333333,
+          "mean_retrieval_recall": 1.0
+        }
+      }
+    },
+    "B-plus-hyde": {
+      "runs": 80,
+      "success_rate": 0.575,
+      "success_rate_ci95": 0.109011,
+      "mean_total_tokens": 914.325,
+      "total_tokens_variance": 138.146203,
+      "tokens_per_success": 1590.130435,
+      "mean_retrieval_precision": 0.191666,
+      "mean_retrieval_recall": 0.575,
+      "by_difficulty": {
+        "easy": {
+          "runs": 28,
+          "success_rate": 0.642857,
+          "success_rate_ci95": 0.180739,
+          "mean_total_tokens": 910.714286,
+          "total_tokens_variance": 111.619048,
+          "tokens_per_success": 1416.666667,
+          "mean_retrieval_precision": 0.214285,
+          "mean_retrieval_recall": 0.642857
+        },
+        "hard": {
+          "runs": 26,
+          "success_rate": 0.615385,
+          "success_rate_ci95": 0.19071,
+          "mean_total_tokens": 920.923077,
+          "total_tokens_variance": 121.033846,
+          "tokens_per_success": 1496.5,
+          "mean_retrieval_precision": 0.205128,
+          "mean_retrieval_recall": 0.615385
+        },
+        "medium": {
+          "runs": 26,
+          "success_rate": 0.461538,
+          "success_rate_ci95": 0.195419,
+          "mean_total_tokens": 911.615385,
+          "total_tokens_variance": 127.446154,
+          "tokens_per_success": 1975.166667,
+          "mean_retrieval_precision": 0.153846,
+          "mean_retrieval_recall": 0.461538
+        }
+      }
+    },
+    "B-plus-multi-query": {
+      "runs": 80,
+      "success_rate": 1.0,
+      "success_rate_ci95": 0.0,
+      "mean_total_tokens": 923.85,
+      "total_tokens_variance": 115.167089,
+      "tokens_per_success": 923.85,
+      "mean_retrieval_precision": 0.333333,
+      "mean_retrieval_recall": 1.0,
+      "by_difficulty": {
+        "easy": {
+          "runs": 28,
+          "success_rate": 1.0,
+          "success_rate_ci95": 0.0,
+          "mean_total_tokens": 921.571429,
+          "total_tokens_variance": 119.365079,
+          "tokens_per_success": 921.571429,
+          "mean_retrieval_precision": 0.333333,
+          "mean_retrieval_recall": 1.0
+        },
+        "hard": {
+          "runs": 26,
+          "success_rate": 1.0,
+          "success_rate_ci95": 0.0,
+          "mean_total_tokens": 930.769231,
+          "total_tokens_variance": 126.424615,
+          "tokens_per_success": 930.769231,
+          "mean_retrieval_precision": 0.333333,
+          "mean_retrieval_recall": 1.0
+        },
+        "medium": {
+          "runs": 26,
+          "success_rate": 1.0,
+          "success_rate_ci95": 0.0,
+          "mean_total_tokens": 919.384615,
+          "total_tokens_variance": 32.246154,
+          "tokens_per_success": 919.384615,
+          "mean_retrieval_precision": 0.333333,
+          "mean_retrieval_recall": 1.0
+        }
+      }
+    },
+    "B-reflection-consolidated": {
+      "runs": 80,
+      "success_rate": 1.0,
+      "success_rate_ci95": 0.0,
+      "mean_total_tokens": 1253.4,
+      "total_tokens_variance": 143.129114,
+      "tokens_per_success": 1253.4,
+      "mean_retrieval_precision": 0.333333,
+      "mean_retrieval_recall": 1.0,
+      "by_difficulty": {
+        "easy": {
+          "runs": 28,
+          "success_rate": 1.0,
+          "success_rate_ci95": 0.0,
+          "mean_total_tokens": 1254.857143,
+          "total_tokens_variance": 112.571429,
+          "tokens_per_success": 1254.857143,
+          "mean_retrieval_precision": 0.333333,
+          "mean_retrieval_recall": 1.0
+        },
+        "hard": {
+          "runs": 26,
+          "success_rate": 1.0,
+          "success_rate_ci95": 0.0,
+          "mean_total_tokens": 1253.307692,
+          "total_tokens_variance": 194.781538,
+          "tokens_per_success": 1253.307692,
+          "mean_retrieval_precision": 0.333333,
+          "mean_retrieval_recall": 1.0
+        },
+        "medium": {
+          "runs": 26,
+          "success_rate": 1.0,
+          "success_rate_ci95": 0.0,
+          "mean_total_tokens": 1251.923077,
+          "total_tokens_variance": 131.273846,
+          "tokens_per_success": 1251.923077,
+          "mean_retrieval_precision": 0.333333,
+          "mean_retrieval_recall": 1.0
+        }
+      }
+    },
+    "C-built-in-agent-memory": {
+      "runs": 80,
+      "success_rate": 0.725,
+      "success_rate_ci95": 0.098464,
+      "mean_total_tokens": 116.175,
+      "total_tokens_variance": 38.374051,
+      "tokens_per_success": 160.241379,
+      "mean_retrieval_precision": 0.725,
+      "mean_retrieval_recall": 0.725,
+      "by_difficulty": {
+        "easy": {
+          "runs": 28,
+          "success_rate": 0.642857,
+          "success_rate_ci95": 0.180739,
+          "mean_total_tokens": 114.357143,
+          "total_tokens_variance": 35.497354,
+          "tokens_per_success": 177.888889,
+          "mean_retrieval_precision": 0.642857,
+          "mean_retrieval_recall": 0.642857
+        },
+        "hard": {
+          "runs": 26,
+          "success_rate": 0.769231,
+          "success_rate_ci95": 0.165159,
+          "mean_total_tokens": 119.307692,
+          "total_tokens_variance": 44.861538,
+          "tokens_per_success": 155.1,
+          "mean_retrieval_precision": 0.769231,
+          "mean_retrieval_recall": 0.769231
+        },
+        "medium": {
+          "runs": 26,
+          "success_rate": 0.769231,
+          "success_rate_ci95": 0.165159,
+          "mean_total_tokens": 115.0,
+          "total_tokens_variance": 22.72,
+          "tokens_per_success": 149.5,
+          "mean_retrieval_precision": 0.769231,
+          "mean_retrieval_recall": 0.769231
+        }
+      }
+    },
+    "D-no-memory": {
+      "runs": 80,
+      "success_rate": 0.0,
+      "success_rate_ci95": 0.0,
+      "mean_total_tokens": 54.25,
+      "total_tokens_variance": 1.506329,
+      "tokens_per_success": null,
+      "mean_retrieval_precision": 0.0,
+      "mean_retrieval_recall": 0.0,
+      "by_difficulty": {
+        "easy": {
+          "runs": 28,
+          "success_rate": 0.0,
+          "success_rate_ci95": 0.0,
+          "mean_total_tokens": 54.285714,
+          "total_tokens_variance": 1.248677,
+          "tokens_per_success": null,
+          "mean_retrieval_precision": 0.0,
+          "mean_retrieval_recall": 0.0
+        },
+        "hard": {
+          "runs": 26,
+          "success_rate": 0.0,
+          "success_rate_ci95": 0.0,
+          "mean_total_tokens": 54.307692,
+          "total_tokens_variance": 1.661538,
+          "tokens_per_success": null,
+          "mean_retrieval_precision": 0.0,
+          "mean_retrieval_recall": 0.0
+        },
+        "medium": {
+          "runs": 26,
+          "success_rate": 0.0,
+          "success_rate_ci95": 0.0,
+          "mean_total_tokens": 54.153846,
+          "total_tokens_variance": 1.735385,
+          "tokens_per_success": null,
+          "mean_retrieval_precision": 0.0,
+          "mean_retrieval_recall": 0.0
+        }
+      }
+    }
+  },
+  "retrieval_misses": [
+    {
+      "arm": "B-plus-hyde",
+      "task_id": "xl-00-import-service",
+      "difficulty": "easy",
+      "relevant_docs": [
+        "memory/import-service.md"
+      ],
+      "retrieved_docs": [
+        "distractors/naming-guide.md",
+        "memory/analytics-api.md",
+        "memory/import-gateway.md"
+      ],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "B-plus-hyde",
+      "task_id": "xl-04-orders-processor",
+      "difficulty": "medium",
+      "relevant_docs": [
+        "memory/orders-processor.md"
+      ],
+      "retrieved_docs": [
+        "distractors/naming-guide.md",
+        "memory/analytics-indexer.md",
+        "memory/analytics-service.md"
+      ],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "B-plus-hyde",
+      "task_id": "xl-06-export-api",
+      "difficulty": "easy",
+      "relevant_docs": [
+        "memory/export-api.md"
+      ],
+      "retrieved_docs": [
+        "distractors/naming-guide.md",
+        "memory/analytics-indexer.md",
+        "memory/messaging-api.md"
+      ],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "B-plus-hyde",
+      "task_id": "xl-07-sync-processor",
+      "difficulty": "medium",
+      "relevant_docs": [
+        "memory/sync-processor.md"
+      ],
+      "retrieved_docs": [
+        "distractors/naming-guide.md",
+        "memory/analytics-indexer.md",
+        "memory/analytics-service.md"
+      ],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "B-plus-hyde",
+      "task_id": "xl-08-billing-service",
+      "difficulty": "hard",
+      "relevant_docs": [
+        "memory/billing-service.md"
+      ],
+      "retrieved_docs": [
+        "distractors/naming-guide.md",
+        "memory/analytics-api.md",
+        "memory/analytics-processor.md"
+      ],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "B-plus-hyde",
+      "task_id": "xl-10-metering-service",
+      "difficulty": "medium",
+      "relevant_docs": [
+        "memory/metering-service.md"
+      ],
+      "retrieved_docs": [
+        "distractors/naming-guide.md",
+        "distractors/quota-overview.md",
+        "memory/analytics-api.md"
+      ],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "B-plus-hyde",
+      "task_id": "xl-14-geocoding-scheduler",
+      "difficulty": "hard",
+      "relevant_docs": [
+        "memory/geocoding-scheduler.md"
+      ],
+      "retrieved_docs": [
+        "memory/analytics-gateway.md",
+        "memory/archive-api.md",
+        "memory/scheduling-gateway.md"
+      ],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "B-plus-hyde",
+      "task_id": "xl-16-feeds-worker",
+      "difficulty": "medium",
+      "relevant_docs": [
+        "memory/feeds-worker.md"
+      ],
+      "retrieved_docs": [
+        "distractors/naming-guide.md",
+        "memory/catalog-worker.md",
+        "memory/gateway-worker.md"
+      ],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "B-plus-hyde",
+      "task_id": "xl-19-webhooks-service",
+      "difficulty": "medium",
+      "relevant_docs": [
+        "memory/webhooks-service.md"
+      ],
+      "retrieved_docs": [
+        "memory/analytics-gateway.md",
+        "memory/archive-api.md",
+        "memory/gateway-processor.md"
+      ],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "B-plus-hyde",
+      "task_id": "xl-20-webhooks-gateway",
+      "difficulty": "hard",
+      "relevant_docs": [
+        "memory/webhooks-gateway.md"
+      ],
+      "retrieved_docs": [
+        "distractors/naming-guide.md",
+        "memory/archive-gateway.md",
+        "memory/messaging-gateway.md"
+      ],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "B-plus-hyde",
+      "task_id": "xl-21-orders-service",
+      "difficulty": "easy",
+      "relevant_docs": [
+        "memory/orders-service.md"
+      ],
+      "retrieved_docs": [
+        "distractors/naming-guide.md",
+        "memory/analytics-indexer.md",
+        "memory/analytics-service.md"
+      ],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "B-plus-hyde",
+      "task_id": "xl-25-reviews-service",
+      "difficulty": "medium",
+      "relevant_docs": [
+        "memory/reviews-service.md"
+      ],
+      "retrieved_docs": [
+        "distractors/naming-guide.md",
+        "memory/analytics-indexer.md",
+        "memory/analytics-service.md"
+      ],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "B-plus-hyde",
+      "task_id": "xl-26-reviews-scheduler",
+      "difficulty": "hard",
+      "relevant_docs": [
+        "memory/reviews-scheduler.md"
+      ],
+      "retrieved_docs": [
+        "memory/analytics-gateway.md",
+        "memory/archive-api.md",
+        "memory/catalog-scheduler.md"
+      ],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "B-plus-hyde",
+      "task_id": "xl-27-pricing-service",
+      "difficulty": "easy",
+      "relevant_docs": [
+        "memory/pricing-service.md"
+      ],
+      "retrieved_docs": [
+        "distractors/naming-guide.md",
+        "distractors/quota-overview.md",
+        "memory/analytics-api.md"
+      ],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "B-plus-hyde",
+      "task_id": "xl-28-pricing-scheduler",
+      "difficulty": "medium",
+      "relevant_docs": [
+        "memory/pricing-scheduler.md"
+      ],
+      "retrieved_docs": [
+        "memory/analytics-gateway.md",
+        "memory/archive-api.md",
+        "memory/scheduling-gateway.md"
+      ],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "B-plus-hyde",
+      "task_id": "xl-30-ledger-worker",
+      "difficulty": "easy",
+      "relevant_docs": [
+        "memory/ledger-worker.md"
+      ],
+      "retrieved_docs": [
+        "distractors/naming-guide.md",
+        "distractors/quota-overview.md",
+        "memory/analytics-worker.md"
+      ],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "B-plus-hyde",
+      "task_id": "xl-38-geocoding-service",
+      "difficulty": "hard",
+      "relevant_docs": [
+        "memory/geocoding-service.md"
+      ],
+      "retrieved_docs": [
+        "memory/analytics-indexer.md",
+        "memory/gateway-gateway.md",
+        "memory/metering-gateway.md"
+      ],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "C-built-in-agent-memory",
+      "task_id": "xl-00-import-service",
+      "difficulty": "easy",
+      "relevant_docs": [
+        "memory/import-service.md"
+      ],
+      "retrieved_docs": [
+        "distractors/naming-guide.md"
+      ],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "C-built-in-agent-memory",
+      "task_id": "xl-01-media-indexer",
+      "difficulty": "medium",
+      "relevant_docs": [
+        "memory/media-indexer.md"
+      ],
+      "retrieved_docs": [
+        "distractors/naming-guide.md"
+      ],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "C-built-in-agent-memory",
+      "task_id": "xl-05-fraud-processor",
+      "difficulty": "hard",
+      "relevant_docs": [
+        "memory/fraud-processor.md"
+      ],
+      "retrieved_docs": [
+        "distractors/naming-guide.md"
+      ],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "C-built-in-agent-memory",
+      "task_id": "xl-08-billing-service",
+      "difficulty": "hard",
+      "relevant_docs": [
+        "memory/billing-service.md"
+      ],
+      "retrieved_docs": [
+        "distractors/naming-guide.md"
+      ],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "C-built-in-agent-memory",
+      "task_id": "xl-09-translation-gateway",
+      "difficulty": "easy",
+      "relevant_docs": [
+        "memory/translation-gateway.md"
+      ],
+      "retrieved_docs": [
+        "distractors/naming-guide.md"
+      ],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "C-built-in-agent-memory",
+      "task_id": "xl-10-metering-service",
+      "difficulty": "medium",
+      "relevant_docs": [
+        "memory/metering-service.md"
+      ],
+      "retrieved_docs": [
+        "distractors/naming-guide.md"
+      ],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "C-built-in-agent-memory",
+      "task_id": "xl-11-catalog-indexer",
+      "difficulty": "hard",
+      "relevant_docs": [
+        "memory/catalog-indexer.md"
+      ],
+      "retrieved_docs": [
+        "distractors/naming-guide.md"
+      ],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "C-built-in-agent-memory",
+      "task_id": "xl-27-pricing-service",
+      "difficulty": "easy",
+      "relevant_docs": [
+        "memory/pricing-service.md"
+      ],
+      "retrieved_docs": [
+        "distractors/naming-guide.md"
+      ],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "C-built-in-agent-memory",
+      "task_id": "xl-30-ledger-worker",
+      "difficulty": "easy",
+      "relevant_docs": [
+        "memory/ledger-worker.md"
+      ],
+      "retrieved_docs": [
+        "distractors/naming-guide.md"
+      ],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "C-built-in-agent-memory",
+      "task_id": "xl-37-analytics-api",
+      "difficulty": "medium",
+      "relevant_docs": [
+        "memory/analytics-api.md"
+      ],
+      "retrieved_docs": [
+        "distractors/naming-guide.md"
+      ],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "C-built-in-agent-memory",
+      "task_id": "xl-39-auth-indexer",
+      "difficulty": "easy",
+      "relevant_docs": [
+        "memory/auth-indexer.md"
+      ],
+      "retrieved_docs": [
+        "distractors/naming-guide.md"
+      ],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "D-no-memory",
+      "task_id": "xl-00-import-service",
+      "difficulty": "easy",
+      "relevant_docs": [
+        "memory/import-service.md"
+      ],
+      "retrieved_docs": [],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "D-no-memory",
+      "task_id": "xl-01-media-indexer",
+      "difficulty": "medium",
+      "relevant_docs": [
+        "memory/media-indexer.md"
+      ],
+      "retrieved_docs": [],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "D-no-memory",
+      "task_id": "xl-02-loyalty-api",
+      "difficulty": "hard",
+      "relevant_docs": [
+        "memory/loyalty-api.md"
+      ],
+      "retrieved_docs": [],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "D-no-memory",
+      "task_id": "xl-03-tax-gateway",
+      "difficulty": "easy",
+      "relevant_docs": [
+        "memory/tax-gateway.md"
+      ],
+      "retrieved_docs": [],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "D-no-memory",
+      "task_id": "xl-04-orders-processor",
+      "difficulty": "medium",
+      "relevant_docs": [
+        "memory/orders-processor.md"
+      ],
+      "retrieved_docs": [],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "D-no-memory",
+      "task_id": "xl-05-fraud-processor",
+      "difficulty": "hard",
+      "relevant_docs": [
+        "memory/fraud-processor.md"
+      ],
+      "retrieved_docs": [],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "D-no-memory",
+      "task_id": "xl-06-export-api",
+      "difficulty": "easy",
+      "relevant_docs": [
+        "memory/export-api.md"
+      ],
+      "retrieved_docs": [],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "D-no-memory",
+      "task_id": "xl-07-sync-processor",
+      "difficulty": "medium",
+      "relevant_docs": [
+        "memory/sync-processor.md"
+      ],
+      "retrieved_docs": [],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "D-no-memory",
+      "task_id": "xl-08-billing-service",
+      "difficulty": "hard",
+      "relevant_docs": [
+        "memory/billing-service.md"
+      ],
+      "retrieved_docs": [],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "D-no-memory",
+      "task_id": "xl-09-translation-gateway",
+      "difficulty": "easy",
+      "relevant_docs": [
+        "memory/translation-gateway.md"
+      ],
+      "retrieved_docs": [],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "D-no-memory",
+      "task_id": "xl-10-metering-service",
+      "difficulty": "medium",
+      "relevant_docs": [
+        "memory/metering-service.md"
+      ],
+      "retrieved_docs": [],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "D-no-memory",
+      "task_id": "xl-11-catalog-indexer",
+      "difficulty": "hard",
+      "relevant_docs": [
+        "memory/catalog-indexer.md"
+      ],
+      "retrieved_docs": [],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "D-no-memory",
+      "task_id": "xl-12-gateway-worker",
+      "difficulty": "easy",
+      "relevant_docs": [
+        "memory/gateway-worker.md"
+      ],
+      "retrieved_docs": [],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "D-no-memory",
+      "task_id": "xl-13-identity-api",
+      "difficulty": "medium",
+      "relevant_docs": [
+        "memory/identity-api.md"
+      ],
+      "retrieved_docs": [],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "D-no-memory",
+      "task_id": "xl-14-geocoding-scheduler",
+      "difficulty": "hard",
+      "relevant_docs": [
+        "memory/geocoding-scheduler.md"
+      ],
+      "retrieved_docs": [],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "D-no-memory",
+      "task_id": "xl-15-export-indexer",
+      "difficulty": "easy",
+      "relevant_docs": [
+        "memory/export-indexer.md"
+      ],
+      "retrieved_docs": [],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "D-no-memory",
+      "task_id": "xl-16-feeds-worker",
+      "difficulty": "medium",
+      "relevant_docs": [
+        "memory/feeds-worker.md"
+      ],
+      "retrieved_docs": [],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "D-no-memory",
+      "task_id": "xl-17-webhooks-indexer",
+      "difficulty": "hard",
+      "relevant_docs": [
+        "memory/webhooks-indexer.md"
+      ],
+      "retrieved_docs": [],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "D-no-memory",
+      "task_id": "xl-18-messaging-indexer",
+      "difficulty": "easy",
+      "relevant_docs": [
+        "memory/messaging-indexer.md"
+      ],
+      "retrieved_docs": [],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "D-no-memory",
+      "task_id": "xl-19-webhooks-service",
+      "difficulty": "medium",
+      "relevant_docs": [
+        "memory/webhooks-service.md"
+      ],
+      "retrieved_docs": [],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "D-no-memory",
+      "task_id": "xl-20-webhooks-gateway",
+      "difficulty": "hard",
+      "relevant_docs": [
+        "memory/webhooks-gateway.md"
+      ],
+      "retrieved_docs": [],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "D-no-memory",
+      "task_id": "xl-21-orders-service",
+      "difficulty": "easy",
+      "relevant_docs": [
+        "memory/orders-service.md"
+      ],
+      "retrieved_docs": [],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "D-no-memory",
+      "task_id": "xl-22-reporting-service",
+      "difficulty": "medium",
+      "relevant_docs": [
+        "memory/reporting-service.md"
+      ],
+      "retrieved_docs": [],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "D-no-memory",
+      "task_id": "xl-23-reporting-indexer",
+      "difficulty": "hard",
+      "relevant_docs": [
+        "memory/reporting-indexer.md"
+      ],
+      "retrieved_docs": [],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "D-no-memory",
+      "task_id": "xl-24-loyalty-gateway",
+      "difficulty": "easy",
+      "relevant_docs": [
+        "memory/loyalty-gateway.md"
+      ],
+      "retrieved_docs": [],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "D-no-memory",
+      "task_id": "xl-25-reviews-service",
+      "difficulty": "medium",
+      "relevant_docs": [
+        "memory/reviews-service.md"
+      ],
+      "retrieved_docs": [],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "D-no-memory",
+      "task_id": "xl-26-reviews-scheduler",
+      "difficulty": "hard",
+      "relevant_docs": [
+        "memory/reviews-scheduler.md"
+      ],
+      "retrieved_docs": [],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "D-no-memory",
+      "task_id": "xl-27-pricing-service",
+      "difficulty": "easy",
+      "relevant_docs": [
+        "memory/pricing-service.md"
+      ],
+      "retrieved_docs": [],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "D-no-memory",
+      "task_id": "xl-28-pricing-scheduler",
+      "difficulty": "medium",
+      "relevant_docs": [
+        "memory/pricing-scheduler.md"
+      ],
+      "retrieved_docs": [],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "D-no-memory",
+      "task_id": "xl-29-billing-gateway",
+      "difficulty": "hard",
+      "relevant_docs": [
+        "memory/billing-gateway.md"
+      ],
+      "retrieved_docs": [],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "D-no-memory",
+      "task_id": "xl-30-ledger-worker",
+      "difficulty": "easy",
+      "relevant_docs": [
+        "memory/ledger-worker.md"
+      ],
+      "retrieved_docs": [],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "D-no-memory",
+      "task_id": "xl-31-notifications-api",
+      "difficulty": "medium",
+      "relevant_docs": [
+        "memory/notifications-api.md"
+      ],
+      "retrieved_docs": [],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "D-no-memory",
+      "task_id": "xl-32-auth-service",
+      "difficulty": "hard",
+      "relevant_docs": [
+        "memory/auth-service.md"
+      ],
+      "retrieved_docs": [],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "D-no-memory",
+      "task_id": "xl-33-recommendations-processor",
+      "difficulty": "easy",
+      "relevant_docs": [
+        "memory/recommendations-processor.md"
+      ],
+      "retrieved_docs": [],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "D-no-memory",
+      "task_id": "xl-34-loyalty-service",
+      "difficulty": "medium",
+      "relevant_docs": [
+        "memory/loyalty-service.md"
+      ],
+      "retrieved_docs": [],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "D-no-memory",
+      "task_id": "xl-35-moderation-scheduler",
+      "difficulty": "hard",
+      "relevant_docs": [
+        "memory/moderation-scheduler.md"
+      ],
+      "retrieved_docs": [],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "D-no-memory",
+      "task_id": "xl-36-media-processor",
+      "difficulty": "easy",
+      "relevant_docs": [
+        "memory/media-processor.md"
+      ],
+      "retrieved_docs": [],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "D-no-memory",
+      "task_id": "xl-37-analytics-api",
+      "difficulty": "medium",
+      "relevant_docs": [
+        "memory/analytics-api.md"
+      ],
+      "retrieved_docs": [],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "D-no-memory",
+      "task_id": "xl-38-geocoding-service",
+      "difficulty": "hard",
+      "relevant_docs": [
+        "memory/geocoding-service.md"
+      ],
+      "retrieved_docs": [],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "D-no-memory",
+      "task_id": "xl-39-auth-indexer",
+      "difficulty": "easy",
+      "relevant_docs": [
+        "memory/auth-indexer.md"
+      ],
+      "retrieved_docs": [],
+      "recall": 0.0,
+      "runs": 2
+    }
+  ],
+  "marginal_verdicts": {
+    "B-plus-debate": {
+      "tokens_per_success_delta_vs_b": 31.25,
+      "success_rate_delta_vs_b": 0.0,
+      "precision_delta_vs_b": 0.0,
+      "recall_delta_vs_b": 0.0,
+      "verdict": "skip by default; no measured quality gain over B-default in this sample"
+    },
+    "B-plus-hyde": {
+      "tokens_per_success_delta_vs_b": 714.155435,
+      "success_rate_delta_vs_b": -0.425,
+      "precision_delta_vs_b": -0.141667,
+      "recall_delta_vs_b": -0.425,
+      "verdict": "skip by default; no measured quality gain over B-default in this sample"
+    },
+    "B-plus-multi-query": {
+      "tokens_per_success_delta_vs_b": 47.875,
+      "success_rate_delta_vs_b": 0.0,
+      "precision_delta_vs_b": 0.0,
+      "recall_delta_vs_b": 0.0,
+      "verdict": "skip by default; no measured quality gain over B-default in this sample"
+    },
+    "B-reflection-consolidated": {
+      "tokens_per_success_delta_vs_b": 377.425,
+      "success_rate_delta_vs_b": 0.0,
+      "precision_delta_vs_b": 0.0,
+      "recall_delta_vs_b": 0.0,
+      "verdict": "skip by default; no measured quality gain over B-default in this sample"
+    }
+  }
+}

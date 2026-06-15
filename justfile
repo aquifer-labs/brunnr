@@ -31,6 +31,18 @@ diagrams:
     done
 
 bench:
-    python3 benchmarks/harness/run.py
+    cargo run -p brunnr-bench -- --reps 2
+
+bench-large:
+    cargo run -p brunnr-bench -- --reps 2 --seed-corpus benchmarks/large-corpus --results benchmarks/results/large-corpus
+
+bench-xl:
+    cargo run -p brunnr-bench -- --reps 2 --seed-corpus benchmarks/xl-corpus --results benchmarks/results/xl-corpus
+
+bench-check:
+    just bench
+    just bench-large
+    just bench-xl
+    git diff --exit-code -- benchmarks/results/sample-run benchmarks/results/large-corpus benchmarks/results/xl-corpus
 
 ci: fmt clippy test build

@@ -1,0 +1,70 @@
+{
+  "suite": "seed-honest-v1",
+  "notes": "relevant_docs is the ONLY ground truth; the retriever must never see it. distractor_docs lists the plausible near-misses that compete lexically. The harness indexes memory/ + distractors/ as one undifferentiated corpus.",
+  "tasks": [
+    {
+      "id": "cache-ttl",
+      "difficulty": "easy",
+      "question": "How long does the product-listing cache stay valid?",
+      "answer": "90 seconds",
+      "relevant_docs": ["memory/caching-policy.md"],
+      "distractor_docs": ["distractors/caching-faq.md", "distractors/glossary.md"]
+    },
+    {
+      "id": "access-token-ttl",
+      "difficulty": "easy",
+      "question": "What is the access-token lifetime?",
+      "answer": "15 minutes",
+      "relevant_docs": ["memory/auth-token-ttl.md"],
+      "distractor_docs": ["distractors/auth-overview.md", "distractors/glossary.md"]
+    },
+    {
+      "id": "primary-datastore",
+      "difficulty": "medium",
+      "question": "What is the primary transactional datastore?",
+      "answer": "PostgreSQL 16",
+      "relevant_docs": ["memory/datastore-choice.md"],
+      "distractor_docs": ["distractors/db-migration-notes.md", "distractors/glossary.md"]
+    },
+    {
+      "id": "retry-max-attempts",
+      "difficulty": "medium",
+      "question": "What is the maximum number of retry attempts for outbound calls?",
+      "answer": "5 attempts",
+      "relevant_docs": ["memory/retry-policy.md"],
+      "distractor_docs": ["distractors/reliability-principles.md", "distractors/glossary.md"]
+    },
+    {
+      "id": "api-rate-limit",
+      "difficulty": "medium",
+      "question": "What is the public API rate limit per key?",
+      "answer": "600 requests per minute",
+      "relevant_docs": ["memory/rate-limits.md"],
+      "distractor_docs": ["distractors/reliability-principles.md", "distractors/glossary.md"]
+    },
+    {
+      "id": "failover-primary-region",
+      "difficulty": "hard",
+      "question": "Which region is the failover primary?",
+      "answer": "us-east",
+      "relevant_docs": ["memory/deploy-regions.md"],
+      "distractor_docs": ["distractors/reliability-principles.md", "distractors/glossary.md"]
+    },
+    {
+      "id": "flag-default-on-config-outage",
+      "difficulty": "hard",
+      "question": "What does a feature flag default to when the config service is unreachable?",
+      "answer": "OFF (fail-closed)",
+      "relevant_docs": ["memory/feature-flags.md"],
+      "distractor_docs": ["distractors/reliability-principles.md", "distractors/glossary.md"]
+    },
+    {
+      "id": "march-outage-root-cause",
+      "difficulty": "hard",
+      "question": "What was the root cause of the March outage?",
+      "answer": "connection-pool exhaustion",
+      "relevant_docs": ["memory/incident-march-postmortem.md"],
+      "distractor_docs": ["distractors/db-migration-notes.md", "distractors/march-outage-briefing.md", "distractors/reliability-principles.md"]
+    }
+  ]
+}

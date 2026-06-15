@@ -31,11 +31,12 @@ created to pull.
 
 [![Memory overview](diagrams/memory-overview.png)](diagrams/memory-overview.mmd)
 
-> **Design principle — cheap by default, smart on demand.** The default memory path is a local
-> embedding plus a rank fusion: no extra LLM calls, ~tens of ms, zero added tokens. Every
-> sophistication that costs an LLM call or real latency (reranking, HyDE, multi-query,
-> reflection, consolidation) is **opt-in** and **off by default**, so "memory mode" never changes
-> how you drive your agent — it only makes it cheaper and sharper.
+> **Design principle — cheap by default, smart on demand.** The default memory path is local:
+> structural import, an `index.md` catalog, embedding retrieval, RRF, and a local reranker seam
+> where enabled. It makes no extra LLM calls and adds zero provider tokens. Every sophistication
+> that costs an LLM call (HyDE, LLM multi-query, reflection consolidation, debate/critique) is
+> **opt-in** and **off by default**, so "memory mode" never changes how you drive your agent — it
+> only makes it cheaper and sharper.
 
 ---
 
@@ -144,18 +145,21 @@ sequenceDiagram
 upsert (`vector_memory.rs`), so re-running a backfill never duplicates. This gives the
 idempotency the literature calls for in heterogeneous memory writes.
 
-### 3.5 Optional retrieval enhancements [planned, opt-in]
+### 3.5 Retrieval enhancements
 
-The default path (embed + RRF) is intentionally cheap. For precision-critical or ambiguous
-queries, Brunnr will expose higher-quality stages behind config flags — each adds latency and
-sometimes an LLM call, so each is off by default:
+The default path stays cheap and non-intrusive. Brunnr now exposes these measurable stages:
 
-- **Two-stage reranking** — retrieve a wider candidate set of $M \gg k$ by RRF, then re-score
-  with a cross-encoder (`Reranker` seam; a local fastembed reranker, no API), keep top-$k$.
-  Cross-encoders read query+document jointly and are more accurate than bi-encoder cosine alone.
-- **HyDE** — embed a hypothetical answer $d_{hypo} = \text{LLM}(q)$ instead of the bare query, to
-  close the query-document vocabulary gap (one upfront LLM call).
-- **Multi-query** — expand $q$ into $\{q_1..q_N\}$, search each, merge+dedup for topic coverage.
+- **Two-stage reranking [implemented seam]** — retrieve a wider candidate set of $M \gg k$ by RRF,
+  then re-score through the `Reranker` trait. `LocalLexicalReranker` is deterministic and cheap for
+  tests; `FastembedReranker` wraps a local fastembed cross-encoder behind the vector feature. No API
+  or LLM call is made.
+- **Index-first context [implemented]** — `memory.context` returns a compact `index.md` slice and
+  targeted `memory.find` hits, matching the read-first catalog pattern from LLM-wiki.
+- **HyDE [opt-in LLM cost]** — embed a hypothetical answer $d_{hypo} = \text{LLM}(q)$ instead of
+  the bare query, to close the query-document vocabulary gap.
+- **Multi-query [opt-in LLM cost]** — expand $q$ into $\{q_1..q_N\}$, search each, merge+dedup for
+  topic coverage.
+- **Debate/critique [opt-in LLM cost]** — answer-time proposer/critic loop, reusing the judge seam.
 
 These map onto the same `VectorStore`/RRF stack; only the query/scoring stage changes.
 

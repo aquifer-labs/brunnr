@@ -34,6 +34,16 @@ pub struct MemoryConfig {
     pub qdrant_rest_url: Option<String>,
     #[serde(default)]
     pub qdrant_api_key_env: Option<String>,
+    #[serde(default = "default_local_rerank_enabled")]
+    pub local_rerank_enabled: bool,
+    #[serde(default)]
+    pub hyde_enabled: bool,
+    #[serde(default)]
+    pub multi_query_enabled: bool,
+    #[serde(default)]
+    pub debate_enabled: bool,
+    #[serde(default)]
+    pub llm_consolidation_enabled: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -107,6 +117,11 @@ impl BrunnrConfig {
                 qdrant_url: None,
                 qdrant_rest_url: None,
                 qdrant_api_key_env: None,
+                local_rerank_enabled: default_local_rerank_enabled(),
+                hyde_enabled: false,
+                multi_query_enabled: false,
+                debate_enabled: false,
+                llm_consolidation_enabled: false,
             },
             agents,
             coordination: CoordinationConfig::default(),
@@ -124,4 +139,8 @@ impl BrunnrConfig {
 
 fn default_memory_collection() -> String {
     "brunnr-memory".to_string()
+}
+
+fn default_local_rerank_enabled() -> bool {
+    true
 }

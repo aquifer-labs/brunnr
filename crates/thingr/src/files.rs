@@ -16,6 +16,24 @@ use crate::{
     TransitionTask,
 };
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TaskImportOutcome {
+    Imported(Task),
+    SkippedDuplicate(Task),
+}
+
+impl TaskImportOutcome {
+    pub fn task(&self) -> &Task {
+        match self {
+            Self::Imported(task) | Self::SkippedDuplicate(task) => task,
+        }
+    }
+
+    pub const fn imported(&self) -> bool {
+        matches!(self, Self::Imported(_))
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct FilesTaskStore {
     root: PathBuf,
@@ -83,6 +101,43 @@ impl FilesTaskStore {
             }
         }
         Ok(None)
+    }
+
+    pub fn is_task_like_path(path: &Path) -> bool {
+        path.components().any(|component| {
+            let name = component.as_os_str().to_string_lossy().to_ascii_lowercase();
+            matches!(
+                name.as_str(),
+                "task" | "tasks" | "todo" | "doing" | "done" | "blocked" | "status" | "statuses"
+            )
+        }) || path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| {
+                let name = name.to_ascii_lowercase();
+                name == "status.md" || name.ends_with(".task.md")
+            })
+    }
+
+    pub fn parse_task_like_markdown(path: &Path, text: &str) -> TaskResult<Task> {
+        if let Ok(task) = parse_task(text) {
+            return Ok(task);
+        }
+        inferred_task_from_markdown(path, text)
+    }
+
+    pub async fn import_task(&self, task: Task) -> TaskResult<TaskImportOutcome> {
+        let _guard = self
+            .mutation_lock
+            .lock()
+            .map_err(|error| TaskError::InvalidFile(error.to_string()))?;
+        self.ensure_dirs()?;
+        if let Some((_, path)) = self.find_path(&task.id)? {
+            return Self::read_task_at(&path).map(TaskImportOutcome::SkippedDuplicate);
+        }
+        let path = self.task_path(task.status, &task.id);
+        Self::write_task_at(&path, &task)?;
+        Ok(TaskImportOutcome::Imported(task))
     }
 }
 
@@ -313,6 +368,74 @@ fn parse_task(text: &str) -> TaskResult<Task> {
         created_at: header.created_at,
         updated_at: header.updated_at,
     })
+}
+
+fn inferred_task_from_markdown(path: &Path, text: &str) -> TaskResult<Task> {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return Err(TaskError::InvalidFile(
+            "empty task-like markdown".to_string(),
+        ));
+    }
+    let now = Utc::now();
+    let title = first_heading(trimmed)
+        .or_else(|| {
+            path.file_stem()
+                .and_then(|stem| stem.to_str())
+                .map(humanize_stem)
+        })
+        .unwrap_or_else(|| "Imported task".to_string());
+    let status = status_from_path(path).unwrap_or(TaskStatus::Todo);
+    Ok(Task {
+        id: stable_imported_task_id(trimmed),
+        title,
+        description: trimmed.to_string(),
+        role: brunnr_core::Role::Worker,
+        status,
+        kind: TaskKind::Primitive,
+        blockers: Vec::new(),
+        children: Vec::new(),
+        claimed_by: None,
+        verifier_names: Vec::new(),
+        created_at: now,
+        updated_at: now,
+    })
+}
+
+fn first_heading(text: &str) -> Option<String> {
+    text.lines().find_map(|line| {
+        line.strip_prefix("# ")
+            .map(str::trim)
+            .filter(|title| !title.is_empty())
+            .map(str::to_string)
+    })
+}
+
+fn humanize_stem(stem: &str) -> String {
+    stem.replace(['-', '_'], " ")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn status_from_path(path: &Path) -> Option<TaskStatus> {
+    path.components().find_map(|component| {
+        let name = component.as_os_str().to_string_lossy().to_ascii_lowercase();
+        match name.as_str() {
+            "todo" => Some(TaskStatus::Todo),
+            "doing" => Some(TaskStatus::Doing),
+            "done" => Some(TaskStatus::Done),
+            "blocked" => Some(TaskStatus::Blocked),
+            _ => None,
+        }
+    })
+}
+
+fn stable_imported_task_id(text: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(text.as_bytes());
+    let digest = format!("{:x}", hasher.finalize());
+    format!("task-{}", &digest[..12])
 }
 
 fn generated_task_id(title: &str, now: DateTime<Utc>) -> String {

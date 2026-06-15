@@ -5,7 +5,10 @@ use std::sync::Arc;
 use futures_util::{future::BoxFuture, FutureExt};
 use mimisbrunnr::{MemoryBackend, MemoryQuery, MemoryTier, StoreMemory};
 
-use crate::{ClaimRequest, FilesTaskStore, NewTask, Task, TaskResult, TaskStore, TransitionTask};
+use crate::{
+    ClaimRequest, FilesTaskStore, NewTask, Task, TaskImportOutcome, TaskResult, TaskStore,
+    TransitionTask,
+};
 
 #[derive(Clone)]
 pub struct VectorTaskStore {
@@ -20,6 +23,12 @@ impl VectorTaskStore {
 
     pub fn source(&self) -> &FilesTaskStore {
         &self.source
+    }
+
+    pub async fn import_task(&self, task: Task) -> TaskResult<TaskImportOutcome> {
+        let outcome = self.source.import_task(task).await?;
+        self.index_task(outcome.task()).await?;
+        Ok(outcome)
     }
 
     async fn index_task(&self, task: &Task) -> TaskResult<()> {

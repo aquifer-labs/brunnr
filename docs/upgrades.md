@@ -63,8 +63,9 @@ brunnr okf verify /path/to/okf-backups/$(date +%Y-%m-%d)
 ```
 
 Keep backup paths environment-specific and out of the repository.
-If your Qdrant REST API is not the default `:6333` sibling of the configured `:6334` gRPC endpoint,
-set `qdrant_rest_url` in `brunnr.toml` or `QDRANT_REST_URL` for snapshot download and alias swap.
+On default ports, one Qdrant URL is enough: `:6333` derives gRPC `:6334`, and `:6334` derives REST
+`:6333`. If your Qdrant REST API is not the default sibling of the configured gRPC endpoint, set
+`qdrant_rest_url` in `brunnr.toml` or `QDRANT_REST_URL` for snapshot download and alias swap.
 
 ## Recovery Pattern
 

@@ -27,8 +27,13 @@ Pick a backend (config choice, not a code change):
 ```shell
 cargo run -p brunnr-cli -- init --backend sqlite-vec          # local hybrid, zero infra
 cargo run -p brunnr-cli -- init --backend qdrant \            # shared / multi-user
-  --qdrant-url http://HOST:6333 --qdrant-rest-url http://HOST:6333
+  --project my-project --qdrant-url http://HOST:6333
 ```
+
+For Qdrant, one URL is enough on default ports: `:6333` is treated as REST and the gRPC sibling
+`:6334` is derived; `:6334` derives REST `:6333`. If you use custom ports, pass both
+`--qdrant-url` and `--qdrant-rest-url`. `init` and import commands preflight both endpoints
+(gRPC health + REST `/healthz` + auth) and fail with the exact endpoint that is wrong.
 
 `brunnr init` detects installed agent CLIs and writes the MCP registration for each (Claude Code,
 Codex, Zed) pointing at `brunnr-mcp` with the pinned embedding model and behavior-guiding tool
@@ -37,8 +42,24 @@ descriptions. Then drive your agent exactly as before — it now has `memory.fin
 Backfill existing notes (idempotent), and explore modes:
 
 ```shell
-cargo run -p brunnr-cli -- backfill ./memory-export   # md/json -> OKF, content-hash dedup
+cargo run -p brunnr-cli -- backfill ./memory-export   # md/json + task md -> OKF/Thingr
+cargo run -p brunnr-cli -- memory context "what matters now"
 ```
+
+`backfill` is robust: a bad file is skipped and reported, not fatal. Markdown is section-chunked
+by heading, an OKF `index.md` catalog is generated, task/status markdown is routed into Thingr, and
+the command prints a JSON summary with `{scanned, imported, skipped_duplicates, failed}` counts.
+After import it prints the next opt-in step, `brunnr consolidate`, for LLM semantic consolidation.
+
+For a non-expert second project/user on the same Qdrant, use the wrapper:
+
+```shell
+cargo run -p brunnr-cli -- onboard my-project ./memory-export \
+  --qdrant-url http://HOST:6333 --user-id user-a
+```
+
+Each project gets its own collection. `user_id` is also written as payload tenancy metadata inside
+the project collection.
 
 See [modes.md](modes.md), [memory.md](memory.md), [concurrency.md](concurrency.md),
 [upgrades.md](upgrades.md).
@@ -54,19 +75,20 @@ without breaking anything**.
 **Inputs to collect from the operator:**
 - `mode`: `memory` (default) | `orchestrate` | `full` | `advanced`
 - `backend`: `files` (default) | `sqlite-vec` | `qdrant`
-- `qdrant_url` / `qdrant_rest_url` / API key — only if `backend = qdrant`
+- `qdrant_url` and API key — only if `backend = qdrant`; `qdrant_rest_url` is optional on default
+  ports
 - `project`: the project name (becomes the collection / OKF bundle scope) and the path to any
   existing memory to backfill
 
 **Steps:**
 1. Build or locate the binary: `cargo build --workspace` (or use a prebuilt `brunnr`).
-2. `brunnr init --mode <mode> --backend <backend> [--qdrant-url … --qdrant-rest-url …]`. This is
+2. `brunnr init --project <project> --backend <backend> [--qdrant-url …]`. This is
    idempotent and only writes Brunnr's own MCP entry; it must NOT touch unrelated config.
 3. If `backend = qdrant`: verify the server is reachable (`/healthz`) and that the collection's
    compat metadata (model + dim) matches the pinned model; if it mismatches, STOP and ask — run
    `brunnr migrate` rather than mixing vector spaces.
-4. Backfill the project's existing memory into the OKF bundle: `brunnr backfill <path>`
-   (idempotent, content-hash dedup; never deletes the originals).
+4. Backfill the project's existing memory/tasks into the OKF bundle and selected backend:
+   `brunnr backfill <path>` (idempotent, content-hash dedup; never deletes the originals).
 5. Verify: `brunnr memory store "<probe>"` then `brunnr memory find "<probe>"` returns it; report
    the backend, collection, and counts back to the operator.
 6. Report what changed (config entries added, records backfilled) and what was left untouched.

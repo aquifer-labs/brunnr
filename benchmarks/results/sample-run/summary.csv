@@ -1,5 +1,11 @@
 arm,runs,success_rate,mean_total_tokens,tokens_per_success,precision,recall
-A-baseline-full-context,6,1,170,170.0,0.333333,1.0
-B-brunnr-memory-find,6,1,68.666667,68.66666666666667,1.0,1.0
-C-built-in-memory,6,1,114,114.0,0.666667,1.0
-D-no-memory,6,0,17.333333,None,0.0,0.0
+A-full-replay,16,1,1093,1093,0.071429,1
+A-full-replay-cold-session,16,1,1096,1096,0.071429,1
+B-default-brunnr,16,0.875,514.125,587.571429,0.291666,0.875
+B-default-brunnr-cold-session,16,0.875,517.125,591,0.291666,0.875
+B-plus-debate,16,0.875,543.125,620.714286,0.291666,0.875
+B-plus-hyde,16,0.375,556.875,1485,0.125,0.375
+B-plus-multi-query,16,0.875,551.5,630.285714,0.291666,0.875
+B-reflection-consolidated,16,0.875,694,793.142857,0.291666,0.875
+C-built-in-agent-memory,16,0.625,129,206.4,0.625,0.625
+D-no-memory,16,0,52,,0,0

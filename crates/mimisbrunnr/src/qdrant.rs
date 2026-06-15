@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use std::collections::HashMap;
 use std::path::Path;
+use std::{collections::HashMap, time::Duration};
 
 use futures_util::{future::BoxFuture, FutureExt};
 use qdrant_client::{
@@ -39,6 +39,56 @@ impl QdrantVectorStoreConfig {
             api_key: None,
         }
     }
+
+    pub fn normalized(&self) -> MemoryResult<Self> {
+        let endpoints = QdrantEndpoints::from_urls(&self.url, self.rest_url.as_deref())?;
+        Ok(Self {
+            url: endpoints.grpc_url,
+            rest_url: Some(endpoints.rest_url),
+            api_key: self.api_key.clone(),
+        })
+    }
+
+    pub fn endpoints(&self) -> MemoryResult<QdrantEndpoints> {
+        QdrantEndpoints::from_urls(&self.url, self.rest_url.as_deref())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QdrantEndpoints {
+    pub grpc_url: String,
+    pub rest_url: String,
+}
+
+impl QdrantEndpoints {
+    pub fn from_urls(qdrant_url: &str, rest_url: Option<&str>) -> MemoryResult<Self> {
+        let qdrant_url = normalize_url(qdrant_url)?;
+        let rest_url = rest_url.map(normalize_url).transpose()?;
+        let qdrant_port = qdrant_url.port();
+
+        let (grpc_url, rest_url) = match (qdrant_port, rest_url) {
+            (Some(6334), Some(rest_url)) => (qdrant_url, rest_url),
+            (Some(6333), Some(rest_url)) => (derive_port(&qdrant_url, 6334)?, rest_url),
+            (Some(6334), None) => (qdrant_url.clone(), derive_port(&qdrant_url, 6333)?),
+            (Some(6333), None) => (derive_port(&qdrant_url, 6334)?, qdrant_url.clone()),
+            (None, Some(rest_url)) => (derive_port(&qdrant_url, 6334)?, rest_url),
+            (None, None) => (
+                derive_port(&qdrant_url, 6334)?,
+                derive_port(&qdrant_url, 6333)?,
+            ),
+            (Some(_), Some(rest_url)) => (qdrant_url, rest_url),
+            (Some(port), None) => {
+                return Err(MemoryError::InvalidFile(format!(
+                    "cannot derive Qdrant REST endpoint from custom --qdrant-url port {port}; pass --qdrant-rest-url explicitly"
+                )));
+            }
+        };
+
+        Ok(Self {
+            grpc_url: url_to_endpoint(&grpc_url),
+            rest_url: url_to_endpoint(&rest_url),
+        })
+    }
 }
 
 pub struct QdrantVectorStore {
@@ -48,6 +98,7 @@ pub struct QdrantVectorStore {
 
 impl QdrantVectorStore {
     pub fn connect(config: QdrantVectorStoreConfig) -> MemoryResult<Self> {
+        let config = config.normalized()?;
         let mut builder = Qdrant::from_url(&config.url);
         if let Some(api_key) = &config.api_key {
             builder = builder.api_key(api_key.clone());
@@ -72,6 +123,75 @@ impl QdrantVectorStore {
     ) -> MemoryResult<VectorMemoryBackend<Self>> {
         VectorMemoryBackend::new(self, VectorMemoryConfig::new(collection))
     }
+
+    pub async fn preflight(config: QdrantVectorStoreConfig) -> MemoryResult<QdrantPreflightReport> {
+        preflight_qdrant(config).await
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QdrantPreflightReport {
+    pub grpc_url: String,
+    pub rest_url: String,
+    pub grpc_version: String,
+    pub rest_status: u16,
+}
+
+pub async fn preflight_qdrant(
+    config: QdrantVectorStoreConfig,
+) -> MemoryResult<QdrantPreflightReport> {
+    let config = config.normalized()?;
+    let mut builder = Qdrant::from_url(&config.url)
+        .timeout(Duration::from_secs(3))
+        .connect_timeout(Duration::from_secs(3));
+    if let Some(api_key) = &config.api_key {
+        builder = builder.api_key(api_key.clone());
+    }
+    let client = builder
+        .build()
+        .map_err(|error| MemoryError::BackendUnavailable(error.to_string()))?;
+    let health = client.health_check().await.map_err(|error| {
+        MemoryError::BackendUnavailable(format!(
+            "Qdrant gRPC preflight failed for {}; expected the gRPC endpoint (default :6334). \
+             Check that the gRPC port is exposed and that --qdrant-url is not pointing at an unrelated service. details: {error}",
+            config.url
+        ))
+    })?;
+
+    let rest_url = rest_url(&config);
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(3))
+        .build()
+        .map_err(|error| MemoryError::BackendUnavailable(error.to_string()))?;
+    let mut request = client.get(format!("{rest_url}/healthz"));
+    if let Some(api_key) = &config.api_key {
+        request = request.header("api-key", api_key);
+    }
+    let response = request.send().await.map_err(|error| {
+        MemoryError::BackendUnavailable(format!(
+            "Qdrant REST preflight failed for {rest_url}/healthz; expected the REST endpoint \
+             (default :6333). Check the REST port or pass --qdrant-rest-url explicitly. details: {error}"
+        ))
+    })?;
+    let status = response.status();
+    if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
+        return Err(MemoryError::BackendUnavailable(format!(
+            "Qdrant REST preflight failed for {rest_url}/healthz with {status}; set the configured API key env var or remove Qdrant auth for local testing"
+        )));
+    }
+    if !status.is_success() {
+        let text = response.text().await.unwrap_or_default();
+        return Err(MemoryError::BackendUnavailable(format!(
+            "Qdrant REST preflight failed for {rest_url}/healthz with {status}: {text}"
+        )));
+    }
+
+    Ok(QdrantPreflightReport {
+        grpc_url: config.url,
+        rest_url,
+        grpc_version: health.version,
+        rest_status: status.as_u16(),
+    })
 }
 
 impl VectorStore for QdrantVectorStore {
@@ -599,4 +719,72 @@ fn rest_url(config: &QdrantVectorStoreConfig) -> String {
         return format!("{prefix}:6333");
     }
     config.url.trim_end_matches('/').to_string()
+}
+
+fn normalize_url(input: &str) -> MemoryResult<reqwest::Url> {
+    let input = input.trim().trim_end_matches('/');
+    reqwest::Url::parse(input).map_err(|error| {
+        MemoryError::InvalidFile(format!(
+            "invalid Qdrant URL `{input}`: {error}; expected http://HOST:6333 for REST or http://HOST:6334 for gRPC"
+        ))
+    })
+}
+
+fn derive_port(url: &reqwest::Url, port: u16) -> MemoryResult<reqwest::Url> {
+    let mut derived = url.clone();
+    derived.set_port(Some(port)).map_err(|()| {
+        MemoryError::InvalidFile(format!(
+            "cannot derive Qdrant endpoint from {}; pass both --qdrant-url and --qdrant-rest-url explicitly",
+            url_to_endpoint(url)
+        ))
+    })?;
+    Ok(derived)
+}
+
+fn url_to_endpoint(url: &reqwest::Url) -> String {
+    url.to_string().trim_end_matches('/').to_string()
+}
+
+impl std::fmt::Display for QdrantEndpoints {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(formatter, "grpc={} rest={}", self.grpc_url, self.rest_url)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{QdrantEndpoints, QdrantVectorStoreConfig};
+
+    #[test]
+    fn derives_grpc_from_rest_qdrant_url() {
+        let endpoints = QdrantVectorStoreConfig::new("http://qdrant.local:6333")
+            .endpoints()
+            .expect("endpoints should derive");
+        assert_eq!(
+            endpoints,
+            QdrantEndpoints {
+                grpc_url: "http://qdrant.local:6334".to_string(),
+                rest_url: "http://qdrant.local:6333".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn derives_rest_from_grpc_qdrant_url() {
+        let endpoints = QdrantVectorStoreConfig::new("http://qdrant.local:6334")
+            .endpoints()
+            .expect("endpoints should derive");
+        assert_eq!(endpoints.grpc_url, "http://qdrant.local:6334");
+        assert_eq!(endpoints.rest_url, "http://qdrant.local:6333");
+    }
+
+    #[test]
+    fn custom_qdrant_port_requires_explicit_rest_url() {
+        let error = QdrantVectorStoreConfig::new("http://qdrant.local:7000")
+            .endpoints()
+            .expect_err("custom port without REST URL should fail");
+        assert!(error
+            .to_string()
+            .contains("pass --qdrant-rest-url explicitly"));
+    }
 }

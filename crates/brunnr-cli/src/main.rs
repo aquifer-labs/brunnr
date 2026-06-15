@@ -2,6 +2,7 @@
 
 use std::{
     env, fs,
+    io::Write,
     path::{Path, PathBuf},
     str::FromStr,
     sync::Arc,
@@ -15,9 +16,9 @@ use brunnr_core::{
 use brunnr_process_agent::{ProcessAgent, ProcessAgentConfig};
 use clap::{Parser, Subcommand, ValueEnum};
 use mimisbrunnr::{
-    backfill_directory, default_migration_collection, export_okf_bundle, recover_after_compaction,
-    verify_okf_bundle, CollectionCompat, MemoryBackend, MemoryQuery, MemoryScope, MemoryTier,
-    MigrationPlan, MuninnAnchorStore, SessionAnchor, StoreMemory, VectorMemoryConfig,
+    default_migration_collection, export_okf_bundle, recover_after_compaction, verify_okf_bundle,
+    CollectionCompat, MemoryBackend, MemoryQuery, MemoryScope, MemoryTier, MigrationPlan,
+    MuninnAnchorStore, SessionAnchor, StoreMemory, VectorMemoryConfig,
 };
 use serde_json::{json, Value};
 use thingr::{
@@ -31,7 +32,9 @@ const MCP_SERVER_NAME: &str = "brunnr-memory";
 const MCP_TOOL_HINT: &str =
     "ALWAYS search the project memory before non-trivial work; store durable, reusable learnings.";
 
+mod import;
 mod runtime;
+use import::{import_directory, ImportOptions};
 use runtime::{build_orchestrator, load_config, open_memory_backend};
 
 #[derive(Debug, Parser)]
@@ -45,6 +48,7 @@ struct InitOptions {
     memory_root: PathBuf,
     backend: BackendArg,
     collection: String,
+    project: Option<String>,
     qdrant_url: Option<String>,
     qdrant_rest_url: Option<String>,
     qdrant_api_key_env: String,
@@ -54,12 +58,14 @@ struct InitOptions {
 #[derive(Debug, Subcommand)]
 enum Command {
     Init {
-        #[arg(long, default_value = ".brunnr")]
-        memory_root: PathBuf,
+        #[arg(long)]
+        memory_root: Option<PathBuf>,
+        #[arg(long)]
+        project: Option<String>,
         #[arg(long, value_enum, default_value_t = BackendArg::Files)]
         backend: BackendArg,
-        #[arg(long, default_value = "brunnr-memory")]
-        collection: String,
+        #[arg(long)]
+        collection: Option<String>,
         #[arg(long, env = "QDRANT_URL")]
         qdrant_url: Option<String>,
         #[arg(long, env = "QDRANT_REST_URL")]
@@ -115,6 +121,36 @@ enum Command {
         root: PathBuf,
         #[arg(long, value_enum)]
         backend: Option<BackendArg>,
+        #[arg(long)]
+        user_id: Option<String>,
+    },
+    Onboard {
+        project: String,
+        directory: PathBuf,
+        #[arg(long, value_enum, default_value_t = BackendArg::Qdrant)]
+        backend: BackendArg,
+        #[arg(long)]
+        memory_root: Option<PathBuf>,
+        #[arg(long)]
+        collection: Option<String>,
+        #[arg(long, env = "QDRANT_URL")]
+        qdrant_url: Option<String>,
+        #[arg(long, env = "QDRANT_REST_URL")]
+        qdrant_rest_url: Option<String>,
+        #[arg(long, default_value = "QDRANT_API_KEY")]
+        qdrant_api_key_env: String,
+        #[arg(long)]
+        user_id: Option<String>,
+        #[arg(long, default_value = DEFAULT_CONFIG)]
+        config: PathBuf,
+    },
+    Consolidate {
+        #[arg(long, default_value = DEFAULT_CONFIG)]
+        config: PathBuf,
+        #[arg(long, default_value = ".brunnr")]
+        root: PathBuf,
+        #[arg(long)]
+        allow_llm: bool,
     },
     Migrate {
         okf_root: PathBuf,
@@ -258,6 +294,19 @@ enum MemoryCommand {
         #[arg(long, value_enum)]
         backend: Option<BackendArg>,
     },
+    Context {
+        query: String,
+        #[arg(long, default_value_t = 10)]
+        limit: usize,
+        #[arg(long, default_value_t = 4000)]
+        index_chars: usize,
+        #[arg(long, default_value = DEFAULT_CONFIG)]
+        config: PathBuf,
+        #[arg(long, default_value = ".brunnr")]
+        root: PathBuf,
+        #[arg(long, value_enum)]
+        backend: Option<BackendArg>,
+    },
     Anchor {
         #[command(subcommand)]
         command: AnchorCommand,
@@ -298,7 +347,7 @@ enum AnchorCommand {
     },
 }
 
-#[derive(Debug, Clone, Copy, ValueEnum)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum BackendArg {
     Files,
     SqliteVec,
@@ -340,6 +389,7 @@ async fn main() -> Result<()> {
     match cli.command {
         Command::Init {
             memory_root,
+            project,
             backend,
             collection,
             qdrant_url,
@@ -347,18 +397,24 @@ async fn main() -> Result<()> {
             qdrant_api_key_env,
             non_interactive,
             register_mcp,
-        } => init(
-            InitOptions {
-                memory_root,
-                backend,
-                collection,
-                qdrant_url,
-                qdrant_rest_url,
-                qdrant_api_key_env,
-                register_mcp,
-            },
-            non_interactive,
-        ),
+        } => {
+            let memory_root = project_memory_root(memory_root, project.as_deref());
+            let collection = project_collection(collection, project.as_deref());
+            init(
+                InitOptions {
+                    memory_root,
+                    backend,
+                    collection,
+                    project,
+                    qdrant_url,
+                    qdrant_rest_url,
+                    qdrant_api_key_env,
+                    register_mcp,
+                },
+                non_interactive,
+            )
+            .await
+        }
         Command::Spawn {
             role,
             agent,
@@ -384,7 +440,45 @@ async fn main() -> Result<()> {
             config,
             root,
             backend,
-        } => backfill(directory, config, root, backend).await,
+            user_id,
+        } => backfill(directory, config, root, backend, user_id).await,
+        Command::Onboard {
+            project,
+            directory,
+            backend,
+            memory_root,
+            collection,
+            qdrant_url,
+            qdrant_rest_url,
+            qdrant_api_key_env,
+            user_id,
+            config,
+        } => {
+            let memory_root = project_memory_root(memory_root, Some(&project));
+            let collection = project_collection(collection, Some(&project));
+            onboard(
+                project.clone(),
+                directory,
+                InitOptions {
+                    memory_root,
+                    backend,
+                    collection,
+                    qdrant_url,
+                    qdrant_rest_url,
+                    qdrant_api_key_env,
+                    register_mcp: true,
+                    project: Some(project.clone()),
+                },
+                config,
+                user_id,
+            )
+            .await
+        }
+        Command::Consolidate {
+            config,
+            root,
+            allow_llm,
+        } => consolidate(config, root, allow_llm),
         Command::Migrate {
             okf_root,
             config,
@@ -479,9 +573,12 @@ async fn task(command: TaskCommand) -> Result<()> {
     Ok(())
 }
 
-fn init(options: InitOptions, _non_interactive: bool) -> Result<()> {
+async fn init(options: InitOptions, _non_interactive: bool) -> Result<()> {
     fs::create_dir_all(options.memory_root.join("memory"))
         .with_context(|| format!("create memory root {}", options.memory_root.display()))?;
+    if options.backend == BackendArg::Qdrant {
+        preflight_qdrant_options(&options).await?;
+    }
     let agents = detect_agents();
     let config = BrunnrConfig {
         mode: brunnr_core::Mode::Memory,
@@ -492,22 +589,58 @@ fn init(options: InitOptions, _non_interactive: bool) -> Result<()> {
             qdrant_url: options.qdrant_url,
             qdrant_rest_url: options.qdrant_rest_url,
             qdrant_api_key_env: Some(options.qdrant_api_key_env),
+            local_rerank_enabled: true,
+            hyde_enabled: false,
+            multi_query_enabled: false,
+            debate_enabled: false,
+            llm_consolidation_enabled: false,
         },
         agents,
         coordination: Default::default(),
     };
     let config_path = Path::new(DEFAULT_CONFIG);
-    if !config_path.exists() {
+    if !config_path.exists() || options.project.is_some() {
         fs::write(config_path, config.to_toml()?)?;
     }
     if options.register_mcp {
         write_mcp_registrations(&env::current_dir()?.join(config_path))?;
     }
     println!(
-        "initialized Brunnr memory mode at {}",
-        options.memory_root.display()
+        "initialized Brunnr memory mode at {} collection={} project={}",
+        options.memory_root.display(),
+        config.memory.collection,
+        options.project.as_deref().unwrap_or("default")
     );
     Ok(())
+}
+
+fn project_memory_root(memory_root: Option<PathBuf>, project: Option<&str>) -> PathBuf {
+    memory_root.unwrap_or_else(|| {
+        project
+            .map(|project| PathBuf::from(".brunnr").join(project))
+            .unwrap_or_else(|| PathBuf::from(".brunnr"))
+    })
+}
+
+fn project_collection(collection: Option<String>, project: Option<&str>) -> String {
+    collection
+        .or_else(|| project.map(sanitize_project_name))
+        .unwrap_or_else(|| "brunnr-memory".to_string())
+}
+
+fn sanitize_project_name(project: &str) -> String {
+    project
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || matches!(character, '-' | '_') {
+                character.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
+        .collect::<String>()
+        .trim_matches('-')
+        .to_string()
 }
 
 async fn spawn(role: &str, agent: &str, args: Vec<String>, timeout_seconds: u64) -> Result<()> {
@@ -643,6 +776,31 @@ async fn memory(command: MemoryCommand) -> Result<()> {
                 );
             }
         }
+        MemoryCommand::Context {
+            query,
+            limit,
+            index_chars,
+            config,
+            root,
+            backend,
+        } => {
+            let memory_config = memory_config_for_command(&config, root, backend)?;
+            let index = read_index_slice(&memory_config.root, index_chars)?;
+            let backend = open_memory_backend(&memory_config)?;
+            let hits = backend
+                .find(MemoryQuery::new(query).with_limit(limit))
+                .await?;
+            if let Some(index) = index {
+                println!("# index.md\n{index}");
+            }
+            println!("# memory.find");
+            for hit in hits {
+                println!(
+                    "{:.4}\t{}\t{}\t{}",
+                    hit.score, hit.record.id, hit.record.node_id, hit.record.content
+                );
+            }
+        }
         MemoryCommand::Anchor { command } => anchor(command).await?,
     }
     Ok(())
@@ -693,13 +851,79 @@ async fn backfill(
     config: PathBuf,
     root: PathBuf,
     backend: Option<BackendArg>,
+    user_id: Option<String>,
 ) -> Result<()> {
-    let backend = open_backend_for_command(&config, root, backend)?;
-    let stats = backfill_directory(backend.as_ref(), directory).await?;
+    let memory = memory_config_for_command(&config, root, backend)?;
+    if memory.backend == MemoryBackendKind::Qdrant {
+        preflight_qdrant_memory(&memory).await?;
+    }
+    let backend = open_memory_backend(&memory)?;
+    let task_store = VectorTaskStore::new(FilesTaskStore::new(&memory.root), backend.clone());
+    let report = import_directory(
+        ImportOptions {
+            directory,
+            okf_root: PathBuf::from(&memory.root),
+            user_id,
+        },
+        backend,
+        memory.backend != MemoryBackendKind::Files,
+        &task_store,
+    )
+    .await?;
+    let imported = report.memory_imported + report.task_imported;
+    let skipped_duplicates = report.memory_skipped_duplicates + report.task_skipped_duplicates;
     println!(
-        "backfill scanned={} imported={} skipped_duplicates={}",
-        stats.scanned, stats.imported, stats.skipped_duplicates
+        "backfill scanned={} imported={} skipped_duplicates={} failed={}",
+        report.scanned,
+        imported,
+        skipped_duplicates,
+        report.failed.len()
     );
+    println!("{}", serde_json::to_string_pretty(&report)?);
+    println!("next best step: run `brunnr consolidate` when you want the opt-in LLM semantic pass");
+    Ok(())
+}
+
+async fn onboard(
+    project: String,
+    directory: PathBuf,
+    options: InitOptions,
+    config_path: PathBuf,
+    user_id: Option<String>,
+) -> Result<()> {
+    init(options, true).await?;
+    let memory = load_config(&config_path)
+        .map(|config| config.memory)
+        .unwrap_or_else(|_| {
+            let text = fs::read_to_string(DEFAULT_CONFIG).expect("init wrote brunnr.toml");
+            BrunnrConfig::from_toml(&text)
+                .expect("init config should parse")
+                .memory
+        });
+    let backend = open_memory_backend(&memory)?;
+    let task_store = VectorTaskStore::new(FilesTaskStore::new(&memory.root), backend.clone());
+    let report = import_directory(
+        ImportOptions {
+            directory,
+            okf_root: PathBuf::from(&memory.root),
+            user_id,
+        },
+        backend.clone(),
+        memory.backend != MemoryBackendKind::Files,
+        &task_store,
+    )
+    .await?;
+    let verification_hits = backend
+        .find(MemoryQuery::new("").with_limit(1))
+        .await
+        .map(|hits| hits.len())
+        .unwrap_or_default();
+    println!(
+        "onboard project={} collection={} root={} verification_hits={}",
+        project, memory.collection, memory.root, verification_hits
+    );
+    println!("{}", serde_json::to_string_pretty(&report)?);
+    println!("next best step: run `brunnr consolidate` when you want the opt-in LLM semantic pass");
     Ok(())
 }
 
@@ -757,6 +981,60 @@ fn okf(command: OkfCommand) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn consolidate(config_path: PathBuf, root: PathBuf, allow_llm: bool) -> Result<()> {
+    let memory = memory_config_for_command(&config_path, root, None)?;
+    let memory_root = PathBuf::from(&memory.root);
+    let index_path = memory_root.join("memory").join("index.md");
+    let log_path = memory_root.join("memory").join("log.md");
+    fs::create_dir_all(memory_root.join("memory"))?;
+    if !index_path.exists() {
+        fs::write(
+            &index_path,
+            "---\ntype: index\ntitle: Brunnr Memory Index\n---\n\n# Brunnr Memory Index\n\nNo structural import catalog exists yet.\n",
+        )?;
+    }
+    let mode = if allow_llm {
+        "llm-semantic-requested"
+    } else {
+        "structural-no-llm"
+    };
+    let entry = format!(
+        "\n- {} consolidate mode={mode}; LLM semantic consolidation is opt-in and requires a configured provider adapter.\n",
+        chrono_like_timestamp()
+    );
+    fs::OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open(&log_path)?
+        .write_all(entry.as_bytes())?;
+    if allow_llm {
+        println!(
+            "consolidate recorded opt-in LLM semantic request; provider adapter execution is not enabled by default"
+        );
+    } else {
+        println!(
+            "consolidate verified structural index/log without LLM calls; pass --allow-llm only when semantic consolidation is explicitly approved"
+        );
+    }
+    Ok(())
+}
+
+fn read_index_slice(root: &str, index_chars: usize) -> Result<Option<String>> {
+    let path = PathBuf::from(root).join("memory").join("index.md");
+    if !path.exists() {
+        return Ok(None);
+    }
+    let text = fs::read_to_string(path)?;
+    Ok(Some(text.chars().take(index_chars).collect()))
+}
+
+fn chrono_like_timestamp() -> String {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs().to_string())
+        .unwrap_or_else(|_| "0".to_string())
 }
 
 #[cfg(feature = "qdrant")]
@@ -817,6 +1095,38 @@ fn qdrant_config(memory: &MemoryConfig) -> Result<mimisbrunnr::QdrantVectorStore
     Ok(config)
 }
 
+#[cfg(feature = "qdrant")]
+async fn preflight_qdrant_memory(memory: &MemoryConfig) -> Result<()> {
+    let report = mimisbrunnr::preflight_qdrant(qdrant_config(memory)?).await?;
+    eprintln!(
+        "Qdrant preflight ok: grpc={} rest={} version={}",
+        report.grpc_url, report.rest_url, report.grpc_version
+    );
+    Ok(())
+}
+
+#[cfg(not(feature = "qdrant"))]
+async fn preflight_qdrant_memory(_memory: &MemoryConfig) -> Result<()> {
+    bail!("Qdrant preflight requires building brunnr-cli with the qdrant feature")
+}
+
+async fn preflight_qdrant_options(options: &InitOptions) -> Result<()> {
+    let memory = MemoryConfig {
+        backend: MemoryBackendKind::Qdrant,
+        root: options.memory_root.display().to_string(),
+        collection: options.collection.clone(),
+        qdrant_url: options.qdrant_url.clone(),
+        qdrant_rest_url: options.qdrant_rest_url.clone(),
+        qdrant_api_key_env: Some(options.qdrant_api_key_env.clone()),
+        local_rerank_enabled: true,
+        hyde_enabled: false,
+        multi_query_enabled: false,
+        debate_enabled: false,
+        llm_consolidation_enabled: false,
+    };
+    preflight_qdrant_memory(&memory).await
+}
+
 fn open_backend_for_command(
     config_path: &Path,
     root: PathBuf,
@@ -848,6 +1158,11 @@ fn memory_config_for_command(
             qdrant_url: env::var("QDRANT_URL").ok(),
             qdrant_rest_url: env::var("QDRANT_REST_URL").ok(),
             qdrant_api_key_env: Some("QDRANT_API_KEY".to_string()),
+            local_rerank_enabled: true,
+            hyde_enabled: false,
+            multi_query_enabled: false,
+            debate_enabled: false,
+            llm_consolidation_enabled: false,
         }
     };
     let config = if let Some(backend) = backend {

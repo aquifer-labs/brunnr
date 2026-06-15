@@ -83,14 +83,14 @@ Run a local Qdrant for development:
 
 ```shell
 docker compose -f deploy/qdrant/compose.yml up -d
-QDRANT_URL=http://127.0.0.1:6334 \
-QDRANT_REST_URL=http://127.0.0.1:6333 \
+QDRANT_URL=http://127.0.0.1:6333 \
   cargo test -p mimisbrunnr --features qdrant --test qdrant -- --ignored
 ```
 
-Do not hardcode Qdrant hosts in code. Use `QDRANT_URL` / `qdrant_url` for the gRPC client endpoint
-and `QDRANT_REST_URL` / `qdrant_rest_url` for REST-only alias and snapshot operations when the REST
-API is not the default `:6333` sibling of a `:6334` gRPC endpoint.
+Do not hardcode Qdrant hosts in code. On default ports, Brunnr accepts one `QDRANT_URL` /
+`qdrant_url`: `:6333` is treated as REST and derives gRPC `:6334`; `:6334` derives REST `:6333`.
+Use `QDRANT_REST_URL` / `qdrant_rest_url` only when the REST API is not the default sibling of the
+configured gRPC endpoint. CLI setup/import preflights both endpoints before writing memory.
 
 ## Future Backends
 

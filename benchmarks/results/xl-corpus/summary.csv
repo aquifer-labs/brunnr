@@ -1,0 +1,11 @@
+arm,runs,success_rate,mean_total_tokens,tokens_per_success,precision,recall
+A-full-replay,80,1,12902.25,12902.25,0.005319,1
+A-full-replay-cold-session,80,1,12905.25,12905.25,0.005319,1
+B-default-brunnr,80,1,875.975,875.975,0.333333,1
+B-default-brunnr-cold-session,80,1,878.975,878.975,0.333333,1
+B-plus-debate,80,1,907.225,907.225,0.333333,1
+B-plus-hyde,80,0.575,914.325,1590.130435,0.191666,0.575
+B-plus-multi-query,80,1,923.85,923.85,0.333333,1
+B-reflection-consolidated,80,1,1253.4,1253.4,0.333333,1
+C-built-in-agent-memory,80,0.725,116.175,160.241379,0.725,0.725
+D-no-memory,80,0,54.25,,0,0

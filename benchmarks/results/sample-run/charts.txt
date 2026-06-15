@@ -1,5 +1,40 @@
-Tokens per success (lower is better)
-A-baseline-full-context        170.00 ########
-B-brunnr-memory-find            68.67 ###
-C-built-in-memory              114.00 #####
-D-no-memory                      0.00 #
+Tokens per success (lower is better; tokenizer=cl100k_base)
+A-full-replay                           1093.00 ############################################
+A-full-replay-cold-session              1096.00 ############################################
+B-default-brunnr                         587.57 ########################
+B-default-brunnr-cold-session            591.00 ########################
+B-plus-debate                            620.71 #########################
+B-plus-hyde                             1485.00 ###########################################################
+B-plus-multi-query                       630.29 #########################
+B-reflection-consolidated                793.14 ################################
+C-built-in-agent-memory                  206.40 ########
+D-no-memory                                0.00 #
+
+Retrieval misses (recall < 1.0)
+B-default-brunnr access-token-ttl recall=0 relevant=["memory/auth-token-ttl.md"] retrieved=["distractors/march-outage-briefing.md", "memory/deploy-regions.md", "memory/rate-limits.md"]
+B-default-brunnr-cold-session access-token-ttl recall=0 relevant=["memory/auth-token-ttl.md"] retrieved=["distractors/march-outage-briefing.md", "memory/deploy-regions.md", "memory/rate-limits.md"]
+B-plus-debate access-token-ttl recall=0 relevant=["memory/auth-token-ttl.md"] retrieved=["distractors/march-outage-briefing.md", "memory/deploy-regions.md", "memory/rate-limits.md"]
+B-plus-hyde access-token-ttl recall=0 relevant=["memory/auth-token-ttl.md"] retrieved=["distractors/db-migration-notes.md", "distractors/march-outage-briefing.md", "memory/datastore-choice.md"]
+B-plus-hyde api-rate-limit recall=0 relevant=["memory/rate-limits.md"] retrieved=["distractors/glossary.md", "distractors/march-outage-briefing.md", "memory/incident-march-postmortem.md"]
+B-plus-hyde cache-ttl recall=0 relevant=["memory/caching-policy.md"] retrieved=["distractors/caching-faq.md", "distractors/glossary.md", "distractors/march-outage-briefing.md"]
+B-plus-hyde failover-primary-region recall=0 relevant=["memory/deploy-regions.md"] retrieved=["distractors/db-migration-notes.md", "distractors/march-outage-briefing.md", "memory/datastore-choice.md"]
+B-plus-hyde retry-max-attempts recall=0 relevant=["memory/retry-policy.md"] retrieved=["distractors/db-migration-notes.md", "distractors/march-outage-briefing.md", "memory/incident-march-postmortem.md"]
+B-plus-multi-query access-token-ttl recall=0 relevant=["memory/auth-token-ttl.md"] retrieved=["distractors/caching-faq.md", "distractors/march-outage-briefing.md", "memory/datastore-choice.md"]
+B-reflection-consolidated access-token-ttl recall=0 relevant=["memory/auth-token-ttl.md"] retrieved=["distractors/march-outage-briefing.md", "memory/deploy-regions.md", "memory/rate-limits.md"]
+C-built-in-agent-memory access-token-ttl recall=0 relevant=["memory/auth-token-ttl.md"] retrieved=["distractors/march-outage-briefing.md"]
+C-built-in-agent-memory cache-ttl recall=0 relevant=["memory/caching-policy.md"] retrieved=["distractors/glossary.md"]
+C-built-in-agent-memory march-outage-root-cause recall=0 relevant=["memory/incident-march-postmortem.md"] retrieved=["distractors/march-outage-briefing.md"]
+D-no-memory access-token-ttl recall=0 relevant=["memory/auth-token-ttl.md"] retrieved=[]
+D-no-memory api-rate-limit recall=0 relevant=["memory/rate-limits.md"] retrieved=[]
+D-no-memory cache-ttl recall=0 relevant=["memory/caching-policy.md"] retrieved=[]
+D-no-memory failover-primary-region recall=0 relevant=["memory/deploy-regions.md"] retrieved=[]
+D-no-memory flag-default-on-config-outage recall=0 relevant=["memory/feature-flags.md"] retrieved=[]
+D-no-memory march-outage-root-cause recall=0 relevant=["memory/incident-march-postmortem.md"] retrieved=[]
+D-no-memory primary-datastore recall=0 relevant=["memory/datastore-choice.md"] retrieved=[]
+D-no-memory retry-max-attempts recall=0 relevant=["memory/retry-policy.md"] retrieved=[]
+
+Opt-in marginal verdicts
+B-plus-debate: delta_tokens=Some(33.142857) delta_success=0 delta_precision=0 delta_recall=0 skip by default; no measured quality gain over B-default in this sample
+B-plus-hyde: delta_tokens=Some(897.428571) delta_success=-0.5 delta_precision=-0.166666 delta_recall=-0.5 skip by default; no measured quality gain over B-default in this sample
+B-plus-multi-query: delta_tokens=Some(42.714285) delta_success=0 delta_precision=0 delta_recall=0 skip by default; no measured quality gain over B-default in this sample
+B-reflection-consolidated: delta_tokens=Some(205.571428) delta_success=0 delta_precision=0 delta_recall=0 skip by default; no measured quality gain over B-default in this sample

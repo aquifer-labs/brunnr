@@ -33,6 +33,7 @@ const TOOL_INSTRUCTIONS: &str =
 pub struct MemoryServer {
     backend: Arc<dyn MemoryBackend>,
     anchor_store: Option<MuninnAnchorStore>,
+    okf_root: Option<PathBuf>,
     router_enabled: bool,
     tool_router: ToolRouter<Self>,
 }
@@ -42,8 +43,9 @@ impl MemoryServer {
         let root = root.into();
         Self::with_backend_and_anchor(
             Arc::new(FilesBackend::new(&root)),
-            Some(MuninnAnchorStore::new(root)),
+            Some(MuninnAnchorStore::new(&root)),
         )
+        .with_okf_root(Some(root))
     }
 
     pub fn with_backend(backend: Arc<dyn MemoryBackend>) -> Self {
@@ -57,9 +59,15 @@ impl MemoryServer {
         Self {
             backend,
             anchor_store,
+            okf_root: None,
             router_enabled: false,
             tool_router: Self::tool_router(),
         }
+    }
+
+    pub fn with_okf_root(mut self, root: Option<PathBuf>) -> Self {
+        self.okf_root = root;
+        self
     }
 
     pub fn with_router_enabled(mut self, enabled: bool) -> Self {
@@ -71,7 +79,8 @@ impl MemoryServer {
         Ok(Self::with_backend_and_anchor(
             open_memory_backend(config)?,
             Some(MuninnAnchorStore::new(&config.root)),
-        ))
+        )
+        .with_okf_root(Some(PathBuf::from(&config.root))))
     }
 }
 
@@ -99,6 +108,24 @@ pub struct FindHit {
     pub content: String,
     pub score: f32,
     pub tags: Vec<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct ContextRequest {
+    pub query: String,
+    pub limit: Option<usize>,
+    pub index_chars: Option<usize>,
+    pub scope: Option<ScopeRequest>,
+    pub agent_id: Option<String>,
+    pub session_id: Option<String>,
+    pub task_id: Option<String>,
+    pub user_id: Option<String>,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct ContextResponse {
+    pub index: Option<String>,
+    pub hits: Vec<FindHit>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -215,6 +242,46 @@ impl MemoryServer {
             })
             .collect();
         Ok(Json(FindResponse { hits }))
+    }
+
+    #[tool(
+        name = "memory.context",
+        description = "Return a compact index.md slice plus targeted memory.find hits; no LLM call is made."
+    )]
+    pub async fn memory_context(
+        &self,
+        Parameters(request): Parameters<ContextRequest>,
+    ) -> Result<Json<ContextResponse>, ErrorData> {
+        let index = self
+            .okf_root
+            .as_ref()
+            .and_then(|root| std::fs::read_to_string(root.join("memory").join("index.md")).ok())
+            .map(|index| {
+                let limit = request.index_chars.unwrap_or(4_000);
+                index.chars().take(limit).collect::<String>()
+            });
+        let mut query = MemoryQuery::new(request.query);
+        query.limit = request.limit.unwrap_or(10);
+        query.scope = request.scope.map(Into::into);
+        query.agent_id = request.agent_id;
+        query.session_id = request.session_id;
+        query.task_id = request.task_id;
+        query.user_id = request.user_id;
+        let hits = self
+            .backend
+            .find(query)
+            .await
+            .map_err(|error| ErrorData::internal_error(error.to_string(), None))?
+            .into_iter()
+            .map(|hit| FindHit {
+                id: hit.record.id.to_string(),
+                node_id: hit.record.node_id,
+                content: hit.record.content,
+                score: hit.score,
+                tags: hit.record.tags,
+            })
+            .collect();
+        Ok(Json(ContextResponse { index, hits }))
     }
 
     #[tool(
@@ -453,6 +520,10 @@ fn tool_registry() -> &'static [RegisteredTool] {
         RegisteredTool {
             name: "memory.store",
             description: "Store durable reusable learnings in project memory.",
+        },
+        RegisteredTool {
+            name: "memory.context",
+            description: "Read index.md first, then return a targeted memory.find slice.",
         },
         RegisteredTool {
             name: "memory.anchor.get",

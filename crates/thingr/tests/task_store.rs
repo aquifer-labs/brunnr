@@ -183,6 +183,32 @@ async fn vector_task_store_indexes_tasks_for_find() {
     assert_eq!(found[0].id, "task-indexed");
 }
 
+#[tokio::test]
+async fn task_like_markdown_import_is_idempotent_and_keeps_path_status() {
+    let tempdir = TempDir::new("task-import");
+    let task_path = tempdir.join("tasks/doing/imported-task.md");
+    let text = "# Imported Task\n\nCarry this task through the importer.";
+    let task = FilesTaskStore::parse_task_like_markdown(&task_path, text)
+        .expect("task-like markdown should parse");
+    let store = FilesTaskStore::new(tempdir.join("store"));
+
+    let first = store
+        .import_task(task.clone())
+        .await
+        .expect("first import should succeed");
+    let second = store
+        .import_task(task)
+        .await
+        .expect("second import should succeed");
+    let listed = store.list().await.expect("list should succeed");
+
+    assert!(first.imported());
+    assert!(!second.imported());
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].title, "Imported Task");
+    assert_eq!(listed[0].status, TaskStatus::Doing);
+}
+
 struct StaticVerifier {
     name: String,
     passed: bool,

@@ -1,0 +1,87 @@
+Tokens per success (lower is better; tokenizer=cl100k_base)
+A-full-replay                          12902.25 ####################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################
+A-full-replay-cold-session             12905.25 ####################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################################
+B-default-brunnr                         875.98 ###################################
+B-default-brunnr-cold-session            878.98 ###################################
+B-plus-debate                            907.23 ####################################
+B-plus-hyde                             1590.13 ################################################################
+B-plus-multi-query                       923.85 #####################################
+B-reflection-consolidated               1253.40 ##################################################
+C-built-in-agent-memory                  160.24 ######
+D-no-memory                                0.00 #
+
+Retrieval misses (recall < 1.0)
+B-plus-hyde xl-00-import-service recall=0 relevant=["memory/import-service.md"] retrieved=["distractors/naming-guide.md", "memory/analytics-api.md", "memory/import-gateway.md"]
+B-plus-hyde xl-04-orders-processor recall=0 relevant=["memory/orders-processor.md"] retrieved=["distractors/naming-guide.md", "memory/analytics-indexer.md", "memory/analytics-service.md"]
+B-plus-hyde xl-06-export-api recall=0 relevant=["memory/export-api.md"] retrieved=["distractors/naming-guide.md", "memory/analytics-indexer.md", "memory/messaging-api.md"]
+B-plus-hyde xl-07-sync-processor recall=0 relevant=["memory/sync-processor.md"] retrieved=["distractors/naming-guide.md", "memory/analytics-indexer.md", "memory/analytics-service.md"]
+B-plus-hyde xl-08-billing-service recall=0 relevant=["memory/billing-service.md"] retrieved=["distractors/naming-guide.md", "memory/analytics-api.md", "memory/analytics-processor.md"]
+B-plus-hyde xl-10-metering-service recall=0 relevant=["memory/metering-service.md"] retrieved=["distractors/naming-guide.md", "distractors/quota-overview.md", "memory/analytics-api.md"]
+B-plus-hyde xl-14-geocoding-scheduler recall=0 relevant=["memory/geocoding-scheduler.md"] retrieved=["memory/analytics-gateway.md", "memory/archive-api.md", "memory/scheduling-gateway.md"]
+B-plus-hyde xl-16-feeds-worker recall=0 relevant=["memory/feeds-worker.md"] retrieved=["distractors/naming-guide.md", "memory/catalog-worker.md", "memory/gateway-worker.md"]
+B-plus-hyde xl-19-webhooks-service recall=0 relevant=["memory/webhooks-service.md"] retrieved=["memory/analytics-gateway.md", "memory/archive-api.md", "memory/gateway-processor.md"]
+B-plus-hyde xl-20-webhooks-gateway recall=0 relevant=["memory/webhooks-gateway.md"] retrieved=["distractors/naming-guide.md", "memory/archive-gateway.md", "memory/messaging-gateway.md"]
+B-plus-hyde xl-21-orders-service recall=0 relevant=["memory/orders-service.md"] retrieved=["distractors/naming-guide.md", "memory/analytics-indexer.md", "memory/analytics-service.md"]
+B-plus-hyde xl-25-reviews-service recall=0 relevant=["memory/reviews-service.md"] retrieved=["distractors/naming-guide.md", "memory/analytics-indexer.md", "memory/analytics-service.md"]
+B-plus-hyde xl-26-reviews-scheduler recall=0 relevant=["memory/reviews-scheduler.md"] retrieved=["memory/analytics-gateway.md", "memory/archive-api.md", "memory/catalog-scheduler.md"]
+B-plus-hyde xl-27-pricing-service recall=0 relevant=["memory/pricing-service.md"] retrieved=["distractors/naming-guide.md", "distractors/quota-overview.md", "memory/analytics-api.md"]
+B-plus-hyde xl-28-pricing-scheduler recall=0 relevant=["memory/pricing-scheduler.md"] retrieved=["memory/analytics-gateway.md", "memory/archive-api.md", "memory/scheduling-gateway.md"]
+B-plus-hyde xl-30-ledger-worker recall=0 relevant=["memory/ledger-worker.md"] retrieved=["distractors/naming-guide.md", "distractors/quota-overview.md", "memory/analytics-worker.md"]
+B-plus-hyde xl-38-geocoding-service recall=0 relevant=["memory/geocoding-service.md"] retrieved=["memory/analytics-indexer.md", "memory/gateway-gateway.md", "memory/metering-gateway.md"]
+C-built-in-agent-memory xl-00-import-service recall=0 relevant=["memory/import-service.md"] retrieved=["distractors/naming-guide.md"]
+C-built-in-agent-memory xl-01-media-indexer recall=0 relevant=["memory/media-indexer.md"] retrieved=["distractors/naming-guide.md"]
+C-built-in-agent-memory xl-05-fraud-processor recall=0 relevant=["memory/fraud-processor.md"] retrieved=["distractors/naming-guide.md"]
+C-built-in-agent-memory xl-08-billing-service recall=0 relevant=["memory/billing-service.md"] retrieved=["distractors/naming-guide.md"]
+C-built-in-agent-memory xl-09-translation-gateway recall=0 relevant=["memory/translation-gateway.md"] retrieved=["distractors/naming-guide.md"]
+C-built-in-agent-memory xl-10-metering-service recall=0 relevant=["memory/metering-service.md"] retrieved=["distractors/naming-guide.md"]
+C-built-in-agent-memory xl-11-catalog-indexer recall=0 relevant=["memory/catalog-indexer.md"] retrieved=["distractors/naming-guide.md"]
+C-built-in-agent-memory xl-27-pricing-service recall=0 relevant=["memory/pricing-service.md"] retrieved=["distractors/naming-guide.md"]
+C-built-in-agent-memory xl-30-ledger-worker recall=0 relevant=["memory/ledger-worker.md"] retrieved=["distractors/naming-guide.md"]
+C-built-in-agent-memory xl-37-analytics-api recall=0 relevant=["memory/analytics-api.md"] retrieved=["distractors/naming-guide.md"]
+C-built-in-agent-memory xl-39-auth-indexer recall=0 relevant=["memory/auth-indexer.md"] retrieved=["distractors/naming-guide.md"]
+D-no-memory xl-00-import-service recall=0 relevant=["memory/import-service.md"] retrieved=[]
+D-no-memory xl-01-media-indexer recall=0 relevant=["memory/media-indexer.md"] retrieved=[]
+D-no-memory xl-02-loyalty-api recall=0 relevant=["memory/loyalty-api.md"] retrieved=[]
+D-no-memory xl-03-tax-gateway recall=0 relevant=["memory/tax-gateway.md"] retrieved=[]
+D-no-memory xl-04-orders-processor recall=0 relevant=["memory/orders-processor.md"] retrieved=[]
+D-no-memory xl-05-fraud-processor recall=0 relevant=["memory/fraud-processor.md"] retrieved=[]
+D-no-memory xl-06-export-api recall=0 relevant=["memory/export-api.md"] retrieved=[]
+D-no-memory xl-07-sync-processor recall=0 relevant=["memory/sync-processor.md"] retrieved=[]
+D-no-memory xl-08-billing-service recall=0 relevant=["memory/billing-service.md"] retrieved=[]
+D-no-memory xl-09-translation-gateway recall=0 relevant=["memory/translation-gateway.md"] retrieved=[]
+D-no-memory xl-10-metering-service recall=0 relevant=["memory/metering-service.md"] retrieved=[]
+D-no-memory xl-11-catalog-indexer recall=0 relevant=["memory/catalog-indexer.md"] retrieved=[]
+D-no-memory xl-12-gateway-worker recall=0 relevant=["memory/gateway-worker.md"] retrieved=[]
+D-no-memory xl-13-identity-api recall=0 relevant=["memory/identity-api.md"] retrieved=[]
+D-no-memory xl-14-geocoding-scheduler recall=0 relevant=["memory/geocoding-scheduler.md"] retrieved=[]
+D-no-memory xl-15-export-indexer recall=0 relevant=["memory/export-indexer.md"] retrieved=[]
+D-no-memory xl-16-feeds-worker recall=0 relevant=["memory/feeds-worker.md"] retrieved=[]
+D-no-memory xl-17-webhooks-indexer recall=0 relevant=["memory/webhooks-indexer.md"] retrieved=[]
+D-no-memory xl-18-messaging-indexer recall=0 relevant=["memory/messaging-indexer.md"] retrieved=[]
+D-no-memory xl-19-webhooks-service recall=0 relevant=["memory/webhooks-service.md"] retrieved=[]
+D-no-memory xl-20-webhooks-gateway recall=0 relevant=["memory/webhooks-gateway.md"] retrieved=[]
+D-no-memory xl-21-orders-service recall=0 relevant=["memory/orders-service.md"] retrieved=[]
+D-no-memory xl-22-reporting-service recall=0 relevant=["memory/reporting-service.md"] retrieved=[]
+D-no-memory xl-23-reporting-indexer recall=0 relevant=["memory/reporting-indexer.md"] retrieved=[]
+D-no-memory xl-24-loyalty-gateway recall=0 relevant=["memory/loyalty-gateway.md"] retrieved=[]
+D-no-memory xl-25-reviews-service recall=0 relevant=["memory/reviews-service.md"] retrieved=[]
+D-no-memory xl-26-reviews-scheduler recall=0 relevant=["memory/reviews-scheduler.md"] retrieved=[]
+D-no-memory xl-27-pricing-service recall=0 relevant=["memory/pricing-service.md"] retrieved=[]
+D-no-memory xl-28-pricing-scheduler recall=0 relevant=["memory/pricing-scheduler.md"] retrieved=[]
+D-no-memory xl-29-billing-gateway recall=0 relevant=["memory/billing-gateway.md"] retrieved=[]
+D-no-memory xl-30-ledger-worker recall=0 relevant=["memory/ledger-worker.md"] retrieved=[]
+D-no-memory xl-31-notifications-api recall=0 relevant=["memory/notifications-api.md"] retrieved=[]
+D-no-memory xl-32-auth-service recall=0 relevant=["memory/auth-service.md"] retrieved=[]
+D-no-memory xl-33-recommendations-processor recall=0 relevant=["memory/recommendations-processor.md"] retrieved=[]
+D-no-memory xl-34-loyalty-service recall=0 relevant=["memory/loyalty-service.md"] retrieved=[]
+D-no-memory xl-35-moderation-scheduler recall=0 relevant=["memory/moderation-scheduler.md"] retrieved=[]
+D-no-memory xl-36-media-processor recall=0 relevant=["memory/media-processor.md"] retrieved=[]
+D-no-memory xl-37-analytics-api recall=0 relevant=["memory/analytics-api.md"] retrieved=[]
+D-no-memory xl-38-geocoding-service recall=0 relevant=["memory/geocoding-service.md"] retrieved=[]
+D-no-memory xl-39-auth-indexer recall=0 relevant=["memory/auth-indexer.md"] retrieved=[]
+
+Opt-in marginal verdicts
+B-plus-debate: delta_tokens=Some(31.25) delta_success=0 delta_precision=0 delta_recall=0 skip by default; no measured quality gain over B-default in this sample
+B-plus-hyde: delta_tokens=Some(714.155435) delta_success=-0.425 delta_precision=-0.141667 delta_recall=-0.425 skip by default; no measured quality gain over B-default in this sample
+B-plus-multi-query: delta_tokens=Some(47.875) delta_success=0 delta_precision=0 delta_recall=0 skip by default; no measured quality gain over B-default in this sample
+B-reflection-consolidated: delta_tokens=Some(377.425) delta_success=0 delta_precision=0 delta_recall=0 skip by default; no measured quality gain over B-default in this sample

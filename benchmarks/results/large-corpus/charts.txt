@@ -1,0 +1,77 @@
+Tokens per success (lower is better; tokenizer=cl100k_base)
+A-full-replay                           2988.25 ########################################################################################################################
+A-full-replay-cold-session              2991.25 ########################################################################################################################
+B-default-brunnr                        1076.31 ###########################################
+B-default-brunnr-cold-session           1080.06 ###########################################
+B-plus-debate                           1112.88 #############################################
+B-plus-hyde                             2019.56 #################################################################################
+B-plus-multi-query                      1645.09 ##################################################################
+B-reflection-consolidated               1114.26 #############################################
+C-built-in-agent-memory                  160.33 ######
+D-no-memory                                0.00 #
+
+Retrieval misses (recall < 1.0)
+B-default-brunnr access-token-ttl recall=0 relevant=["memory/auth-token-ttl.md"] retrieved=["distractors/security-overview.md", "memory/api-versioning.md", "memory/datastore-choice.md"]
+B-default-brunnr backup-rpo recall=0 relevant=["memory/backup-policy.md"] retrieved=["memory/datastore-choice.md", "memory/incident-march-postmortem.md", "memory/tenancy-model.md"]
+B-default-brunnr canary-hold-time recall=0 relevant=["memory/deploy-strategy.md"] retrieved=["distractors/deployment-checklist.md", "distractors/glossary.md", "memory/incident-march-postmortem.md"]
+B-default-brunnr max-upload-size recall=0 relevant=["memory/upload-limits.md"] retrieved=["distractors/storage-overview.md", "memory/incident-march-postmortem.md", "memory/slo-policy.md"]
+B-default-brunnr-cold-session access-token-ttl recall=0 relevant=["memory/auth-token-ttl.md"] retrieved=["distractors/security-overview.md", "memory/api-versioning.md", "memory/datastore-choice.md"]
+B-default-brunnr-cold-session backup-rpo recall=0 relevant=["memory/backup-policy.md"] retrieved=["memory/datastore-choice.md", "memory/incident-march-postmortem.md", "memory/tenancy-model.md"]
+B-default-brunnr-cold-session canary-hold-time recall=0 relevant=["memory/deploy-strategy.md"] retrieved=["distractors/deployment-checklist.md", "distractors/glossary.md", "memory/incident-march-postmortem.md"]
+B-default-brunnr-cold-session max-upload-size recall=0 relevant=["memory/upload-limits.md"] retrieved=["distractors/storage-overview.md", "memory/incident-march-postmortem.md", "memory/slo-policy.md"]
+B-plus-debate access-token-ttl recall=0 relevant=["memory/auth-token-ttl.md"] retrieved=["distractors/security-overview.md", "memory/api-versioning.md", "memory/datastore-choice.md"]
+B-plus-debate backup-rpo recall=0 relevant=["memory/backup-policy.md"] retrieved=["memory/datastore-choice.md", "memory/incident-march-postmortem.md", "memory/tenancy-model.md"]
+B-plus-debate canary-hold-time recall=0 relevant=["memory/deploy-strategy.md"] retrieved=["distractors/deployment-checklist.md", "distractors/glossary.md", "memory/incident-march-postmortem.md"]
+B-plus-debate max-upload-size recall=0 relevant=["memory/upload-limits.md"] retrieved=["distractors/storage-overview.md", "memory/incident-march-postmortem.md", "memory/slo-policy.md"]
+B-plus-hyde access-token-ttl recall=0 relevant=["memory/auth-token-ttl.md"] retrieved=["distractors/glossary.md", "distractors/security-overview.md", "distractors/storage-overview.md"]
+B-plus-hyde backup-rpo recall=0 relevant=["memory/backup-policy.md"] retrieved=["memory/datastore-choice.md", "memory/incident-march-postmortem.md", "memory/tenancy-model.md"]
+B-plus-hyde cache-ttl recall=0 relevant=["memory/caching-policy.md"] retrieved=["distractors/caching-faq.md", "distractors/glossary.md", "distractors/storage-overview.md"]
+B-plus-hyde canary-hold-time recall=0 relevant=["memory/deploy-strategy.md"] retrieved=["distractors/deployment-checklist.md", "distractors/glossary.md", "memory/deploy-regions.md"]
+B-plus-hyde failover-primary-region recall=0 relevant=["memory/deploy-regions.md"] retrieved=["distractors/glossary.md", "distractors/storage-overview.md", "memory/datastore-choice.md"]
+B-plus-hyde log-hot-retention recall=0 relevant=["memory/log-retention.md"] retrieved=["distractors/data-handling-faq.md", "distractors/glossary.md", "distractors/storage-overview.md"]
+B-plus-hyde max-upload-size recall=0 relevant=["memory/upload-limits.md"] retrieved=["distractors/storage-overview.md", "memory/incident-march-postmortem.md", "memory/password-hashing.md"]
+B-plus-hyde pii-key-rotation recall=0 relevant=["memory/pii-encryption.md"] retrieved=["distractors/security-overview.md", "distractors/storage-overview.md", "memory/oncall-policy.md"]
+B-plus-hyde retry-max-attempts recall=0 relevant=["memory/retry-policy.md"] retrieved=["memory/incident-march-postmortem.md", "memory/password-hashing.md", "memory/webhook-policy.md"]
+B-plus-hyde session-idle-timeout recall=0 relevant=["memory/session-policy.md"] retrieved=["distractors/glossary.md", "distractors/storage-overview.md", "memory/incident-severity.md"]
+B-plus-hyde webhook-retry-window recall=0 relevant=["memory/webhook-policy.md"] retrieved=["distractors/glossary.md", "memory/api-versioning.md", "memory/log-retention.md"]
+B-plus-multi-query access-token-ttl recall=0 relevant=["memory/auth-token-ttl.md"] retrieved=["distractors/data-handling-faq.md", "distractors/onboarding-guide.md", "distractors/security-overview.md"]
+B-plus-multi-query backup-rpo recall=0 relevant=["memory/backup-policy.md"] retrieved=["distractors/api-style-guide.md", "distractors/onboarding-guide.md", "memory/incident-march-postmortem.md"]
+B-plus-multi-query canary-hold-time recall=0 relevant=["memory/deploy-strategy.md"] retrieved=["distractors/glossary.md", "memory/datastore-choice.md", "memory/incident-march-postmortem.md"]
+B-plus-multi-query event-bus-retention recall=0 relevant=["memory/event-bus.md"] retrieved=["distractors/data-handling-faq.md", "distractors/onboarding-guide.md", "distractors/reliability-principles.md"]
+B-plus-multi-query march-outage-root-cause recall=0 relevant=["memory/incident-march-postmortem.md"] retrieved=["distractors/march-outage-briefing.md", "distractors/onboarding-guide.md", "memory/incident-july-postmortem.md"]
+B-plus-multi-query max-upload-size recall=0 relevant=["memory/upload-limits.md"] retrieved=["distractors/glossary.md", "memory/datastore-choice.md", "memory/incident-march-postmortem.md"]
+B-plus-multi-query password-hash-algorithm recall=0 relevant=["memory/password-hashing.md"] retrieved=["distractors/security-overview.md", "memory/auth-token-ttl.md", "memory/datastore-choice.md"]
+B-plus-multi-query session-idle-timeout recall=0 relevant=["memory/session-policy.md"] retrieved=["distractors/glossary.md", "memory/datastore-choice.md", "memory/deploy-regions.md"]
+B-plus-multi-query webhook-retry-window recall=0 relevant=["memory/webhook-policy.md"] retrieved=["memory/api-versioning.md", "memory/cdn-policy.md", "memory/log-retention.md"]
+B-reflection-consolidated oncall-ack-sla recall=0 relevant=["memory/oncall-policy.md"] retrieved=["memory/deploy-strategy.md", "memory/feature-flags.md", "memory/incident-severity.md"]
+C-built-in-agent-memory access-token-ttl recall=0 relevant=["memory/auth-token-ttl.md"] retrieved=["memory/session-policy.md"]
+C-built-in-agent-memory cache-ttl recall=0 relevant=["memory/caching-policy.md"] retrieved=["distractors/glossary.md"]
+C-built-in-agent-memory march-outage-root-cause recall=0 relevant=["memory/incident-march-postmortem.md"] retrieved=["distractors/march-outage-briefing.md"]
+C-built-in-agent-memory password-hash-algorithm recall=0 relevant=["memory/password-hashing.md"] retrieved=["memory/job-semantics.md"]
+C-built-in-agent-memory webhook-retry-window recall=0 relevant=["memory/webhook-policy.md"] retrieved=["distractors/glossary.md"]
+D-no-memory access-token-ttl recall=0 relevant=["memory/auth-token-ttl.md"] retrieved=[]
+D-no-memory api-rate-limit recall=0 relevant=["memory/rate-limits.md"] retrieved=[]
+D-no-memory availability-slo recall=0 relevant=["memory/slo-policy.md"] retrieved=[]
+D-no-memory backup-rpo recall=0 relevant=["memory/backup-policy.md"] retrieved=[]
+D-no-memory cache-ttl recall=0 relevant=["memory/caching-policy.md"] retrieved=[]
+D-no-memory canary-hold-time recall=0 relevant=["memory/deploy-strategy.md"] retrieved=[]
+D-no-memory event-bus-retention recall=0 relevant=["memory/event-bus.md"] retrieved=[]
+D-no-memory failover-primary-region recall=0 relevant=["memory/deploy-regions.md"] retrieved=[]
+D-no-memory flag-default-on-config-outage recall=0 relevant=["memory/feature-flags.md"] retrieved=[]
+D-no-memory july-outage-root-cause recall=0 relevant=["memory/incident-july-postmortem.md"] retrieved=[]
+D-no-memory log-hot-retention recall=0 relevant=["memory/log-retention.md"] retrieved=[]
+D-no-memory march-outage-root-cause recall=0 relevant=["memory/incident-march-postmortem.md"] retrieved=[]
+D-no-memory max-upload-size recall=0 relevant=["memory/upload-limits.md"] retrieved=[]
+D-no-memory oncall-ack-sla recall=0 relevant=["memory/oncall-policy.md"] retrieved=[]
+D-no-memory password-hash-algorithm recall=0 relevant=["memory/password-hashing.md"] retrieved=[]
+D-no-memory pii-key-rotation recall=0 relevant=["memory/pii-encryption.md"] retrieved=[]
+D-no-memory primary-datastore recall=0 relevant=["memory/datastore-choice.md"] retrieved=[]
+D-no-memory retry-max-attempts recall=0 relevant=["memory/retry-policy.md"] retrieved=[]
+D-no-memory session-idle-timeout recall=0 relevant=["memory/session-policy.md"] retrieved=[]
+D-no-memory webhook-retry-window recall=0 relevant=["memory/webhook-policy.md"] retrieved=[]
+
+Opt-in marginal verdicts
+B-plus-debate: delta_tokens=Some(36.5625) delta_success=0 delta_precision=0 delta_recall=0 skip by default; no measured quality gain over B-default in this sample
+B-plus-hyde: delta_tokens=Some(943.243056) delta_success=-0.35 delta_precision=-0.116666 delta_recall=-0.35 skip by default; no measured quality gain over B-default in this sample
+B-plus-multi-query: delta_tokens=Some(568.778409) delta_success=-0.25 delta_precision=-0.083333 delta_recall=-0.25 skip by default; no measured quality gain over B-default in this sample
+B-reflection-consolidated: delta_tokens=Some(37.950658) delta_success=0.15 delta_precision=0.05 delta_recall=0.15 recommend for the task classes where the measured recall gain appears

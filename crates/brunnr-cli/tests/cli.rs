@@ -90,6 +90,43 @@ fn cli_memory_mode_round_trip_and_spawn_alias_work() {
     assert!(stdout(&backfill_again).contains("imported=0 skipped_duplicates=1"));
 }
 
+#[test]
+fn cli_backfill_reports_bad_markdown_and_imports_tasks() {
+    let tempdir = TempDir::new("cli-import");
+    let binary = env!("CARGO_BIN_EXE_brunnr");
+    let import_dir = tempdir.join("import");
+    std::fs::create_dir_all(import_dir.join("tasks/todo")).expect("import dirs should exist");
+    std::fs::write(
+        import_dir.join("memory.md"),
+        "# Memory\n\nDurable import memory",
+    )
+    .expect("memory should be written");
+    std::fs::write(
+        import_dir.join("tasks/todo/task-one.md"),
+        "# Imported Task\n\nTask body",
+    )
+    .expect("task should be written");
+    std::fs::write(import_dir.join("broken.md"), [0xff, 0xfe])
+        .expect("broken markdown should be written");
+
+    let backfill = Command::new(binary)
+        .args(["backfill", import_dir.to_str().expect("utf8 path")])
+        .current_dir(tempdir.path())
+        .output()
+        .expect("backfill should run");
+    assert!(backfill.status.success(), "{}", stderr(&backfill));
+    assert!(stdout(&backfill).contains("failed=1"));
+    assert!(stdout(&backfill).contains("task_imported"));
+
+    let list = Command::new(binary)
+        .args(["task", "list"])
+        .current_dir(tempdir.path())
+        .output()
+        .expect("task list should run");
+    assert!(list.status.success(), "{}", stderr(&list));
+    assert!(stdout(&list).contains("Imported Task"));
+}
+
 fn stdout(output: &std::process::Output) -> String {
     String::from_utf8_lossy(&output.stdout).into_owned()
 }

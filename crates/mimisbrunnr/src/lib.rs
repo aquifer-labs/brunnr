@@ -10,6 +10,7 @@ mod files;
 mod identity;
 #[cfg(feature = "qdrant")]
 mod qdrant;
+mod retrieval;
 mod rrf;
 #[cfg(feature = "sqlite-vec")]
 mod sqlite_vec;
@@ -23,11 +24,20 @@ mod working;
 
 pub use anchor::{recover_after_compaction, MuninnAnchorStore, RecoveryContext, SessionAnchor};
 pub use backend::MemoryBackend;
-pub use backfill::{backfill_directory, BackfillStats};
+pub use backfill::{
+    backfill_directory, collect_memory_paths, parse_memory_path, BackfillFailure, BackfillStats,
+};
 pub use compat::{CollectionCompat, COMPAT_POINT_ID, OKF_VERSION};
 pub use files::FilesBackend;
+pub use identity::stable_memory_id;
 #[cfg(feature = "qdrant")]
-pub use qdrant::{QdrantBackend, QdrantVectorStore, QdrantVectorStoreConfig};
+pub use qdrant::{
+    preflight_qdrant, QdrantBackend, QdrantEndpoints, QdrantPreflightReport, QdrantVectorStore,
+    QdrantVectorStoreConfig,
+};
+#[cfg(feature = "vector")]
+pub use retrieval::FastembedReranker;
+pub use retrieval::{LocalLexicalReranker, Reranker};
 pub use rrf::reciprocal_rank_fusion;
 #[cfg(feature = "sqlite-vec")]
 pub use sqlite_vec::{SqliteVecBackend, SqliteVecVectorStore, SqliteVecVectorStoreConfig};

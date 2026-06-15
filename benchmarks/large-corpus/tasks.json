@@ -1,0 +1,26 @@
+{
+  "suite": "seed-honest-v1",
+  "notes": "Larger tier (29 relevant docs + 12 plausible distractors). relevant_docs is the only ground truth; the retriever never sees it. The harness indexes memory/ + distractors/ as one undifferentiated corpus.",
+  "tasks": [
+    {"id":"cache-ttl","difficulty":"easy","question":"How long does the product-listing cache stay valid?","relevant_docs":["memory/caching-policy.md"],"distractor_docs":["distractors/caching-faq.md","distractors/glossary.md"]},
+    {"id":"access-token-ttl","difficulty":"easy","question":"What is the access-token lifetime?","relevant_docs":["memory/auth-token-ttl.md"],"distractor_docs":["distractors/security-overview.md","distractors/glossary.md"]},
+    {"id":"primary-datastore","difficulty":"medium","question":"What is the primary transactional datastore?","relevant_docs":["memory/datastore-choice.md"],"distractor_docs":["distractors/storage-overview.md","distractors/onboarding-guide.md"]},
+    {"id":"retry-max-attempts","difficulty":"medium","question":"What is the maximum number of retry attempts for outbound calls?","relevant_docs":["memory/retry-policy.md"],"distractor_docs":["distractors/reliability-principles.md","distractors/glossary.md"]},
+    {"id":"api-rate-limit","difficulty":"medium","question":"What is the public API rate limit per key?","relevant_docs":["memory/rate-limits.md"],"distractor_docs":["distractors/api-style-guide.md","distractors/reliability-principles.md"]},
+    {"id":"failover-primary-region","difficulty":"hard","question":"Which region is the failover primary?","relevant_docs":["memory/deploy-regions.md"],"distractor_docs":["distractors/reliability-principles.md","distractors/glossary.md"]},
+    {"id":"flag-default-on-config-outage","difficulty":"hard","question":"What does a feature flag default to when the config service is unreachable?","relevant_docs":["memory/feature-flags.md"],"distractor_docs":["distractors/reliability-principles.md","distractors/deployment-checklist.md"]},
+    {"id":"march-outage-root-cause","difficulty":"hard","question":"What was the root cause of the March outage?","relevant_docs":["memory/incident-march-postmortem.md"],"distractor_docs":["distractors/march-outage-briefing.md","distractors/incident-response-playbook.md"]},
+    {"id":"password-hash-algorithm","difficulty":"medium","question":"Which algorithm is used to hash passwords?","relevant_docs":["memory/password-hashing.md"],"distractor_docs":["distractors/security-overview.md","distractors/glossary.md"]},
+    {"id":"session-idle-timeout","difficulty":"medium","question":"After how long of inactivity does a web session expire?","relevant_docs":["memory/session-policy.md"],"distractor_docs":["distractors/security-overview.md","distractors/glossary.md"]},
+    {"id":"max-upload-size","difficulty":"easy","question":"What is the maximum size of a single file upload?","relevant_docs":["memory/upload-limits.md"],"distractor_docs":["distractors/storage-overview.md","distractors/api-style-guide.md"]},
+    {"id":"webhook-retry-window","difficulty":"medium","question":"For how long are failed webhooks retried before dead-lettering?","relevant_docs":["memory/webhook-policy.md"],"distractor_docs":["distractors/reliability-principles.md","distractors/glossary.md"]},
+    {"id":"log-hot-retention","difficulty":"medium","question":"How long are application logs kept in hot storage?","relevant_docs":["memory/log-retention.md"],"distractor_docs":["distractors/data-handling-faq.md","distractors/observability-overview.md"]},
+    {"id":"pii-key-rotation","difficulty":"hard","question":"How often does the PII encryption master key rotate?","relevant_docs":["memory/pii-encryption.md"],"distractor_docs":["distractors/security-overview.md","distractors/data-handling-faq.md"]},
+    {"id":"canary-hold-time","difficulty":"hard","question":"How long is the canary held during a deploy?","relevant_docs":["memory/deploy-strategy.md"],"distractor_docs":["distractors/deployment-checklist.md","distractors/glossary.md"]},
+    {"id":"backup-rpo","difficulty":"medium","question":"What is the database recovery point objective?","relevant_docs":["memory/backup-policy.md"],"distractor_docs":["distractors/storage-overview.md","distractors/reliability-principles.md"]},
+    {"id":"availability-slo","difficulty":"medium","question":"What is the monthly availability SLO target?","relevant_docs":["memory/slo-policy.md"],"distractor_docs":["distractors/reliability-principles.md","distractors/observability-overview.md"]},
+    {"id":"oncall-ack-sla","difficulty":"medium","question":"How quickly must a paged engineer acknowledge an alert?","relevant_docs":["memory/oncall-policy.md"],"distractor_docs":["distractors/incident-response-playbook.md","distractors/glossary.md"]},
+    {"id":"event-bus-retention","difficulty":"hard","question":"What is the retention period on the event bus?","relevant_docs":["memory/event-bus.md"],"distractor_docs":["distractors/storage-overview.md","distractors/onboarding-guide.md"]},
+    {"id":"july-outage-root-cause","difficulty":"hard","question":"What was the root cause of the July outage?","relevant_docs":["memory/incident-july-postmortem.md"],"distractor_docs":["distractors/incident-response-playbook.md","distractors/caching-faq.md"]}
+  ]
+}
