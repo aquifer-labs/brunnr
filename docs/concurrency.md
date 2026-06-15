@@ -82,6 +82,19 @@ on write and to a filter on read.
   **single async job** (one writer), or use Qdrant optimistic concurrency — never concurrently from
   many agents. The session anchor (Muninn) is per-session, so it never contends.
 
+## Session lanes
+
+Writes are serialized per `(collection, session_id)` lane with a process-aware lock file. A missing
+`session_id` maps to the `shared` lane for that collection. The lock is acquired with atomic
+`create_new`, records only non-secret metadata (`pid`, `lane`, timestamp), removes stale locks whose
+owner process is gone, and fails with a bounded timeout instead of waiting forever. Reads do not
+take lane locks.
+
+This is the OpenClaw-style "session lane" rule in Brunnr terms: independent sessions can write in
+parallel, but a single session's append stream is ordered so two concurrent runs cannot interleave
+destructively. The lock directory defaults to `.brunnr/locks` and can be overridden with
+`BRUNNR_LANE_LOCK_DIR`.
+
 ## Access funnel
 
 ```mermaid
@@ -105,6 +118,35 @@ without each one managing raw DB connections.
 - `StoreMemory`/`MemoryQuery` carry optional `scope`, `agent_id`, `session_id`, `task_id`, and
   `user_id`; vector backends receive these as normalized payload filters, without changing
   `VectorStore`.
+- Session-lane locks serialize writes per collection/session with bounded timeouts; reads remain
+  concurrent.
 - Qdrant for parallel/multi-user; sqlite-vec/files for single-host.
 - Funnel access through `brunnr-mcp`/`brunnrd` for pooling, `wait=true` read-after-write, tenant
   filtering, and per-user keys.
+
+## Container model
+
+The repository includes a multi-stage `Dockerfile` that builds the `brunnr` and `brunnrd` binaries
+and copies only those binaries into a minimal Debian trixie runtime image. The trixie base keeps
+the glibc/libstdc++ runtime new enough for the fastembed/ONNX Runtime dependency used by vector
+backends. Build it with:
+
+```shell
+docker build -t brunnr:local .
+```
+
+Run `brunnrd` against an external Qdrant by mounting config/data and passing credentials through
+the runtime environment or an orchestrator secret store:
+
+```shell
+docker run --rm \
+  -v "$PWD/.brunnr:/data" \
+  -e QDRANT_URL=http://qdrant.example:6333 \
+  -e QDRANT_REST_URL=http://qdrant.example:6333 \
+  brunnr:local --config /data/brunnr.toml --root /data
+```
+
+No provider secrets are baked into the image. Spawned agent CLIs are also outside the image by
+default: either mount the specific CLI and its credential/config directory into the container, or
+run orchestration on the host and use the container only for `brunnrd`/memory. The optional
+`deploy/brunnr/compose.yml` starts Brunnr with a local Qdrant for development.

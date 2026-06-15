@@ -184,6 +184,7 @@ before spawning; unavailable models fail early and do not create a process-tree 
       "agent": "codex",
       "command": "codex",
       "reachable": true,
+      "last_checked": "1781540000000",
       "models": [
         { "id": "gpt-5.5", "reachable": true, "source": "static-fallback" }
       ]
@@ -192,9 +193,29 @@ before spawning; unavailable models fail early and do not create a process-tree 
 }
 ```
 
+If an entry is not reachable, `unreachable_reason` is one of `no-command`, `no-credentials`,
+`quota`, `network`, or `unknown`. `last_checked` lets callers decide whether to refresh stale
+catalog data.
+
 Discovery order is: an optional agent-specific CLI list command (`BRUNNR_<AGENT>_MODELS_CMD`),
 provider-specific discovery hooks where credentials exist, curated static fallbacks for known
-agents, and a cheap reachability probe for the configured command. Credentials are never logged.
+agents, and a cheap reachability probe for the configured command. Cache files are written with
+restrictive permissions where the platform supports it.
+
+## Credential handling contract
+
+Brunnr treats model/provider credentials as external runtime state:
+
+- reuse the provider session or CLI credentials the operator already configured;
+- do not collect or persist tokens unless the operator explicitly provides a storage path or
+  secret manager;
+- if a future adapter must persist a token, use restrictive file permissions (`0600`) and the OS
+  keychain or platform secret store where available;
+- never log provider credentials, environment variables, full command environments, or raw
+  subprocess command lines;
+- subprocess failure output is redacted and truncated before it appears in errors or run logs.
+
+This contract applies to discovery, reachability probes, spawned role agents, and MCP delegation.
 
 ## MCP orchestration tools
 
@@ -225,7 +246,7 @@ retrieved context. This is an opt-in binding pattern, not a default recommendati
 gates and judge roles strong enough for the project risk, and validate quality empirically before
 standardizing on a cheap coordinator.
 
-## Agent adapter extension point
+## Agent adapter provider guide
 
 Adding a new agent such as OpenClaw or `pi` should not require core changes. Implement the
 `Agent` trait: `spawn`, `send`, `stream`, `capabilities`, and `list_models`. Brunnr supports two
@@ -238,6 +259,17 @@ integration modes:
 The default `ProcessAgent` adapter is enough for CLIs that accept prompt/model arguments. Native
 adapters are only needed when a CLI has richer session semantics, streaming events, or model
 discovery APIs that are worth exposing directly.
+
+Provider authors should keep detection lean:
+
+- check `PATH` and a small, documented set of known config directories such as `~/.codex`,
+  `~/.claude`, or `~/.config/<agent>`;
+- do not crawl home directories and do not read credential files during passive detection;
+- implement `list_models` with the provider's own list-models command first, then an API query only
+  when credentials are already present;
+- return typed unreachable reasons instead of dumping provider errors;
+- pass every spawn through the supervised `ProcessAgent` path unless the adapter implements an
+  equivalent process-tree lifecycle guarantee.
 
 ## Router — agent routing and tool selection (token-saver)
 

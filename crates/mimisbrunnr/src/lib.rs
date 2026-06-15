@@ -8,6 +8,7 @@ mod backfill;
 mod compat;
 mod files;
 mod identity;
+mod lane_lock;
 #[cfg(feature = "qdrant")]
 mod qdrant;
 mod retrieval;
@@ -30,6 +31,7 @@ pub use backfill::{
 pub use compat::{CollectionCompat, COMPAT_POINT_ID, OKF_VERSION};
 pub use files::FilesBackend;
 pub use identity::stable_memory_id;
+pub use lane_lock::{SessionLaneGuard, SessionLaneLock};
 #[cfg(feature = "qdrant")]
 pub use qdrant::{
     preflight_qdrant, QdrantBackend, QdrantEndpoints, QdrantPreflightReport, QdrantVectorStore,

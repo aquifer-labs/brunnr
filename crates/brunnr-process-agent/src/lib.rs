@@ -16,7 +16,7 @@ use std::{
 use brunnr_core::{
     Agent, AgentBinding, AgentCapabilities, AgentCatalog, AgentCatalogEntry, AgentError,
     AgentEvent, AgentEventStream, AgentMessage, AgentModel, AgentResponse, AgentResult,
-    AgentSession, Role, SpawnRequest,
+    AgentSession, AgentUnreachableReason, Role, SpawnRequest,
 };
 use futures_util::{future::BoxFuture, stream, FutureExt};
 use serde::{Deserialize, Serialize};
@@ -39,6 +39,7 @@ const DEFAULT_MAX_LIFETIME: Duration = Duration::from_secs(30 * 60);
 const DEFAULT_TERMINATION_GRACE: Duration = Duration::from_secs(2);
 const DEFAULT_MAX_CONCURRENT_SPAWNS: usize = 32;
 const REGISTRY_VERSION: u32 = 1;
+const MAX_PROCESS_ERROR_OUTPUT_CHARS: usize = 2_048;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProcessAgentConfig {
@@ -252,10 +253,13 @@ pub async fn refresh_agent_catalog(
             .clone()
             .unwrap_or_else(|| binding.agent.clone());
         let config = ProcessAgentConfig::new(command.clone()).with_agent_id(binding.agent.clone());
+        let reachability = command_reachability(&config.command);
         entries.push(AgentCatalogEntry {
             agent: binding.agent.clone(),
             command: Some(command),
-            reachable: command_reachable(&config.command),
+            reachable: reachability.reachable,
+            unreachable_reason: reachability.unreachable_reason,
+            last_checked: Some(reachability.last_checked),
             models: discover_models(&config).await,
         });
     }
@@ -281,19 +285,21 @@ pub fn fallback_agent_catalog(bindings: &[AgentBinding]) -> AgentCatalog {
                 .command
                 .clone()
                 .unwrap_or_else(|| binding.agent.clone());
-            let reachable = command_reachable(&command);
+            let reachability = command_reachability(&command);
             let models = curated_static_models(&binding.agent)
                 .iter()
                 .map(|model| AgentModel {
                     id: model.to_string(),
-                    reachable,
+                    reachable: reachability.reachable,
                     source: "static-fallback".to_string(),
                 })
                 .collect();
             AgentCatalogEntry {
                 agent: binding.agent.clone(),
                 command: Some(command),
-                reachable,
+                reachable: reachability.reachable,
+                unreachable_reason: reachability.unreachable_reason,
+                last_checked: Some(reachability.last_checked),
                 models,
             }
         })
@@ -379,7 +385,23 @@ fn write_catalog(cache_path: impl AsRef<Path>, catalog: &AgentCatalog) -> AgentR
         serde_json::to_vec_pretty(catalog)
             .map_err(|error| AgentError::Unavailable(error.to_string()))?,
     )
-    .map_err(|error| AgentError::Unavailable(error.to_string()))
+    .map_err(|error| AgentError::Unavailable(error.to_string()))?;
+    restrict_file_permissions(cache_path)
+        .map_err(|error| AgentError::Unavailable(error.to_string()))
+}
+
+#[cfg(unix)]
+fn restrict_file_permissions(path: &Path) -> io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+
+    let mut permissions = fs::metadata(path)?.permissions();
+    permissions.set_mode(0o600);
+    fs::set_permissions(path, permissions)
+}
+
+#[cfg(not(unix))]
+fn restrict_file_permissions(_path: &Path) -> io::Result<()> {
+    Ok(())
 }
 
 async fn validate_model(config: &ProcessAgentConfig, model: Option<&str>) -> AgentResult<()> {
@@ -467,7 +489,7 @@ async fn discover_models_from_env_command(config: &ProcessAgentConfig) -> Option
         return None;
     }
     let text = String::from_utf8_lossy(&output.stdout);
-    Some(parse_model_list(&text))
+    Some(parse_model_list(&redact_secrets(&text)))
 }
 
 async fn discover_provider_models(config: &ProcessAgentConfig) -> Option<Vec<String>> {
@@ -561,13 +583,42 @@ fn sanitize_env_token(agent_id: &str) -> String {
 }
 
 fn command_reachable(command: &str) -> bool {
+    command_reachability(command).reachable
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CommandReachability {
+    reachable: bool,
+    unreachable_reason: Option<AgentUnreachableReason>,
+    last_checked: String,
+}
+
+fn command_reachability(command: &str) -> CommandReachability {
+    let last_checked = now_unix_ms().to_string();
+    if command.trim().is_empty() {
+        return CommandReachability {
+            reachable: false,
+            unreachable_reason: Some(AgentUnreachableReason::NoCommand),
+            last_checked,
+        };
+    }
     let path = Path::new(command);
     if path.components().count() > 1 {
-        return path.exists();
+        let reachable = path.exists();
+        return CommandReachability {
+            reachable,
+            unreachable_reason: (!reachable).then_some(AgentUnreachableReason::NoCommand),
+            last_checked,
+        };
     }
-    std::env::var_os("PATH").is_some_and(|paths| {
+    let reachable = std::env::var_os("PATH").is_some_and(|paths| {
         std::env::split_paths(&paths).any(|directory| directory.join(command).exists())
-    })
+    });
+    CommandReachability {
+        reachable,
+        unreachable_reason: (!reachable).then_some(AgentUnreachableReason::NoCommand),
+        last_checked,
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -909,6 +960,7 @@ async fn run_process(
     let mut text = String::from_utf8_lossy(&stdout).into_owned();
     text.push_str(&String::from_utf8_lossy(&stderr));
     if !status.success() {
+        let text = redact_and_truncate(&text, MAX_PROCESS_ERROR_OUTPUT_CHARS);
         return Err(AgentError::Session(format!(
             "process exited with status {status}: {text}"
         )));
@@ -957,6 +1009,7 @@ fn now_unix_ms() -> u128 {
 fn command_line(config: &ProcessAgentConfig) -> Vec<String> {
     std::iter::once(config.command.clone())
         .chain(config.args.iter().cloned())
+        .map(|part| redact_secrets(&part))
         .collect()
 }
 
@@ -974,6 +1027,104 @@ fn task_id_from_prompt(prompt: &str) -> Option<String> {
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(str::to_string)
+}
+
+fn redact_and_truncate(input: &str, limit: usize) -> String {
+    let redacted = redact_secrets(input);
+    if redacted.chars().count() <= limit {
+        return redacted;
+    }
+    let mut output = redacted.chars().take(limit).collect::<String>();
+    output.push_str("…[truncated]");
+    output
+}
+
+fn redact_secrets(input: &str) -> String {
+    let mut output = input.to_string();
+    for prefix in [
+        "sk-",
+        "ghp_",
+        "gho_",
+        "github_pat_",
+        "xoxb-",
+        "xoxp-",
+        "hf_",
+    ] {
+        output = redact_prefixed_token(&output, prefix);
+    }
+    for key in [
+        "api_key",
+        "api-key",
+        "apikey",
+        "access_token",
+        "access-token",
+        "authorization",
+        "bearer",
+        "password",
+        "secret",
+        "token",
+    ] {
+        output = redact_key_value_token(&output, key);
+    }
+    output
+}
+
+fn redact_prefixed_token(input: &str, prefix: &str) -> String {
+    let mut output = String::with_capacity(input.len());
+    let mut cursor = 0;
+    while let Some(relative_start) = input[cursor..].find(prefix) {
+        let start = cursor + relative_start;
+        output.push_str(&input[cursor..start]);
+        output.push_str("[REDACTED]");
+        let mut end = start + prefix.len();
+        for (offset, character) in input[end..].char_indices() {
+            if !(character.is_ascii_alphanumeric() || matches!(character, '_' | '-' | '.')) {
+                break;
+            }
+            end = start + prefix.len() + offset + character.len_utf8();
+        }
+        cursor = end;
+    }
+    output.push_str(&input[cursor..]);
+    output
+}
+
+fn redact_key_value_token(input: &str, key: &str) -> String {
+    let lower = input.to_ascii_lowercase();
+    let mut output = String::with_capacity(input.len());
+    let mut cursor = 0;
+    while let Some(relative_start) = lower[cursor..].find(key) {
+        let start = cursor + relative_start;
+        output.push_str(&input[cursor..start]);
+        let mut value_start = start + key.len();
+        while input[value_start..]
+            .chars()
+            .next()
+            .is_some_and(|character| matches!(character, ' ' | '\t' | ':' | '='))
+        {
+            value_start += input[value_start..]
+                .chars()
+                .next()
+                .map_or(0, char::len_utf8);
+        }
+        if value_start == start + key.len() {
+            output.push_str(&input[start..value_start]);
+            cursor = value_start;
+            continue;
+        }
+        output.push_str(&input[start..value_start]);
+        output.push_str("[REDACTED]");
+        let mut end = value_start;
+        for (offset, character) in input[value_start..].char_indices() {
+            if character.is_whitespace() || matches!(character, ',' | ';' | '"' | '\'') {
+                break;
+            }
+            end = value_start + offset + character.len_utf8();
+        }
+        cursor = end;
+    }
+    output.push_str(&input[cursor..]);
+    output
 }
 
 fn read_pipe<T>(mut pipe: T) -> JoinHandle<io::Result<Vec<u8>>>
@@ -1313,6 +1464,92 @@ mod tests {
                 .is_empty(),
             "failed validation must not spawn a process"
         );
+    }
+
+    #[tokio::test]
+    async fn failing_process_error_redacts_and_limits_secret_output() {
+        let tempdir = TempDir::new("process-agent-secret-error");
+        let secret = "sk-brunnr-secret-1234567890";
+        let script = format!(
+            "printf 'token=brunnr-token-value\\n{secret}\\n'; printf '%4096s\\n' x; exit 7"
+        );
+        let agent = ProcessAgent::new(
+            ProcessAgentConfig::new("sh")
+                .with_args(vec!["-c".to_string(), script])
+                .with_registry_dir(tempdir.join("spawns"))
+                .with_termination_grace(Duration::from_millis(10)),
+        );
+        let session = agent
+            .spawn(SpawnRequest {
+                role: Role::Worker,
+                agent: "sh".to_string(),
+                model: None,
+                working_dir: None,
+            })
+            .await
+            .expect("spawn should register session");
+
+        let error = agent
+            .send(
+                &session,
+                AgentMessage {
+                    content: String::new(),
+                },
+            )
+            .await
+            .expect_err("process should fail");
+        let text = error.to_string();
+
+        assert!(!text.contains(secret));
+        assert!(!text.contains("brunnr-token-value"));
+        assert!(text.contains("[REDACTED]"));
+        assert!(text.len() < MAX_PROCESS_ERROR_OUTPUT_CHARS + 256);
+    }
+
+    #[tokio::test]
+    async fn discovery_output_and_registry_command_are_redacted() {
+        let tempdir = TempDir::new("process-agent-secret-discovery");
+        let env_name = "BRUNNR_SECRET_PROBE_MODELS_CMD";
+        std::env::set_var(
+            env_name,
+            "printf 'sk-discovery-secret-123456\\nsafe-model\\n'",
+        );
+        let binding = AgentBinding {
+            role: Role::Worker,
+            agent: "secret-probe".to_string(),
+            model: None,
+            command: Some("sh".to_string()),
+            args: vec!["--api-key=registry-secret-value".to_string()],
+            timeout_seconds: None,
+        };
+        let cache_path = tempdir.join("agents.json");
+        let catalog = refresh_agent_catalog(&[binding], &cache_path)
+            .await
+            .expect("catalog refresh should succeed");
+        std::env::remove_var(env_name);
+        let json = serde_json::to_string(&catalog).expect("catalog should encode");
+
+        assert!(!json.contains("sk-discovery-secret-123456"));
+        assert!(json.contains("[REDACTED]"));
+        assert!(json.contains("safe-model"));
+
+        let config = ProcessAgentConfig::new("sh")
+            .with_args(vec!["--api-key=registry-secret-value".to_string()]);
+        let command = command_line(&config).join(" ");
+        assert!(!command.contains("registry-secret-value"));
+        assert!(command.contains("[REDACTED]"));
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+
+            let mode = std::fs::metadata(cache_path)
+                .expect("cache metadata should read")
+                .permissions()
+                .mode()
+                & 0o777;
+            assert_eq!(mode, 0o600);
+        }
     }
 
     #[test]

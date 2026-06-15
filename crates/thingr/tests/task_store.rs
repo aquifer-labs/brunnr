@@ -82,6 +82,52 @@ async fn concurrent_claim_race_has_single_winner() {
 }
 
 #[tokio::test]
+async fn atomic_claim_stress_has_no_double_dispatch() {
+    let tempdir = TempDir::new("task-claim-stress");
+    let store = FilesTaskStore::new(tempdir.path());
+    let mut new_task = NewTask::primitive("stress claim");
+    new_task.id = Some("task-stress".to_string());
+    store.create(new_task).await.expect("create should succeed");
+
+    let mut handles = Vec::new();
+    for index in 0..32 {
+        let store = store.clone();
+        handles.push(tokio::spawn(async move {
+            store
+                .claim(ClaimRequest {
+                    task_id: Some("task-stress".to_string()),
+                    claimant: format!("worker-{index}"),
+                })
+                .await
+        }));
+    }
+
+    let mut winners = Vec::new();
+    for handle in handles {
+        if let Some(task) = handle
+            .await
+            .expect("claimer should join")
+            .expect("claim should run")
+        {
+            winners.push(task);
+        }
+    }
+
+    assert_eq!(winners.len(), 1);
+    assert_eq!(winners[0].status, TaskStatus::Doing);
+    assert_eq!(
+        store
+            .list()
+            .await
+            .expect("list should run")
+            .into_iter()
+            .filter(|task| task.id == "task-stress" && task.status == TaskStatus::Doing)
+            .count(),
+        1
+    );
+}
+
+#[tokio::test]
 async fn dag_blockers_control_dispatch_readiness() {
     let tempdir = TempDir::new("task-dag");
     let store = FilesTaskStore::new(tempdir.path());

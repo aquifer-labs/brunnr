@@ -1,0 +1,12 @@
+# SPDX-License-Identifier: Apache-2.0
+
+target/
+.brunnr/
+.git/
+.env
+.env.*
+benchmarks/results/*/timing.jsonl
+benchmarks/results/*/raw.jsonl
+*.log
+*.tmp
+.DS_Store

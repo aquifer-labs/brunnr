@@ -13,7 +13,7 @@ use tokio::{fs, io::AsyncWriteExt};
 
 use crate::{
     identity::stable_memory_id, MemoryBackend, MemoryError, MemoryId, MemoryQuery, MemoryRecord,
-    MemoryResult, MemoryScope, MemoryTier, SearchHit, SearchSource, StoreMemory,
+    MemoryResult, MemoryScope, MemoryTier, SearchHit, SearchSource, SessionLaneLock, StoreMemory,
 };
 
 #[derive(Debug, Clone)]
@@ -125,6 +125,10 @@ impl MemoryBackend for FilesBackend {
 
     fn store(&self, memory: StoreMemory) -> BoxFuture<'_, MemoryResult<MemoryRecord>> {
         async move {
+            let collection = self.root.display().to_string();
+            let _lane_guard = SessionLaneLock::default_rooted()
+                .acquire(&collection, memory.session_id.as_deref())
+                .await?;
             let id = stable_memory_id(&memory);
             let existing_path = find_existing_record_path(&self.memory_dir(), &id)?;
             if let Some(path) = existing_path {

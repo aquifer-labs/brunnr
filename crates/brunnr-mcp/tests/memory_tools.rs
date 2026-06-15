@@ -133,6 +133,8 @@ async fn orchestration_tools_are_mode_gated_and_agents_list_reflects_catalog() {
             agent: "codex".to_string(),
             command: Some("sh".to_string()),
             reachable: true,
+            unreachable_reason: None,
+            last_checked: Some("test".to_string()),
             models: vec![AgentModel {
                 id: "gpt-5.5".to_string(),
                 reachable: true,
@@ -185,6 +187,8 @@ async fn orchestrate_bind_uses_cached_catalog_models() {
             agent: "custom-agent".to_string(),
             command: Some("sh".to_string()),
             reachable: true,
+            unreachable_reason: None,
+            last_checked: Some("test".to_string()),
             models: vec![AgentModel {
                 id: "provider-only-model".to_string(),
                 reachable: true,
@@ -254,6 +258,41 @@ async fn orchestrate_delegate_timeout_uses_supervised_cleanup() {
     assert!(error.to_string().contains("timed out"));
     assert_pid_gone(read_pid(&parent_pid_file));
     assert_pid_gone(read_pid(&child_pid_file));
+}
+
+#[tokio::test]
+#[cfg(unix)]
+async fn orchestrate_delegate_error_redacts_process_secrets() {
+    let tempdir = TempDir::new("mcp-delegate-secret-error");
+    let secret = "sk-mcp-delegation-secret-123456";
+    let script = format!("printf 'api_key={secret}\\n' 1>&2; exit 9");
+    let server = MemoryServer::new(tempdir.join("memory"))
+        .with_mode(Mode::Orchestrate)
+        .with_task_root(tempdir.join("tasks"))
+        .with_repo_root(tempdir.path())
+        .with_process_registry_dir(tempdir.join("spawns"))
+        .with_bindings(vec![AgentBinding {
+            role: Role::Worker,
+            agent: "codex".to_string(),
+            model: Some("gpt-5.5".to_string()),
+            command: Some("sh".to_string()),
+            args: vec!["-c".to_string(), script],
+            timeout_seconds: Some(5),
+        }]);
+
+    let result = server
+        .orchestrate_delegate(Parameters(DelegateRequest {
+            role: "worker".to_string(),
+            task: "Fail with a secret-bearing stderr".to_string(),
+        }))
+        .await;
+    let Err(error) = result else {
+        panic!("delegation should fail");
+    };
+    let text = error.to_string();
+
+    assert!(!text.contains(secret));
+    assert!(text.contains("[REDACTED]"));
 }
 
 #[tokio::test]

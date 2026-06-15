@@ -157,6 +157,10 @@ pub struct AgentCatalogEntry {
     pub agent: String,
     pub command: Option<String>,
     pub reachable: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unreachable_reason: Option<AgentUnreachableReason>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_checked: Option<String>,
     pub models: Vec<AgentModel>,
 }
 
@@ -164,6 +168,16 @@ pub struct AgentCatalogEntry {
 pub struct AgentCatalog {
     pub generated_at: Option<String>,
     pub agents: Vec<AgentCatalogEntry>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub enum AgentUnreachableReason {
+    NoCommand,
+    NoCredentials,
+    Quota,
+    Network,
+    Unknown,
 }
 
 #[derive(Debug, Error)]

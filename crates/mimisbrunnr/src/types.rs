@@ -33,6 +33,8 @@ pub enum MemoryError {
         configured_model: String,
         configured_dimensions: usize,
     },
+    #[error("timed out acquiring session lane lock for {lane} after {timeout_millis}ms")]
+    LaneLockTimeout { lane: String, timeout_millis: u128 },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]

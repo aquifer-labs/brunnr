@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use brunnr_test_support::TempDir;
 use mimisbrunnr::{
     FilesBackend, MemoryBackend, MemoryQuery, MemoryResult, MemoryScope, MemoryTier,
-    SqliteVecVectorStore, StoreMemory, TextEmbedder, VectorMemoryBackend, VectorMemoryConfig,
+    SessionLaneLock, SqliteVecVectorStore, StoreMemory, TextEmbedder, VectorMemoryBackend,
+    VectorMemoryConfig,
 };
 
 #[tokio::test]
@@ -29,6 +30,92 @@ async fn sqlite_vec_backend_isolates_concurrent_task_scopes() {
     )
     .expect("backend should construct");
     assert_concurrent_scope_isolation(Arc::new(backend)).await;
+}
+
+#[tokio::test]
+async fn session_lane_lock_serializes_and_times_out() {
+    let tempdir = TempDir::new("lane-lock-timeout");
+    let lock = SessionLaneLock::new(tempdir.path()).with_timeout(Duration::from_millis(50));
+    let guard = lock
+        .acquire("shared-collection", Some("session-a"))
+        .await
+        .expect("first lane acquire should succeed");
+
+    let blocked = lock.acquire("shared-collection", Some("session-a")).await;
+    assert!(blocked.is_err());
+    assert!(blocked
+        .expect_err("lane should time out")
+        .to_string()
+        .contains("timed out acquiring session lane lock"));
+
+    guard.release().expect("release should succeed");
+    lock.acquire("shared-collection", Some("session-a"))
+        .await
+        .expect("lane should reacquire after release");
+}
+
+#[tokio::test]
+async fn sqlite_vec_multi_writer_integrity_and_tenant_isolation() {
+    let store = SqliteVecVectorStore::in_memory().expect("sqlite-vec should open");
+    let backend = Arc::new(
+        VectorMemoryBackend::with_embedder(
+            store,
+            VectorMemoryConfig {
+                collection: "shared-project".to_string(),
+                dimensions: TEST_DIMENSIONS,
+                ..VectorMemoryConfig::new("shared-project")
+            },
+            Arc::new(TestEmbedder),
+        )
+        .expect("backend should construct"),
+    );
+
+    let writer_count = 24;
+    let mut handles = Vec::new();
+    for index in 0..writer_count {
+        let backend = Arc::clone(&backend);
+        handles.push(tokio::spawn(async move {
+            backend
+                .store(StoreMemory {
+                    content: format!("contention memory tenant word {index}"),
+                    tags: Vec::new(),
+                    metadata: Default::default(),
+                    tier: MemoryTier::L1Atom,
+                    node_id: Some(format!("node:tenant-{index}")),
+                    created_at: None,
+                    scope: Some(MemoryScope::Session),
+                    agent_id: Some(format!("agent-{}", index % 3)),
+                    session_id: Some(format!("session-{}", index % 4)),
+                    task_id: Some(format!("task-{index}")),
+                    user_id: Some(format!("user-{}", index % 2)),
+                })
+                .await
+        }));
+    }
+    for handle in handles {
+        handle
+            .await
+            .expect("writer should join")
+            .expect("writer should store");
+    }
+
+    let mut query = MemoryQuery::new("contention memory tenant").with_limit(writer_count);
+    query.scope = Some(MemoryScope::Session);
+    query.user_id = Some("user-0".to_string());
+    let user_zero = backend.find(query).await.expect("find should succeed");
+    assert_eq!(user_zero.len(), writer_count / 2);
+    assert!(user_zero
+        .iter()
+        .all(|hit| hit.record.user_id.as_deref() == Some("user-0")));
+
+    let mut query = MemoryQuery::new("contention memory tenant").with_limit(writer_count);
+    query.scope = Some(MemoryScope::Session);
+    query.user_id = Some("user-1".to_string());
+    let user_one = backend.find(query).await.expect("find should succeed");
+    assert_eq!(user_one.len(), writer_count / 2);
+    assert!(user_one
+        .iter()
+        .all(|hit| hit.record.user_id.as_deref() == Some("user-1")));
 }
 
 async fn assert_concurrent_scope_isolation(backend: Arc<dyn MemoryBackend>) {

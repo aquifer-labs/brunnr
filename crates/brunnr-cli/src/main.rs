@@ -1420,7 +1420,7 @@ fn detect_agents() -> Vec<AgentBinding> {
         "ollama",
     ]
     .into_iter()
-    .filter(|name| command_exists(name))
+    .filter(|name| agent_detected(name))
     .map(str::to_string)
     .collect::<Vec<_>>();
 
@@ -1445,6 +1445,27 @@ fn detect_agents() -> Vec<AgentBinding> {
         })
     })
     .collect()
+}
+
+fn agent_detected(name: &str) -> bool {
+    command_exists(name)
+        || agent_config_locations(name)
+            .iter()
+            .any(|path| path.exists())
+}
+
+fn agent_config_locations(name: &str) -> Vec<PathBuf> {
+    let Ok(home) = home_dir() else {
+        return Vec::new();
+    };
+    match name {
+        "claude" | "claude-code" => vec![home.join(".claude")],
+        "codex" => vec![home.join(".codex")],
+        "gemini" => vec![home.join(".gemini"), home.join(".config").join("gemini")],
+        "opencode" => vec![home.join(".config").join("opencode")],
+        "ollama" => vec![home.join(".ollama")],
+        _ => Vec::new(),
+    }
 }
 
 fn pick(detected: &[String], preferred: &[&str]) -> Option<String> {

@@ -11,8 +11,8 @@ use crate::{
     identity::stable_memory_id, reciprocal_rank_fusion, CollectionCompat, Distance, Filter,
     FilterCondition, FilterValue, MemoryBackend, MemoryError, MemoryId, MemoryQuery, MemoryRecord,
     MemoryResult, MemoryScope, MemoryTier, PayloadIndex, RrfOptions, SearchHit, SearchSource,
-    StoreMemory, VectorCollection, VectorPoint, VectorSearch, VectorSearchHit, VectorSearchSource,
-    VectorStore, COMPAT_POINT_ID,
+    SessionLaneLock, StoreMemory, VectorCollection, VectorPoint, VectorSearch, VectorSearchHit,
+    VectorSearchSource, VectorStore, COMPAT_POINT_ID,
 };
 
 pub const PINNED_FASTEMBED_MODEL: &str = "intfloat/multilingual-e5-small";
@@ -225,6 +225,9 @@ impl<V: VectorStore> MemoryBackend for VectorMemoryBackend<V> {
 
     fn store(&self, memory: StoreMemory) -> BoxFuture<'_, MemoryResult<MemoryRecord>> {
         async move {
+            let _lane_guard = SessionLaneLock::default_rooted()
+                .acquire(&self.config.collection, memory.session_id.as_deref())
+                .await?;
             self.ensure_ready().await?;
             let id = stable_memory_id(&memory);
             if let Some(existing) = self.store.get(&self.config.collection, id.as_str()).await? {
