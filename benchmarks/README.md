@@ -8,6 +8,26 @@ still retrieved?** It follows the framing used by long-term-memory benchmarks su
 LongMemEval — bounded retrieval versus full-context replay over realistically large histories — and
 is fully reproducible (`just bench-check`).
 
+## What this compares
+
+The unit is **one query against a memory of a given size**. We measure how each strategy assembles
+the context for that query:
+
+- **Full-context replay** *(the baseline)* — paste the **entire** memory into the prompt every
+  query. Cost = the whole memory's size (this is what an agent does when it just loads all its notes
+  / history).
+- **md / OKF, index-first** *(coming next)* — load a small index plus the relevant whole file(s),
+  the way a markdown memory with a `MEMORY.md` index avoids a full file scan. Cheaper than replay,
+  but the index itself grows with the memory and you fetch whole files, not precise slices.
+- **Brunnr** — a compact index slice plus a semantic top-k retrieval slice (`memory.context`),
+  roughly constant in size regardless of how large the memory is.
+
+**"Saving" is relative to full-context replay**: `(replay_tokens − strategy_tokens) / replay_tokens`.
+So "99.2%" means Brunnr's prompt is 99.2% smaller than dumping the whole 119k-token memory in. Two
+things are reported: **token cost** (below) and **retrieval quality** — whether the strategy actually
+fetches the document that holds the answer (precision / recall, in the [Retrieval quality](#retrieval-quality)
+section).
+
 ## Headline
 
 Brunnr keeps per-query context cost roughly **constant (~1,000 tokens)** while the memory grows into
@@ -50,7 +70,10 @@ tokenizer `cl100k_base` via `tiktoken-rs`.
 
 ## Retrieval quality
 
-Where documents are semantically confusable (the `large` tier), retrieval is a real trade-off:
+Sending less context is only useful if the answer is still in it. This table asks: when a strategy
+does **not** include everything, does it still fetch the document that holds the answer? (Full replay
+is 100% by definition — it includes everything — at the token cost shown above.) Where documents are
+semantically confusable (the `large` tier), this is a real trade-off:
 
 | Strategy | Success | Tokens/query | Precision | Recall |
 |---|---:|---:|---:|---:|
