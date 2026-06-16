@@ -1,0 +1,494 @@
+{
+  "suite_version": "seed-honest-v1",
+  "tokenizer": "cl100k_base (tiktoken-rs)",
+  "embedding_model": "intfloat/multilingual-e5-small/384",
+  "backend": "SqliteVecVectorStore via VectorMemoryBackend",
+  "aggregate": {
+    "A-full-replay": {
+      "runs": 12,
+      "success_rate": 1.0,
+      "success_rate_ci95": 0.0,
+      "mean_total_tokens": 9067.333333,
+      "total_tokens_variance": 4.606061,
+      "tokens_per_success": 9067.333333,
+      "mean_retrieval_precision": 0.1,
+      "mean_retrieval_recall": 1.0,
+      "by_difficulty": {
+        "hard": {
+          "runs": 12,
+          "success_rate": 1.0,
+          "success_rate_ci95": 0.0,
+          "mean_total_tokens": 9067.333333,
+          "total_tokens_variance": 4.606061,
+          "tokens_per_success": 9067.333333,
+          "mean_retrieval_precision": 0.1,
+          "mean_retrieval_recall": 1.0
+        }
+      }
+    },
+    "A-full-replay-cold-session": {
+      "runs": 12,
+      "success_rate": 1.0,
+      "success_rate_ci95": 0.0,
+      "mean_total_tokens": 9070.333333,
+      "total_tokens_variance": 4.606061,
+      "tokens_per_success": 9070.333333,
+      "mean_retrieval_precision": 0.1,
+      "mean_retrieval_recall": 1.0,
+      "by_difficulty": {
+        "hard": {
+          "runs": 12,
+          "success_rate": 1.0,
+          "success_rate_ci95": 0.0,
+          "mean_total_tokens": 9070.333333,
+          "total_tokens_variance": 4.606061,
+          "tokens_per_success": 9070.333333,
+          "mean_retrieval_precision": 0.1,
+          "mean_retrieval_recall": 1.0
+        }
+      }
+    },
+    "B-default-brunnr": {
+      "runs": 12,
+      "success_rate": 1.0,
+      "success_rate_ci95": 0.0,
+      "mean_total_tokens": 487.333333,
+      "total_tokens_variance": 2410.060606,
+      "tokens_per_success": 487.333333,
+      "mean_retrieval_precision": 0.444444,
+      "mean_retrieval_recall": 1.0,
+      "by_difficulty": {
+        "hard": {
+          "runs": 12,
+          "success_rate": 1.0,
+          "success_rate_ci95": 0.0,
+          "mean_total_tokens": 487.333333,
+          "total_tokens_variance": 2410.060606,
+          "tokens_per_success": 487.333333,
+          "mean_retrieval_precision": 0.444444,
+          "mean_retrieval_recall": 1.0
+        }
+      }
+    },
+    "B-default-brunnr-cold-session": {
+      "runs": 12,
+      "success_rate": 1.0,
+      "success_rate_ci95": 0.0,
+      "mean_total_tokens": 490.333333,
+      "total_tokens_variance": 2410.060606,
+      "tokens_per_success": 490.333333,
+      "mean_retrieval_precision": 0.444444,
+      "mean_retrieval_recall": 1.0,
+      "by_difficulty": {
+        "hard": {
+          "runs": 12,
+          "success_rate": 1.0,
+          "success_rate_ci95": 0.0,
+          "mean_total_tokens": 490.333333,
+          "total_tokens_variance": 2410.060606,
+          "tokens_per_success": 490.333333,
+          "mean_retrieval_precision": 0.444444,
+          "mean_retrieval_recall": 1.0
+        }
+      }
+    },
+    "B-plus-debate": {
+      "runs": 12,
+      "success_rate": 1.0,
+      "success_rate_ci95": 0.0,
+      "mean_total_tokens": 516.666667,
+      "total_tokens_variance": 2445.69697,
+      "tokens_per_success": 516.666667,
+      "mean_retrieval_precision": 0.444444,
+      "mean_retrieval_recall": 1.0,
+      "by_difficulty": {
+        "hard": {
+          "runs": 12,
+          "success_rate": 1.0,
+          "success_rate_ci95": 0.0,
+          "mean_total_tokens": 516.666667,
+          "total_tokens_variance": 2445.69697,
+          "tokens_per_success": 516.666667,
+          "mean_retrieval_precision": 0.444444,
+          "mean_retrieval_recall": 1.0
+        }
+      }
+    },
+    "B-plus-entity-overlap": {
+      "runs": 12,
+      "success_rate": 1.0,
+      "success_rate_ci95": 0.0,
+      "mean_total_tokens": 487.333333,
+      "total_tokens_variance": 2410.060606,
+      "tokens_per_success": 487.333333,
+      "mean_retrieval_precision": 0.444444,
+      "mean_retrieval_recall": 1.0,
+      "by_difficulty": {
+        "hard": {
+          "runs": 12,
+          "success_rate": 1.0,
+          "success_rate_ci95": 0.0,
+          "mean_total_tokens": 487.333333,
+          "total_tokens_variance": 2410.060606,
+          "tokens_per_success": 487.333333,
+          "mean_retrieval_precision": 0.444444,
+          "mean_retrieval_recall": 1.0
+        }
+      }
+    },
+    "B-plus-episode-context": {
+      "runs": 12,
+      "success_rate": 1.0,
+      "success_rate_ci95": 0.0,
+      "mean_total_tokens": 487.333333,
+      "total_tokens_variance": 2410.060606,
+      "tokens_per_success": 487.333333,
+      "mean_retrieval_precision": 0.444444,
+      "mean_retrieval_recall": 1.0,
+      "by_difficulty": {
+        "hard": {
+          "runs": 12,
+          "success_rate": 1.0,
+          "success_rate_ci95": 0.0,
+          "mean_total_tokens": 487.333333,
+          "total_tokens_variance": 2410.060606,
+          "tokens_per_success": 487.333333,
+          "mean_retrieval_precision": 0.444444,
+          "mean_retrieval_recall": 1.0
+        }
+      }
+    },
+    "B-plus-hyde": {
+      "runs": 12,
+      "success_rate": 1.0,
+      "success_rate_ci95": 0.0,
+      "mean_total_tokens": 566.166667,
+      "total_tokens_variance": 3670.69697,
+      "tokens_per_success": 566.166667,
+      "mean_retrieval_precision": 0.388889,
+      "mean_retrieval_recall": 1.0,
+      "by_difficulty": {
+        "hard": {
+          "runs": 12,
+          "success_rate": 1.0,
+          "success_rate_ci95": 0.0,
+          "mean_total_tokens": 566.166667,
+          "total_tokens_variance": 3670.69697,
+          "tokens_per_success": 566.166667,
+          "mean_retrieval_precision": 0.388889,
+          "mean_retrieval_recall": 1.0
+        }
+      }
+    },
+    "B-plus-multi-query": {
+      "runs": 12,
+      "success_rate": 1.0,
+      "success_rate_ci95": 0.0,
+      "mean_total_tokens": 528.5,
+      "total_tokens_variance": 2497.363636,
+      "tokens_per_success": 528.5,
+      "mean_retrieval_precision": 0.444444,
+      "mean_retrieval_recall": 1.0,
+      "by_difficulty": {
+        "hard": {
+          "runs": 12,
+          "success_rate": 1.0,
+          "success_rate_ci95": 0.0,
+          "mean_total_tokens": 528.5,
+          "total_tokens_variance": 2497.363636,
+          "tokens_per_success": 528.5,
+          "mean_retrieval_precision": 0.444444,
+          "mean_retrieval_recall": 1.0
+        }
+      }
+    },
+    "B-plus-supersession": {
+      "runs": 12,
+      "success_rate": 1.0,
+      "success_rate_ci95": 0.0,
+      "mean_total_tokens": 487.333333,
+      "total_tokens_variance": 2410.060606,
+      "tokens_per_success": 487.333333,
+      "mean_retrieval_precision": 0.444444,
+      "mean_retrieval_recall": 1.0,
+      "by_difficulty": {
+        "hard": {
+          "runs": 12,
+          "success_rate": 1.0,
+          "success_rate_ci95": 0.0,
+          "mean_total_tokens": 487.333333,
+          "total_tokens_variance": 2410.060606,
+          "tokens_per_success": 487.333333,
+          "mean_retrieval_precision": 0.444444,
+          "mean_retrieval_recall": 1.0
+        }
+      }
+    },
+    "B-plus-temporal-decay": {
+      "runs": 12,
+      "success_rate": 1.0,
+      "success_rate_ci95": 0.0,
+      "mean_total_tokens": 489.333333,
+      "total_tokens_variance": 2410.060606,
+      "tokens_per_success": 489.333333,
+      "mean_retrieval_precision": 0.444444,
+      "mean_retrieval_recall": 1.0,
+      "by_difficulty": {
+        "hard": {
+          "runs": 12,
+          "success_rate": 1.0,
+          "success_rate_ci95": 0.0,
+          "mean_total_tokens": 489.333333,
+          "total_tokens_variance": 2410.060606,
+          "tokens_per_success": 489.333333,
+          "mean_retrieval_precision": 0.444444,
+          "mean_retrieval_recall": 1.0
+        }
+      }
+    },
+    "B-reflection-consolidated": {
+      "runs": 12,
+      "success_rate": 1.0,
+      "success_rate_ci95": 0.0,
+      "mean_total_tokens": 1998.166667,
+      "total_tokens_variance": 200.515152,
+      "tokens_per_success": 1998.166667,
+      "mean_retrieval_precision": 0.333333,
+      "mean_retrieval_recall": 1.0,
+      "by_difficulty": {
+        "hard": {
+          "runs": 12,
+          "success_rate": 1.0,
+          "success_rate_ci95": 0.0,
+          "mean_total_tokens": 1998.166667,
+          "total_tokens_variance": 200.515152,
+          "tokens_per_success": 1998.166667,
+          "mean_retrieval_precision": 0.333333,
+          "mean_retrieval_recall": 1.0
+        }
+      }
+    },
+    "C-built-in-agent-memory": {
+      "runs": 12,
+      "success_rate": 1.0,
+      "success_rate_ci95": 0.0,
+      "mean_total_tokens": 76.666667,
+      "total_tokens_variance": 14.424242,
+      "tokens_per_success": 76.666667,
+      "mean_retrieval_precision": 1.0,
+      "mean_retrieval_recall": 1.0,
+      "by_difficulty": {
+        "hard": {
+          "runs": 12,
+          "success_rate": 1.0,
+          "success_rate_ci95": 0.0,
+          "mean_total_tokens": 76.666667,
+          "total_tokens_variance": 14.424242,
+          "tokens_per_success": 76.666667,
+          "mean_retrieval_precision": 1.0,
+          "mean_retrieval_recall": 1.0
+        }
+      }
+    },
+    "D-no-memory": {
+      "runs": 12,
+      "success_rate": 0.0,
+      "success_rate_ci95": 0.0,
+      "mean_total_tokens": 52.333333,
+      "total_tokens_variance": 4.606061,
+      "tokens_per_success": null,
+      "mean_retrieval_precision": 0.0,
+      "mean_retrieval_recall": 0.0,
+      "by_difficulty": {
+        "hard": {
+          "runs": 12,
+          "success_rate": 0.0,
+          "success_rate_ci95": 0.0,
+          "mean_total_tokens": 52.333333,
+          "total_tokens_variance": 4.606061,
+          "tokens_per_success": null,
+          "mean_retrieval_precision": 0.0,
+          "mean_retrieval_recall": 0.0
+        }
+      }
+    },
+    "E-md-okf-index-first": {
+      "runs": 12,
+      "success_rate": 1.0,
+      "success_rate_ci95": 0.0,
+      "mean_total_tokens": 488.333333,
+      "total_tokens_variance": 2410.060606,
+      "tokens_per_success": 488.333333,
+      "mean_retrieval_precision": 0.444444,
+      "mean_retrieval_recall": 1.0,
+      "by_difficulty": {
+        "hard": {
+          "runs": 12,
+          "success_rate": 1.0,
+          "success_rate_ci95": 0.0,
+          "mean_total_tokens": 488.333333,
+          "total_tokens_variance": 2410.060606,
+          "tokens_per_success": 488.333333,
+          "mean_retrieval_precision": 0.444444,
+          "mean_retrieval_recall": 1.0
+        }
+      }
+    }
+  },
+  "retrieval_misses": [
+    {
+      "arm": "D-no-memory",
+      "task_id": "api-key-rotation",
+      "difficulty": "hard",
+      "relevant_docs": [
+        "memory/api-key-rotation.md"
+      ],
+      "retrieved_docs": [],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "D-no-memory",
+      "task_id": "cdn-origin-pull",
+      "difficulty": "hard",
+      "relevant_docs": [
+        "memory/cdn-origin-pull.md"
+      ],
+      "retrieved_docs": [],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "D-no-memory",
+      "task_id": "db-connection-pool-large",
+      "difficulty": "hard",
+      "relevant_docs": [
+        "memory/db-connection-pool-large.md"
+      ],
+      "retrieved_docs": [],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "D-no-memory",
+      "task_id": "email-delivery-config",
+      "difficulty": "hard",
+      "relevant_docs": [
+        "memory/email-delivery-config.md"
+      ],
+      "retrieved_docs": [],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "D-no-memory",
+      "task_id": "job-queue-concurrency",
+      "difficulty": "hard",
+      "relevant_docs": [
+        "memory/job-queue-concurrency.md"
+      ],
+      "retrieved_docs": [],
+      "recall": 0.0,
+      "runs": 2
+    },
+    {
+      "arm": "D-no-memory",
+      "task_id": "mobile-push-ttl",
+      "difficulty": "hard",
+      "relevant_docs": [
+        "memory/mobile-push-ttl.md"
+      ],
+      "retrieved_docs": [],
+      "recall": 0.0,
+      "runs": 2
+    }
+  ],
+  "marginal_verdicts": {
+    "B-plus-debate": {
+      "tokens_per_success_delta_vs_b": 29.333334,
+      "success_rate_delta_vs_b": 0.0,
+      "precision_delta_vs_b": 0.0,
+      "recall_delta_vs_b": 0.0,
+      "verdict": "skip by default; no measured quality gain over B-default in this sample"
+    },
+    "B-plus-entity-overlap": {
+      "tokens_per_success_delta_vs_b": 0.0,
+      "success_rate_delta_vs_b": 0.0,
+      "precision_delta_vs_b": 0.0,
+      "recall_delta_vs_b": 0.0,
+      "verdict": "skip by default; no measured quality gain over B-default in this sample"
+    },
+    "B-plus-episode-context": {
+      "tokens_per_success_delta_vs_b": 0.0,
+      "success_rate_delta_vs_b": 0.0,
+      "precision_delta_vs_b": 0.0,
+      "recall_delta_vs_b": 0.0,
+      "verdict": "skip by default; no measured quality gain over B-default in this sample"
+    },
+    "B-plus-hyde": {
+      "tokens_per_success_delta_vs_b": 78.833334,
+      "success_rate_delta_vs_b": 0.0,
+      "precision_delta_vs_b": -0.055555,
+      "recall_delta_vs_b": 0.0,
+      "verdict": "skip by default; no measured quality gain over B-default in this sample"
+    },
+    "B-plus-multi-query": {
+      "tokens_per_success_delta_vs_b": 41.166667,
+      "success_rate_delta_vs_b": 0.0,
+      "precision_delta_vs_b": 0.0,
+      "recall_delta_vs_b": 0.0,
+      "verdict": "skip by default; no measured quality gain over B-default in this sample"
+    },
+    "B-plus-supersession": {
+      "tokens_per_success_delta_vs_b": 0.0,
+      "success_rate_delta_vs_b": 0.0,
+      "precision_delta_vs_b": 0.0,
+      "recall_delta_vs_b": 0.0,
+      "verdict": "skip by default; no measured quality gain over B-default in this sample"
+    },
+    "B-plus-temporal-decay": {
+      "tokens_per_success_delta_vs_b": 2.0,
+      "success_rate_delta_vs_b": 0.0,
+      "precision_delta_vs_b": 0.0,
+      "recall_delta_vs_b": 0.0,
+      "verdict": "skip by default; no measured quality gain over B-default in this sample"
+    },
+    "B-reflection-consolidated": {
+      "tokens_per_success_delta_vs_b": 1510.833334,
+      "success_rate_delta_vs_b": 0.0,
+      "precision_delta_vs_b": -0.111111,
+      "recall_delta_vs_b": 0.0,
+      "verdict": "skip by default; no measured quality gain over B-default in this sample"
+    }
+  },
+  "focused_signal_verdicts": {
+    "B-plus-entity-overlap": {
+      "ability": "entity-disambiguation",
+      "targeted_task_count": 0,
+      "recall_delta": 0.0,
+      "precision_delta": 0.0,
+      "default_decision": "no ability-tagged tasks in this corpus; keeping OFF"
+    },
+    "B-plus-episode-context": {
+      "ability": "multi-session-synthesis",
+      "targeted_task_count": 0,
+      "recall_delta": 0.0,
+      "precision_delta": 0.0,
+      "default_decision": "no ability-tagged tasks in this corpus; keeping OFF"
+    },
+    "B-plus-supersession": {
+      "ability": "knowledge-update",
+      "targeted_task_count": 0,
+      "recall_delta": 0.0,
+      "precision_delta": 0.0,
+      "default_decision": "no ability-tagged tasks in this corpus; keeping OFF"
+    },
+    "B-plus-temporal-decay": {
+      "ability": "temporal-ordering",
+      "targeted_task_count": 0,
+      "recall_delta": 0.0,
+      "precision_delta": 0.0,
+      "default_decision": "no ability-tagged tasks in this corpus; keeping OFF"
+    }
+  }
+}
