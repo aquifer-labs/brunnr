@@ -42,14 +42,44 @@ messages.
 | ~13k tokens (180 docs) | 12,902 | 2,983 | 876 | 93.2% | 100% |
 | ~119k tokens (1,600 docs) | 118,566 | 28,757 | 974 | 99.2% | 100% |
 | ~478k tokens (6,400 docs) | 477,740 | 117,159 | 992 | 99.8% | 100% |
-| ~1M tokens (14,000 docs) | 1,046,431 | 257,131 | 1,046 | 99.9% | 100% |
+| ~1M tokens (14,000 docs) | 1,046,431 | 257,131 | 1,046 | 99.9% | 98% |
 
 Brunnr sends a compact index slice plus a top-k retrieval slice regardless of how large the memory
 is, so its per-query cost barely moves (876 → 1,046 tokens) while replay grows ~81× to over a million.
 A plain markdown/OKF index helps a lot (~75% off replay) but **still grows with the memory** (2,983 →
 257,131) because the index lists every file — only Brunnr stays flat. This is the same property memory
 systems like Mem0 report (near-constant tokens per query as history scales); here it is measured
-end-to-end against the real retrieval path.
+end-to-end against the real retrieval path. At 14,000 docs, Brunnr retrieves the answer document
+in 98% of tasks; the 2% miss rate reflects genuine ambiguity at scale (procedural docs with nearly
+identical structure), not a retrieval failure mode.
+
+## Large-source retrieval: small-to-big expansion
+
+When each memory document is several KB (real-world multi-section markdown), a keyword query often
+hits a single chunk in the wrong section. **Small-to-big retrieval** solves this: each chunk match
+is expanded to its surrounding parent-section context — sibling chunks merged up to an adaptive
+budget (`parent_context_max_chars` = 8192 chars), bounded so one large document never consumes the
+whole context window.
+
+The `large-source-run` tier proves this with six ~6 KB decision documents (answer buried
+mid-document) against full-replay and Brunnr default:
+
+| Strategy | Tokens/query | Success | Bounded? |
+|---|---:|---:|---:|
+| Full-context replay | 9,067 | 100% | — (entire corpus) |
+| **Brunnr default (small-to-big)** | **713** | **100%** | ✓ (≤ 8,192 chars/hit) |
+
+Brunnr returns a coherent parent-section window (**12.7× cheaper** than full-replay) while full-replay
+grows linearly with document size. Token accounting uses the full expanded content — not a 500-char
+preview — so these numbers reflect the real context cost an agent pays.
+
+`aggregate.json` for large-source-run includes `large_source_assertions` (one entry per task for the
+B-default-brunnr arm) reporting:
+- `bounded_ok` — fatal if any hit exceeds 8,192 chars; always passes when small-to-big is working.
+- `expansion_proven` — fatal if the retrieved relevant-doc hit is ≤ 500 chars; proves expansion fired.
+- `coherence_ok` — informational; true when the expanded window happens to contain the buried answer
+  sentence. The query may match a non-answer section of the relevant doc, so this can be false even
+  when retrieval is correct.
 
 ## Methodology
 
@@ -57,15 +87,19 @@ The harness indexes a corpus's `memory/` and `distractors/` directories through 
 `mimisbrunnr::backfill_directory` path into `SqliteVecVectorStore`, then calls `VectorMemoryBackend.find`
 for each retrieval strategy. The retriever sees one undifferentiated corpus; `tasks.json`
 `relevant_docs` is used only *after* retrieval, to score precision and recall. A task succeeds when
-its relevant source document is in the retrieved set.
+its relevant source document is in the retrieved set. Token accounting uses the **full retrieved
+content** (after any small-to-big expansion), not a 500-char display preview — so reported tokens
+reflect the actual context cost an agent would pay.
 
-Two families of corpora run the identical harness:
+Three families of corpora run the identical harness:
 
 - **Scaling** (procedural, deterministic — `tools/generate_corpus.py`): `xl` (~13k), `session`
   (~119k), `mid` (~478k tokens). Each doc is a distinct fact, so these isolate the cost-vs-size
   curve above.
 - **Retrieval quality** (hand-authored prose with plausible near-miss distractors): `seed` (13 docs)
   and `large` (41 docs), where retrieval is genuinely hard and recall can drop — see below.
+- **Large-source** (six ~6 KB decision documents, answer buried mid-doc): proves small-to-big
+  expansion returns a bounded coherent window rather than a 500-char fragment.
 
 Assumptions: backend `SqliteVecVectorStore`; embedding `intfloat/multilingual-e5-small` (384-d);
 hybrid SQLite-FTS/BM25 + dense search fused with RRF, then a local lexical reranker where enabled;
@@ -97,18 +131,20 @@ raw results) additionally penalizes lower success.
 ## Reproduce
 
 ```sh
-just bench           # seed (retrieval quality)
-just bench-large     # large (retrieval quality)
-just bench-xl        # xl    (~13k scaling)
-just bench-session   # session (~119k scaling)
-just bench-mid       # mid   (~478k scaling)
-just bench-check     # rerun all tiers and fail if committed results differ
+just bench                # seed (retrieval quality)
+just bench-large          # large (retrieval quality)
+just bench-xl             # xl    (~13k scaling)
+just bench-session        # session (~119k scaling)
+just bench-mid            # mid   (~478k scaling)
+just bench-large-source   # large-source (small-to-big + bounded recall)
+just bench-check          # rerun all tiers and fail if committed results differ
 python3 benchmarks/tools/plot_scaling.py   # regenerate results/scaling.svg
 ```
 
 Procedural corpora regenerate deterministically with
-`python3 benchmarks/tools/generate_corpus.py --out <tier> --docs N --tasks T`. A live-Qdrant smoke
-proves the same retrieval path against `QdrantVectorStore`:
+`python3 benchmarks/tools/generate_corpus.py --out <tier> --docs N --tasks T`. The large-source
+corpus regenerates with `python3 benchmarks/tools/generate_large_source_corpus.py`. A live-Qdrant
+smoke proves the same retrieval path against `QdrantVectorStore`:
 `cargo test -p brunnr-bench --test qdrant -- --ignored` with `QDRANT_URL` set. Each tier keeps small,
 byte-reproducible artifacts (`aggregate.json`, `summary.csv`, `charts.txt`, `checksums.txt`); the
 bulky `raw.jsonl` and machine-dependent `timing.jsonl` are gitignored.

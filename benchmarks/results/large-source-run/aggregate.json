@@ -52,9 +52,9 @@
       "runs": 12,
       "success_rate": 1.0,
       "success_rate_ci95": 0.0,
-      "mean_total_tokens": 487.333333,
-      "total_tokens_variance": 2410.060606,
-      "tokens_per_success": 487.333333,
+      "mean_total_tokens": 712.666667,
+      "total_tokens_variance": 26630.424242,
+      "tokens_per_success": 712.666667,
       "mean_retrieval_precision": 0.444444,
       "mean_retrieval_recall": 1.0,
       "by_difficulty": {
@@ -62,9 +62,9 @@
           "runs": 12,
           "success_rate": 1.0,
           "success_rate_ci95": 0.0,
-          "mean_total_tokens": 487.333333,
-          "total_tokens_variance": 2410.060606,
-          "tokens_per_success": 487.333333,
+          "mean_total_tokens": 712.666667,
+          "total_tokens_variance": 26630.424242,
+          "tokens_per_success": 712.666667,
           "mean_retrieval_precision": 0.444444,
           "mean_retrieval_recall": 1.0
         }
@@ -74,9 +74,9 @@
       "runs": 12,
       "success_rate": 1.0,
       "success_rate_ci95": 0.0,
-      "mean_total_tokens": 490.333333,
-      "total_tokens_variance": 2410.060606,
-      "tokens_per_success": 490.333333,
+      "mean_total_tokens": 715.666667,
+      "total_tokens_variance": 26630.424242,
+      "tokens_per_success": 715.666667,
       "mean_retrieval_precision": 0.444444,
       "mean_retrieval_recall": 1.0,
       "by_difficulty": {
@@ -84,9 +84,9 @@
           "runs": 12,
           "success_rate": 1.0,
           "success_rate_ci95": 0.0,
-          "mean_total_tokens": 490.333333,
-          "total_tokens_variance": 2410.060606,
-          "tokens_per_success": 490.333333,
+          "mean_total_tokens": 715.666667,
+          "total_tokens_variance": 26630.424242,
+          "tokens_per_success": 715.666667,
           "mean_retrieval_precision": 0.444444,
           "mean_retrieval_recall": 1.0
         }
@@ -96,9 +96,9 @@
       "runs": 12,
       "success_rate": 1.0,
       "success_rate_ci95": 0.0,
-      "mean_total_tokens": 516.666667,
-      "total_tokens_variance": 2445.69697,
-      "tokens_per_success": 516.666667,
+      "mean_total_tokens": 742.0,
+      "total_tokens_variance": 26547.636364,
+      "tokens_per_success": 742.0,
       "mean_retrieval_precision": 0.444444,
       "mean_retrieval_recall": 1.0,
       "by_difficulty": {
@@ -106,9 +106,9 @@
           "runs": 12,
           "success_rate": 1.0,
           "success_rate_ci95": 0.0,
-          "mean_total_tokens": 516.666667,
-          "total_tokens_variance": 2445.69697,
-          "tokens_per_success": 516.666667,
+          "mean_total_tokens": 742.0,
+          "total_tokens_variance": 26547.636364,
+          "tokens_per_success": 742.0,
           "mean_retrieval_precision": 0.444444,
           "mean_retrieval_recall": 1.0
         }
@@ -118,9 +118,9 @@
       "runs": 12,
       "success_rate": 1.0,
       "success_rate_ci95": 0.0,
-      "mean_total_tokens": 487.333333,
-      "total_tokens_variance": 2410.060606,
-      "tokens_per_success": 487.333333,
+      "mean_total_tokens": 712.666667,
+      "total_tokens_variance": 26630.424242,
+      "tokens_per_success": 712.666667,
       "mean_retrieval_precision": 0.444444,
       "mean_retrieval_recall": 1.0,
       "by_difficulty": {
@@ -128,9 +128,9 @@
           "runs": 12,
           "success_rate": 1.0,
           "success_rate_ci95": 0.0,
-          "mean_total_tokens": 487.333333,
-          "total_tokens_variance": 2410.060606,
-          "tokens_per_success": 487.333333,
+          "mean_total_tokens": 712.666667,
+          "total_tokens_variance": 26630.424242,
+          "tokens_per_success": 712.666667,
           "mean_retrieval_precision": 0.444444,
           "mean_retrieval_recall": 1.0
         }
@@ -140,9 +140,9 @@
       "runs": 12,
       "success_rate": 1.0,
       "success_rate_ci95": 0.0,
-      "mean_total_tokens": 487.333333,
-      "total_tokens_variance": 2410.060606,
-      "tokens_per_success": 487.333333,
+      "mean_total_tokens": 712.666667,
+      "total_tokens_variance": 26630.424242,
+      "tokens_per_success": 712.666667,
       "mean_retrieval_precision": 0.444444,
       "mean_retrieval_recall": 1.0,
       "by_difficulty": {
@@ -150,9 +150,9 @@
           "runs": 12,
           "success_rate": 1.0,
           "success_rate_ci95": 0.0,
-          "mean_total_tokens": 487.333333,
-          "total_tokens_variance": 2410.060606,
-          "tokens_per_success": 487.333333,
+          "mean_total_tokens": 712.666667,
+          "total_tokens_variance": 26630.424242,
+          "tokens_per_success": 712.666667,
           "mean_retrieval_precision": 0.444444,
           "mean_retrieval_recall": 1.0
         }
@@ -162,9 +162,9 @@
       "runs": 12,
       "success_rate": 1.0,
       "success_rate_ci95": 0.0,
-      "mean_total_tokens": 566.166667,
-      "total_tokens_variance": 3670.69697,
-      "tokens_per_success": 566.166667,
+      "mean_total_tokens": 895.0,
+      "total_tokens_variance": 15897.454545,
+      "tokens_per_success": 895.0,
       "mean_retrieval_precision": 0.388889,
       "mean_retrieval_recall": 1.0,
       "by_difficulty": {
@@ -172,9 +172,9 @@
           "runs": 12,
           "success_rate": 1.0,
           "success_rate_ci95": 0.0,
-          "mean_total_tokens": 566.166667,
-          "total_tokens_variance": 3670.69697,
-          "tokens_per_success": 566.166667,
+          "mean_total_tokens": 895.0,
+          "total_tokens_variance": 15897.454545,
+          "tokens_per_success": 895.0,
           "mean_retrieval_precision": 0.388889,
           "mean_retrieval_recall": 1.0
         }
@@ -184,9 +184,9 @@
       "runs": 12,
       "success_rate": 1.0,
       "success_rate_ci95": 0.0,
-      "mean_total_tokens": 528.5,
-      "total_tokens_variance": 2497.363636,
-      "tokens_per_success": 528.5,
+      "mean_total_tokens": 752.666667,
+      "total_tokens_variance": 25858.787879,
+      "tokens_per_success": 752.666667,
       "mean_retrieval_precision": 0.444444,
       "mean_retrieval_recall": 1.0,
       "by_difficulty": {
@@ -194,9 +194,9 @@
           "runs": 12,
           "success_rate": 1.0,
           "success_rate_ci95": 0.0,
-          "mean_total_tokens": 528.5,
-          "total_tokens_variance": 2497.363636,
-          "tokens_per_success": 528.5,
+          "mean_total_tokens": 752.666667,
+          "total_tokens_variance": 25858.787879,
+          "tokens_per_success": 752.666667,
           "mean_retrieval_precision": 0.444444,
           "mean_retrieval_recall": 1.0
         }
@@ -206,9 +206,9 @@
       "runs": 12,
       "success_rate": 1.0,
       "success_rate_ci95": 0.0,
-      "mean_total_tokens": 487.333333,
-      "total_tokens_variance": 2410.060606,
-      "tokens_per_success": 487.333333,
+      "mean_total_tokens": 712.666667,
+      "total_tokens_variance": 26630.424242,
+      "tokens_per_success": 712.666667,
       "mean_retrieval_precision": 0.444444,
       "mean_retrieval_recall": 1.0,
       "by_difficulty": {
@@ -216,9 +216,9 @@
           "runs": 12,
           "success_rate": 1.0,
           "success_rate_ci95": 0.0,
-          "mean_total_tokens": 487.333333,
-          "total_tokens_variance": 2410.060606,
-          "tokens_per_success": 487.333333,
+          "mean_total_tokens": 712.666667,
+          "total_tokens_variance": 26630.424242,
+          "tokens_per_success": 712.666667,
           "mean_retrieval_precision": 0.444444,
           "mean_retrieval_recall": 1.0
         }
@@ -228,9 +228,9 @@
       "runs": 12,
       "success_rate": 1.0,
       "success_rate_ci95": 0.0,
-      "mean_total_tokens": 489.333333,
-      "total_tokens_variance": 2410.060606,
-      "tokens_per_success": 489.333333,
+      "mean_total_tokens": 714.666667,
+      "total_tokens_variance": 26630.424242,
+      "tokens_per_success": 714.666667,
       "mean_retrieval_precision": 0.444444,
       "mean_retrieval_recall": 1.0,
       "by_difficulty": {
@@ -238,32 +238,10 @@
           "runs": 12,
           "success_rate": 1.0,
           "success_rate_ci95": 0.0,
-          "mean_total_tokens": 489.333333,
-          "total_tokens_variance": 2410.060606,
-          "tokens_per_success": 489.333333,
+          "mean_total_tokens": 714.666667,
+          "total_tokens_variance": 26630.424242,
+          "tokens_per_success": 714.666667,
           "mean_retrieval_precision": 0.444444,
-          "mean_retrieval_recall": 1.0
-        }
-      }
-    },
-    "B-reflection-consolidated": {
-      "runs": 12,
-      "success_rate": 1.0,
-      "success_rate_ci95": 0.0,
-      "mean_total_tokens": 1998.166667,
-      "total_tokens_variance": 200.515152,
-      "tokens_per_success": 1998.166667,
-      "mean_retrieval_precision": 0.333333,
-      "mean_retrieval_recall": 1.0,
-      "by_difficulty": {
-        "hard": {
-          "runs": 12,
-          "success_rate": 1.0,
-          "success_rate_ci95": 0.0,
-          "mean_total_tokens": 1998.166667,
-          "total_tokens_variance": 200.515152,
-          "tokens_per_success": 1998.166667,
-          "mean_retrieval_precision": 0.333333,
           "mean_retrieval_recall": 1.0
         }
       }
@@ -316,9 +294,9 @@
       "runs": 12,
       "success_rate": 1.0,
       "success_rate_ci95": 0.0,
-      "mean_total_tokens": 488.333333,
-      "total_tokens_variance": 2410.060606,
-      "tokens_per_success": 488.333333,
+      "mean_total_tokens": 713.666667,
+      "total_tokens_variance": 26630.424242,
+      "tokens_per_success": 713.666667,
       "mean_retrieval_precision": 0.444444,
       "mean_retrieval_recall": 1.0,
       "by_difficulty": {
@@ -326,9 +304,9 @@
           "runs": 12,
           "success_rate": 1.0,
           "success_rate_ci95": 0.0,
-          "mean_total_tokens": 488.333333,
-          "total_tokens_variance": 2410.060606,
-          "tokens_per_success": 488.333333,
+          "mean_total_tokens": 713.666667,
+          "total_tokens_variance": 26630.424242,
+          "tokens_per_success": 713.666667,
           "mean_retrieval_precision": 0.444444,
           "mean_retrieval_recall": 1.0
         }
@@ -405,7 +383,7 @@
   ],
   "marginal_verdicts": {
     "B-plus-debate": {
-      "tokens_per_success_delta_vs_b": 29.333334,
+      "tokens_per_success_delta_vs_b": 29.333333,
       "success_rate_delta_vs_b": 0.0,
       "precision_delta_vs_b": 0.0,
       "recall_delta_vs_b": 0.0,
@@ -426,14 +404,14 @@
       "verdict": "skip by default; no measured quality gain over B-default in this sample"
     },
     "B-plus-hyde": {
-      "tokens_per_success_delta_vs_b": 78.833334,
+      "tokens_per_success_delta_vs_b": 182.333333,
       "success_rate_delta_vs_b": 0.0,
       "precision_delta_vs_b": -0.055555,
       "recall_delta_vs_b": 0.0,
       "verdict": "skip by default; no measured quality gain over B-default in this sample"
     },
     "B-plus-multi-query": {
-      "tokens_per_success_delta_vs_b": 41.166667,
+      "tokens_per_success_delta_vs_b": 40.0,
       "success_rate_delta_vs_b": 0.0,
       "precision_delta_vs_b": 0.0,
       "recall_delta_vs_b": 0.0,
@@ -450,13 +428,6 @@
       "tokens_per_success_delta_vs_b": 2.0,
       "success_rate_delta_vs_b": 0.0,
       "precision_delta_vs_b": 0.0,
-      "recall_delta_vs_b": 0.0,
-      "verdict": "skip by default; no measured quality gain over B-default in this sample"
-    },
-    "B-reflection-consolidated": {
-      "tokens_per_success_delta_vs_b": 1510.833334,
-      "success_rate_delta_vs_b": 0.0,
-      "precision_delta_vs_b": -0.111111,
       "recall_delta_vs_b": 0.0,
       "verdict": "skip by default; no measured quality gain over B-default in this sample"
     }
@@ -490,5 +461,55 @@
       "precision_delta": 0.0,
       "default_decision": "no ability-tagged tasks in this corpus; keeping OFF"
     }
-  }
+  },
+  "large_source_assertions": [
+    {
+      "task_id": "api-key-rotation",
+      "arm": "B-default-brunnr",
+      "coherence_ok": false,
+      "bounded_ok": true,
+      "expansion_proven": true,
+      "max_hit_chars": 1255
+    },
+    {
+      "task_id": "cdn-origin-pull",
+      "arm": "B-default-brunnr",
+      "coherence_ok": true,
+      "bounded_ok": true,
+      "expansion_proven": true,
+      "max_hit_chars": 870
+    },
+    {
+      "task_id": "db-connection-pool-large",
+      "arm": "B-default-brunnr",
+      "coherence_ok": true,
+      "bounded_ok": true,
+      "expansion_proven": true,
+      "max_hit_chars": 829
+    },
+    {
+      "task_id": "email-delivery-config",
+      "arm": "B-default-brunnr",
+      "coherence_ok": true,
+      "bounded_ok": true,
+      "expansion_proven": true,
+      "max_hit_chars": 1211
+    },
+    {
+      "task_id": "job-queue-concurrency",
+      "arm": "B-default-brunnr",
+      "coherence_ok": true,
+      "bounded_ok": true,
+      "expansion_proven": true,
+      "max_hit_chars": 829
+    },
+    {
+      "task_id": "mobile-push-ttl",
+      "arm": "B-default-brunnr",
+      "coherence_ok": false,
+      "bounded_ok": true,
+      "expansion_proven": true,
+      "max_hit_chars": 1211
+    }
+  ]
 }

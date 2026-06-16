@@ -42,6 +42,11 @@ struct Args {
     /// extra backfill cost. Enable for quality/ability tiers.
     #[arg(long, default_value_t = false)]
     signal_arms: bool,
+    /// Skip specific arms by ID (may be repeated). Use to exclude non-deterministic or
+    /// irrelevant arms for a given tier, e.g. --skip-arm B-reflection-consolidated for
+    /// large-source-run where reflection summaries produce near-identical ANN scores.
+    #[arg(long, value_name = "ARM_ID")]
+    skip_arm: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -60,6 +65,11 @@ struct TaskSpec {
     relevant_docs: Vec<String>,
     #[serde(default)]
     distractor_docs: Vec<String>,
+    /// A substring expected to appear in the retrieved context when small-to-big expansion
+    /// returns the full parent section (not just a 500-char chunk fragment). Set in
+    /// tasks.json for large-source-doc tasks to verify coherence of the expanded window.
+    #[serde(default)]
+    coherence_needle: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -217,6 +227,10 @@ struct RawRow {
     token_usage: TokenUsage,
     success: bool,
     retrieval: RetrievalReport,
+    /// Forwarded from `TaskSpec.coherence_needle` for assertion evaluation in
+    /// `aggregate_rows`. Not serialised when absent.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    coherence_needle: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -291,7 +305,12 @@ struct TraceHit {
     doc_id: String,
     score: f32,
     source: String,
+    /// 500-char truncation of the retrieved content — for human-readable trace display only.
     content_preview: String,
+    /// Full retrieved content after any small-to-big expansion — used for accurate token
+    /// accounting. Skipped during serialisation to keep raw.jsonl compact.
+    #[serde(skip)]
+    content_full: String,
 }
 
 #[derive(Debug)]
@@ -320,6 +339,24 @@ struct AggregateArm {
     by_difficulty: BTreeMap<String, AggregateGroup>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+struct LargeSourceAssertion {
+    task_id: String,
+    arm: String,
+    /// Whether the combined retrieved content contains the coherence needle. `None` when
+    /// no needle is defined. Informational — the query may match a non-answer chunk of the
+    /// relevant doc, so the expanded window does not always include the answer sentence.
+    coherence_ok: Option<bool>,
+    /// Whether every hit's full content is within `parent_context_max_chars` (8192 chars).
+    /// Fatal: small-to-big must never return an unbounded window.
+    bounded_ok: bool,
+    /// Whether at least one hit from a relevant doc has content_full > 500 chars,
+    /// proving that small-to-big expansion occurred beyond the raw 500-char preview.
+    /// `None` when the arm did not successfully retrieve a relevant doc.
+    expansion_proven: Option<bool>,
+    max_hit_chars: usize,
+}
+
 #[derive(Debug, Serialize)]
 struct AggregateOutput {
     suite_version: String,
@@ -333,6 +370,10 @@ struct AggregateOutput {
     /// Omitted from JSON when empty (i.e., --signal-arms was not passed).
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     focused_signal_verdicts: BTreeMap<String, FocusedSignalVerdict>,
+    /// Coherence and bounded assertions for tasks that carry a `coherence_needle`. Empty
+    /// when no task in the suite defines a needle (omitted from JSON in that case).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    large_source_assertions: Vec<LargeSourceAssertion>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -387,10 +428,18 @@ async fn main() -> Result<()> {
     }
     let state = prepare_state(&repo_root, &seed_root, &suite, args.signal_arms).await?;
 
-    let arms: &[ArmKind] = if args.signal_arms {
-        ArmKind::all()
+    let all_arms: Vec<ArmKind> = if args.signal_arms {
+        ArmKind::all().to_vec()
     } else {
-        ArmKind::core()
+        ArmKind::core().to_vec()
+    };
+    let arms: Vec<ArmKind> = if args.skip_arm.is_empty() {
+        all_arms
+    } else {
+        all_arms
+            .into_iter()
+            .filter(|a| !args.skip_arm.iter().any(|s| s == a.id()))
+            .collect()
     };
 
     let raw_path = results_root.join("raw.jsonl");
@@ -399,7 +448,7 @@ async fn main() -> Result<()> {
     let mut raw = String::new();
     let mut timing = String::new();
     for rep in 0..args.reps {
-        for arm in arms {
+        for arm in &arms {
             for task in &suite.tasks {
                 let output = run_row(*arm, rep, task, &state).await?;
                 raw.push_str(&serde_json::to_string(&output.row)?);
@@ -439,6 +488,30 @@ async fn main() -> Result<()> {
             "rows": rows.len(),
         })
     );
+
+    // Fatal assertions: bounded (expansion must not exceed 8192 chars) and expansion_proven
+    // (small-to-big must return more than a raw 500-char fragment when the relevant doc
+    // is retrieved). coherence_ok is informational and is not fatal — the matched chunk may
+    // be a non-answer section of the relevant doc, so the expanded window does not always
+    // include the answer sentence.
+    let failed_assertions: Vec<_> = aggregate
+        .large_source_assertions
+        .iter()
+        .filter(|a| !a.bounded_ok || a.expansion_proven == Some(false))
+        .collect();
+    if !failed_assertions.is_empty() {
+        for a in &failed_assertions {
+            eprintln!(
+                "ASSERTION FAILED: task={} arm={} bounded={} expansion={:?} max_hit_chars={}",
+                a.task_id, a.arm, a.bounded_ok, a.expansion_proven, a.max_hit_chars
+            );
+        }
+        bail!(
+            "{} large-source assertion(s) failed — see ASSERTION FAILED lines above",
+            failed_assertions.len()
+        );
+    }
+
     Ok(())
 }
 
@@ -589,6 +662,7 @@ async fn run_row(
     let started = Instant::now();
     let retrieval = retrieve(arm, task, state).await?;
     let prompt = build_prompt(task, arm, &retrieval);
+    let token_prompt = build_token_prompt(task, arm, &retrieval);
     let success = task
         .relevant_docs
         .iter()
@@ -600,7 +674,7 @@ async fn run_row(
     }
     .to_string();
     let answer_usage = TokenUsage::answer(
-        token_count(&state.tokenizer, &prompt),
+        token_count(&state.tokenizer, &token_prompt),
         token_count(&state.tokenizer, &output),
     );
     let method_usage = method_usage(arm, task, state);
@@ -625,6 +699,7 @@ async fn run_row(
         token_usage,
         success,
         retrieval: retrieval_report,
+        coherence_needle: task.coherence_needle.clone(),
     };
     let timing = TimingRow {
         suite_version: SUITE_VERSION.to_string(),
@@ -641,11 +716,10 @@ async fn run_row(
 async fn retrieve(arm: ArmKind, task: &TaskSpec, state: &BenchState) -> Result<RetrievalOutput> {
     match arm {
         ArmKind::FullReplay | ArmKind::FullReplayCold => {
-            // Use the full body (not preview) so the token count reflects the actual
-            // cost of including every document in context. For small docs (< 500 chars)
-            // this is identical to preview; for large docs it shows the true scaling cost,
-            // proving that full-replay token usage grows with doc size while Brunnr
-            // retrieval stays bounded at top_k × chunk_size.
+            // content_full carries the complete document body for accurate token accounting.
+            // content_preview is the 500-char truncation used only for the trace display.
+            // For small docs (< 500 chars) these are identical; for large docs content_full
+            // shows the true per-doc token cost, proving full-replay grows with corpus size.
             let hits = state
                 .raw_docs
                 .iter()
@@ -653,7 +727,8 @@ async fn retrieve(arm: ArmKind, task: &TaskSpec, state: &BenchState) -> Result<R
                     doc_id: doc.id.clone(),
                     score: 1.0,
                     source: "full-replay".to_string(),
-                    content_preview: doc.body.clone(),
+                    content_preview: preview(&doc.body),
+                    content_full: doc.body.clone(),
                 })
                 .collect();
             Ok(RetrievalOutput {
@@ -925,6 +1000,7 @@ fn trace_hits(hits: Vec<SearchHit>, docs: &[CorpusDoc]) -> Vec<TraceHit> {
             score: hit.score,
             source: format!("{:?}", hit.source),
             content_preview: preview(&hit.record.content),
+            content_full: hit.record.content.clone(),
         });
     }
     output
@@ -1028,7 +1104,25 @@ fn method_usage(arm: ArmKind, task: &TaskSpec, state: &BenchState) -> TokenUsage
     }
 }
 
+/// Build the display prompt (content truncated to 500 chars). Stored in `RawRow.prompt`
+/// for human-readable traces; NOT used for token counting.
 fn build_prompt(task: &TaskSpec, arm: ArmKind, retrieval: &RetrievalOutput) -> String {
+    build_prompt_inner(task, arm, retrieval, false)
+}
+
+/// Build the token-accounting prompt (full retrieved content, including small-to-big
+/// expanded parent sections). This is what a real agent would actually inject into its
+/// context window, so token_count() on this string reflects the true cost.
+fn build_token_prompt(task: &TaskSpec, arm: ArmKind, retrieval: &RetrievalOutput) -> String {
+    build_prompt_inner(task, arm, retrieval, true)
+}
+
+fn build_prompt_inner(
+    task: &TaskSpec,
+    arm: ArmKind,
+    retrieval: &RetrievalOutput,
+    use_full_content: bool,
+) -> String {
     let mut prompt = format!("Question: {}\n\n", task.question);
     if let Some(index) = &retrieval.index_slice {
         prompt.push_str("Index-first slice:\n");
@@ -1040,9 +1134,14 @@ fn build_prompt(task: &TaskSpec, arm: ArmKind, retrieval: &RetrievalOutput) -> S
         prompt.push_str("(none)\n");
     } else {
         for hit in &retrieval.hits {
+            let content = if use_full_content {
+                &hit.content_full
+            } else {
+                &hit.content_preview
+            };
             prompt.push_str(&format!(
                 "[{} score={:.6} source={}]\n{}\n\n",
-                hit.doc_id, hit.score, hit.source, hit.content_preview
+                hit.doc_id, hit.score, hit.source, content
             ));
         }
     }
@@ -1113,6 +1212,7 @@ fn aggregate_rows(rows: &[RawRow]) -> AggregateOutput {
     let retrieval_misses = miss_counts.into_values().collect::<Vec<_>>();
     let marginal_verdicts = marginal_verdicts(&aggregate);
     let focused_signal_verdicts = focused_signal_verdicts(rows, &aggregate);
+    let large_source_assertions = large_source_assertions(rows);
     AggregateOutput {
         suite_version: SUITE_VERSION.to_string(),
         tokenizer: format!("{TOKENIZER_ID} ({TOKENIZER_PACKAGE})"),
@@ -1122,7 +1222,99 @@ fn aggregate_rows(rows: &[RawRow]) -> AggregateOutput {
         retrieval_misses,
         marginal_verdicts,
         focused_signal_verdicts,
+        large_source_assertions,
     }
+}
+
+/// Small-to-big assertions for tasks that define a `coherence_needle`.
+///
+/// Scoped to the canonical `B-default-brunnr` arm only — the arm that uses small-to-big
+/// parent-context expansion. Other arms (full-replay, top-1, no-memory) are excluded
+/// because they don't invoke the expansion path.
+///
+/// Fields:
+/// - COHERENCE (`coherence_ok`): combined content of all hits contains the needle.
+///   Informational — the query may match a non-answer chunk of the relevant doc, so
+///   the expanded window does not always include the answer sentence. Not fatal.
+/// - BOUNDED (`bounded_ok`): every hit's content_full ≤ parent_context_max_chars (8192).
+///   Fatal — expansion must never exceed the configured ceiling.
+/// - EXPANSION (`expansion_proven`): when the arm retrieved a relevant doc (success=true),
+///   at least one hit from that doc has content_full > 500 chars, proving that small-to-big
+///   returned more than a raw 500-char preview fragment. Fatal if Some(false).
+///
+/// One entry per task; first rep is used (all reps are deterministic).
+fn large_source_assertions(rows: &[RawRow]) -> Vec<LargeSourceAssertion> {
+    const PARENT_CONTEXT_MAX_CHARS: usize = 8192;
+    const PREVIEW_CHARS: usize = 500;
+    const TARGET_ARM: &str = "B-default-brunnr";
+
+    let mut seen: BTreeSet<String> = BTreeSet::new();
+    let mut assertions = Vec::new();
+
+    for row in rows {
+        // Only assert on the canonical Brunnr arm and tasks with a coherence needle.
+        if row.arm != TARGET_ARM {
+            continue;
+        }
+        let Some(needle) = &row.coherence_needle else {
+            continue;
+        };
+        if !seen.insert(row.task_id.clone()) {
+            continue;
+        }
+
+        let combined: String = row
+            .retrieval
+            .trace
+            .iter()
+            .map(|h| h.content_full.as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
+        let coherence_ok = Some(combined.contains(needle.as_str()));
+
+        let max_hit_chars = row
+            .retrieval
+            .trace
+            .iter()
+            .map(|h| h.content_full.len())
+            .max()
+            .unwrap_or(0);
+        let bounded_ok = max_hit_chars <= PARENT_CONTEXT_MAX_CHARS;
+
+        // expansion_proven: at least one hit from a relevant doc exceeds the preview size.
+        // Only meaningful when retrieval succeeded (relevant doc was found).
+        let expansion_proven = if row.success {
+            let relevant: BTreeSet<&str> = row
+                .retrieval
+                .relevant_docs
+                .iter()
+                .map(String::as_str)
+                .collect();
+            let relevant_hit_max = row
+                .retrieval
+                .trace
+                .iter()
+                .filter(|h| relevant.contains(h.doc_id.as_str()))
+                .map(|h| h.content_full.len())
+                .max()
+                .unwrap_or(0);
+            Some(relevant_hit_max > PREVIEW_CHARS)
+        } else {
+            None
+        };
+
+        assertions.push(LargeSourceAssertion {
+            task_id: row.task_id.clone(),
+            arm: row.arm.clone(),
+            coherence_ok,
+            bounded_ok,
+            expansion_proven,
+            max_hit_chars,
+        });
+    }
+
+    assertions.sort_by(|a, b| a.task_id.cmp(&b.task_id));
+    assertions
 }
 
 fn aggregate_group(rows: &[RawRow]) -> AggregateGroup {
@@ -1658,12 +1850,14 @@ mod tests {
             question: "What is the hidden answer?".to_string(),
             relevant_docs: vec!["memory/right.md".to_string()],
             distractor_docs: vec!["distractors/near-miss.md".to_string()],
+            coherence_needle: None,
         };
         let hits = vec![TraceHit {
             doc_id: "distractors/near-miss.md".to_string(),
             score: 1.0,
             source: "Hybrid".to_string(),
             content_preview: "near miss".to_string(),
+            content_full: "near miss".to_string(),
         }];
 
         let report = score_retrieval(&task, &hits);
@@ -1699,6 +1893,7 @@ mod tests {
                 recall: 0.0,
                 trace: Vec::new(),
             },
+            coherence_needle: None,
         };
 
         let aggregate = aggregate_rows(&[row]);

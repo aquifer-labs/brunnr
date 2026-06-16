@@ -38,7 +38,7 @@ bench-large:
 
 bench-large-source:
     python3 benchmarks/tools/generate_large_source_corpus.py
-    cargo run -p brunnr-bench -- --reps 2 --seed-corpus benchmarks/large-source-corpus --results benchmarks/results/large-source-run --signal-arms
+    cargo run -p brunnr-bench -- --reps 2 --seed-corpus benchmarks/large-source-corpus --results benchmarks/results/large-source-run --signal-arms --skip-arm B-reflection-consolidated
 
 bench-xl:
     python3 benchmarks/tools/generate_corpus.py --out xl-corpus --docs 180 --tasks 40

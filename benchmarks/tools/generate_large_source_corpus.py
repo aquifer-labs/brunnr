@@ -285,6 +285,9 @@ def main() -> None:
     for slug, topic, answer, question, tags_str in TOPICS:
         doc = make_large_doc(slug, topic, answer, tags_str)
         (mem / f"{slug}.md").write_text(doc, encoding="utf-8")
+        # coherence_needle: a verbatim substring of the buried answer sentence in _CORE.
+        # When small-to-big returns the full parent section, this needle is present in the
+        # retrieved context. If only a 500-char chunk fragment is returned, it may be absent.
         tasks.append(
             {
                 "id": slug,
@@ -295,6 +298,7 @@ def main() -> None:
                     "distractors/config-reference.md",
                     "distractors/platform-overview.md",
                 ],
+                "coherence_needle": f"The {topic} is set to {answer}.",
             }
         )
         print(f"  wrote memory/{slug}.md ({len(doc)} chars)")
