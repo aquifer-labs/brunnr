@@ -437,7 +437,8 @@ impl<V: VectorStore> MemoryBackend for VectorMemoryBackend<V> {
                 } else {
                     stable_memory_id(&chunk_memory)
                 };
-                if let Some(existing) = self.store.get(&self.config.collection, id.as_str()).await? {
+                if let Some(existing) = self.store.get(&self.config.collection, id.as_str()).await?
+                {
                     if representative.is_none() {
                         representative = Some(point_to_record(existing)?);
                     }

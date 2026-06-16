@@ -1391,7 +1391,9 @@ async fn migrate_okf(
 ) -> Result<()> {
     let config = load_config(&config_path)?;
     if config.memory.backend != MemoryBackendKind::Qdrant {
-        bail!("brunnr migrate okf-bundle currently requires backend = qdrant for atomic alias swap");
+        bail!(
+            "brunnr migrate okf-bundle currently requires backend = qdrant for atomic alias swap"
+        );
     }
     let vector_config = VectorMemoryConfig::new(&config.memory.collection);
     let compat = CollectionCompat::from_config(&vector_config);
@@ -1415,11 +1417,14 @@ async fn migrate_rechunk(config_path: PathBuf) -> Result<()> {
     }
     use mimisbrunnr::{rechunk_oversized_sqlite, SqliteVecVectorStore, SqliteVecVectorStoreConfig};
     use std::path::PathBuf as SPath;
-    let db_path = SPath::from(&config.memory.root)
-        .join(format!("{}.sqlite", config.memory.collection));
+    let db_path =
+        SPath::from(&config.memory.root).join(format!("{}.sqlite", config.memory.collection));
     let store =
         SqliteVecVectorStore::open(SqliteVecVectorStoreConfig::new(&db_path)).map_err(|e| {
-            anyhow::anyhow!("failed to open sqlite-vec store at {}: {e}", db_path.display())
+            anyhow::anyhow!(
+                "failed to open sqlite-vec store at {}: {e}",
+                db_path.display()
+            )
         })?;
     let backend = store.clone().memory_backend(&config.memory.collection)?;
     let report = rechunk_oversized_sqlite(&store, &backend, &config.memory.collection).await?;

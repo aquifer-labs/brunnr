@@ -371,7 +371,10 @@ async fn large_content_is_chunked_so_recall_stays_bounded() {
         "alpha beta gamma. ".repeat(2_000),
         "delta epsilon zeta. ".repeat(2_000),
     );
-    assert!(big.chars().count() > 50_000, "test needs a genuinely large record");
+    assert!(
+        big.chars().count() > 50_000,
+        "test needs a genuinely large record"
+    );
     backend
         .store(StoreMemory {
             content: big,
@@ -409,5 +412,7 @@ async fn large_content_is_chunked_so_recall_stays_bounded() {
         "the relevant passage must be retrieved"
     );
     // Parent linkage: chunks point back to the source node for drill-down.
-    assert!(hits.iter().all(|hit| hit.record.node_id.starts_with("node:big")));
+    assert!(hits
+        .iter()
+        .all(|hit| hit.record.node_id.starts_with("node:big")));
 }

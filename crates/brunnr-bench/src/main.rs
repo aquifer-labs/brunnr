@@ -501,8 +501,7 @@ async fn prepare_state(
 
     // Signal backends — only built when --signal-arms is set to avoid the backfill
     // overhead on large scaling tiers.
-    let (entity_backend, temporal_backend, supersession_backend, episode_backend) = if signal_arms
-    {
+    let (entity_backend, temporal_backend, supersession_backend, episode_backend) = if signal_arms {
         let eb = make_backend(
             "bench_entity",
             VectorMemoryConfig::new("bench_entity").with_entity_linking(true),
@@ -800,15 +799,15 @@ async fn retrieve(arm: ArmKind, task: &TaskSpec, state: &BenchState) -> Result<R
             .await
         }
         ArmKind::Supersession => {
-            let backend: &dyn MemoryBackend =
-                if task.ability.as_deref() == Some("knowledge-update") {
-                    state
-                        .supersession_backend
-                        .as_deref()
-                        .unwrap_or(state.raw_backend.as_ref())
-                } else {
-                    state.raw_backend.as_ref()
-                };
+            let backend: &dyn MemoryBackend = if task.ability.as_deref() == Some("knowledge-update")
+            {
+                state
+                    .supersession_backend
+                    .as_deref()
+                    .unwrap_or(state.raw_backend.as_ref())
+            } else {
+                state.raw_backend.as_ref()
+            };
             retrieve_find(
                 backend,
                 &state.raw_docs,
@@ -1240,10 +1239,26 @@ fn focused_signal_verdicts(
     aggregate: &BTreeMap<String, AggregateArm>,
 ) -> BTreeMap<String, FocusedSignalVerdict> {
     let signal_abilities: &[(&str, &str, &str)] = &[
-        ("B-plus-entity-overlap", "entity-disambiguation", "B-default-brunnr"),
-        ("B-plus-temporal-decay", "temporal-ordering", "B-default-brunnr"),
-        ("B-plus-supersession", "knowledge-update", "B-default-brunnr"),
-        ("B-plus-episode-context", "multi-session-synthesis", "B-default-brunnr"),
+        (
+            "B-plus-entity-overlap",
+            "entity-disambiguation",
+            "B-default-brunnr",
+        ),
+        (
+            "B-plus-temporal-decay",
+            "temporal-ordering",
+            "B-default-brunnr",
+        ),
+        (
+            "B-plus-supersession",
+            "knowledge-update",
+            "B-default-brunnr",
+        ),
+        (
+            "B-plus-episode-context",
+            "multi-session-synthesis",
+            "B-default-brunnr",
+        ),
     ];
     let mut out = BTreeMap::new();
     for (arm_id, ability, baseline_id) in signal_abilities {

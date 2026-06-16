@@ -287,10 +287,7 @@ impl SqliteVecVectorStore {
 
     /// Return the payload JSON for every record in `collection`.
     /// Intended for migration tooling that needs to inspect existing records.
-    pub fn scan_all_records(
-        &self,
-        collection: &str,
-    ) -> MemoryResult<Vec<serde_json::Value>> {
+    pub fn scan_all_records(&self, collection: &str) -> MemoryResult<Vec<serde_json::Value>> {
         let tables = Tables::new(collection)?;
         let connection = self.lock()?;
         let mut stmt = connection
@@ -320,7 +317,10 @@ impl SqliteVecVectorStore {
         let tx = connection.transaction().map_err(sqlite_error)?;
         for id in ids {
             tx.execute(
-                &format!("DELETE FROM {records} WHERE id = ?1", records = tables.records),
+                &format!(
+                    "DELETE FROM {records} WHERE id = ?1",
+                    records = tables.records
+                ),
                 params![id],
             )
             .map_err(sqlite_error)?;
@@ -330,7 +330,10 @@ impl SqliteVecVectorStore {
             )
             .map_err(sqlite_error)?;
             tx.execute(
-                &format!("DELETE FROM {vectors} WHERE id = ?1", vectors = tables.vectors),
+                &format!(
+                    "DELETE FROM {vectors} WHERE id = ?1",
+                    vectors = tables.vectors
+                ),
                 params![id],
             )
             .map_err(sqlite_error)?;

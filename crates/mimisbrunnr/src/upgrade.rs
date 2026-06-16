@@ -269,7 +269,14 @@ pub async fn rechunk_oversized_sqlite(
             .and_then(|m| m.get("parent_node"))
             .is_some();
 
-        if content.len() <= max_chars || has_parent {
+        // Compare by character count, not bytes: `chunk_text` (and therefore the
+        // single-vs-multi-chunk decision in `store`) splits on `max_chars` *chars*.
+        // Using byte length here would flag a multibyte record (e.g. Cyrillic/CJK)
+        // whose char count fits a single chunk as "oversized" — `store` would then
+        // re-create the same single-chunk id (idempotent no-op) and the record would
+        // be deleted on the next migration run, losing data. Char count keeps the
+        // gate aligned with chunking, so a single-chunk record is never rechunked.
+        if content.chars().count() <= max_chars || has_parent {
             continue;
         }
 

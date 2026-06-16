@@ -179,7 +179,11 @@ mod tests {
             overlap_chars: 40,
         };
         let needle = "the answer is 42.";
-        let body = format!("{} {needle} {}", "filler. ".repeat(300), "tail. ".repeat(300));
+        let body = format!(
+            "{} {needle} {}",
+            "filler. ".repeat(300),
+            "tail. ".repeat(300)
+        );
         let chunks = chunk_text(&body, &cfg);
         assert!(chunks.len() > 1, "large content must split");
         for chunk in &chunks {
@@ -190,7 +194,9 @@ mod tests {
             );
         }
         assert!(
-            chunks.iter().any(|c| c.content.contains("the answer is 42")),
+            chunks
+                .iter()
+                .any(|c| c.content.contains("the answer is 42")),
             "the relevant passage must survive in some chunk"
         );
     }
@@ -213,7 +219,9 @@ mod tests {
     fn headings_are_attached() {
         let text = "# Caching\nTTL is 90 seconds.\n\n# Auth\nTokens expire in 15 minutes.";
         let chunks = chunk_text(text, &ChunkConfig::default());
-        assert!(chunks.iter().any(|c| c.heading.as_deref() == Some("Caching")));
+        assert!(chunks
+            .iter()
+            .any(|c| c.heading.as_deref() == Some("Caching")));
         assert!(chunks.iter().any(|c| c.heading.as_deref() == Some("Auth")));
     }
 }
