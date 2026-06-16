@@ -6,15 +6,20 @@ mod anchor;
 mod backend;
 mod backfill;
 mod compat;
+pub mod entity;
+pub mod episode;
 mod files;
 mod identity;
 mod lane_lock;
+#[cfg(feature = "pgvector")]
+mod pgvector;
 #[cfg(feature = "qdrant")]
 mod qdrant;
 mod retrieval;
 mod rrf;
 #[cfg(feature = "sqlite-vec")]
 mod sqlite_vec;
+pub mod temporal;
 mod types;
 mod upgrade;
 #[cfg(feature = "vector")]
@@ -29,9 +34,13 @@ pub use backfill::{
     backfill_directory, collect_memory_paths, parse_memory_path, BackfillFailure, BackfillStats,
 };
 pub use compat::{CollectionCompat, COMPAT_POINT_ID, OKF_VERSION};
+pub use entity::{extract_entities, EntityIndex};
+pub use episode::EpisodeIndex;
 pub use files::FilesBackend;
 pub use identity::stable_memory_id;
 pub use lane_lock::{SessionLaneGuard, SessionLaneLock};
+#[cfg(feature = "pgvector")]
+pub use pgvector::{PgVectorBackend, PgVectorStore};
 #[cfg(feature = "qdrant")]
 pub use qdrant::{
     preflight_qdrant, QdrantBackend, QdrantEndpoints, QdrantPreflightReport, QdrantVectorStore,
@@ -43,6 +52,7 @@ pub use retrieval::{LocalLexicalReranker, Reranker};
 pub use rrf::reciprocal_rank_fusion;
 #[cfg(feature = "sqlite-vec")]
 pub use sqlite_vec::{SqliteVecBackend, SqliteVecVectorStore, SqliteVecVectorStoreConfig};
+pub use temporal::{apply_knowledge_supersession, apply_recency_decay};
 pub use types::{
     MemoryError, MemoryId, MemoryQuery, MemoryRecord, MemoryResult, MemoryScope, MemoryTier,
     RrfOptions, SearchHit, SearchSource, StoreMemory,

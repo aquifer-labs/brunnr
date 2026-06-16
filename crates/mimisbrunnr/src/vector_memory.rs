@@ -8,11 +8,15 @@ use futures_util::{future::BoxFuture, FutureExt};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    identity::stable_memory_id, reciprocal_rank_fusion, CollectionCompat, Distance, Filter,
-    FilterCondition, FilterValue, MemoryBackend, MemoryError, MemoryId, MemoryQuery, MemoryRecord,
-    MemoryResult, MemoryScope, MemoryTier, PayloadIndex, RrfOptions, SearchHit, SearchSource,
-    SessionLaneLock, StoreMemory, VectorCollection, VectorPoint, VectorSearch, VectorSearchHit,
-    VectorSearchSource, VectorStore, COMPAT_POINT_ID,
+    entity::EntityIndex,
+    episode::EpisodeIndex,
+    identity::stable_memory_id,
+    reciprocal_rank_fusion,
+    temporal::{apply_knowledge_supersession, apply_recency_decay},
+    CollectionCompat, Distance, Filter, FilterCondition, FilterValue, MemoryBackend, MemoryError,
+    MemoryId, MemoryQuery, MemoryRecord, MemoryResult, MemoryScope, MemoryTier, PayloadIndex,
+    RrfOptions, SearchHit, SearchSource, SessionLaneLock, StoreMemory, VectorCollection,
+    VectorPoint, VectorSearch, VectorSearchHit, VectorSearchSource, VectorStore, COMPAT_POINT_ID,
 };
 
 pub const PINNED_FASTEMBED_MODEL: &str = "intfloat/multilingual-e5-small";
@@ -65,12 +69,47 @@ impl TextEmbedder for FastembedTextEmbedder {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Configuration for a `VectorMemoryBackend`.
+///
+/// New retrieval signals default to **off** (`false` / `0.0`) pending measurement on your corpus.
+/// Turn each signal on only after verifying a measurable recall improvement (see `brunnr-bench`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct VectorMemoryConfig {
     pub collection: String,
     pub embedding_model: String,
     pub dimensions: usize,
     pub distance: Distance,
+
+    /// D1: Add deterministic entity-overlap as a third RRF channel alongside BM25 and vector.
+    /// Built from record tags, camelCase/PascalCase identifiers, backtick-quoted terms, and
+    /// ALL-CAPS acronyms. No LLM required. Default off — enable after measuring recall gain.
+    #[serde(default)]
+    pub entity_linking: bool,
+
+    /// D2: Multiply retrieval scores by `exp(−lambda × age_in_days)`.
+    /// `0.0` disables decay. Suggested starting values: 0.005 (slow) – 0.02 (fast).
+    #[serde(default)]
+    pub temporal_decay_lambda: f32,
+
+    /// D2: Downrank older records that share entities with a newer record in the same result set.
+    /// Implements "knowledge-update supersession": the newer record wins; the older remains
+    /// drillable via `node_id`. Default off — enable after measuring precision gain.
+    #[serde(default)]
+    pub knowledge_update_supersession: bool,
+
+    /// D3: After retrieving top-k hits, expand each hit with up to `episode_context_window`
+    /// additional records from the same embedding-based episode cluster.
+    /// `0` disables episode expansion. Default off — enable after measuring recall gain.
+    #[serde(default)]
+    pub episode_context_window: usize,
+
+    /// D3: Minimum cosine similarity to join an existing episode cluster (0.0–1.0).
+    #[serde(default = "default_episode_threshold")]
+    pub episode_similarity_threshold: f32,
+}
+
+fn default_episode_threshold() -> f32 {
+    0.75
 }
 
 impl VectorMemoryConfig {
@@ -80,7 +119,32 @@ impl VectorMemoryConfig {
             embedding_model: PINNED_FASTEMBED_MODEL.to_string(),
             dimensions: PINNED_FASTEMBED_DIMENSIONS,
             distance: Distance::Cosine,
+            entity_linking: false,
+            temporal_decay_lambda: 0.0,
+            knowledge_update_supersession: false,
+            episode_context_window: 0,
+            episode_similarity_threshold: 0.75,
         }
+    }
+
+    pub fn with_entity_linking(mut self, enabled: bool) -> Self {
+        self.entity_linking = enabled;
+        self
+    }
+
+    pub fn with_temporal_decay(mut self, lambda: f32) -> Self {
+        self.temporal_decay_lambda = lambda;
+        self
+    }
+
+    pub fn with_knowledge_update_supersession(mut self, enabled: bool) -> Self {
+        self.knowledge_update_supersession = enabled;
+        self
+    }
+
+    pub fn with_episode_context_window(mut self, window: usize) -> Self {
+        self.episode_context_window = window;
+        self
     }
 }
 
@@ -88,6 +152,8 @@ pub struct VectorMemoryBackend<V: VectorStore> {
     store: V,
     config: VectorMemoryConfig,
     embedder: Arc<dyn TextEmbedder>,
+    entity_index: Arc<Mutex<EntityIndex>>,
+    episode_index: Arc<Mutex<EpisodeIndex>>,
 }
 
 impl<V: VectorStore> VectorMemoryBackend<V> {
@@ -104,6 +170,8 @@ impl<V: VectorStore> VectorMemoryBackend<V> {
             store,
             config,
             embedder,
+            entity_index: Arc::new(Mutex::new(EntityIndex::new())),
+            episode_index: Arc::new(Mutex::new(EpisodeIndex::new())),
         })
     }
 
@@ -209,6 +277,45 @@ impl<V: VectorStore> VectorMemoryBackend<V> {
             .await?;
         vector_hits_to_memory_hits(hits, SearchSource::Keyword)
     }
+
+    /// Expand hits by fetching episode-mate records up to `window` mates per hit.
+    async fn expand_episode_context(
+        &self,
+        hits: Vec<SearchHit>,
+        window: usize,
+    ) -> MemoryResult<Vec<SearchHit>> {
+        let mut result = hits;
+        let mut seen: std::collections::BTreeSet<String> =
+            result.iter().map(|h| h.record.node_id.clone()).collect();
+
+        let mates: Vec<String> = {
+            let guard = self
+                .episode_index
+                .lock()
+                .map_err(|e| MemoryError::Database(e.to_string()))?;
+            result
+                .iter()
+                .flat_map(|hit| guard.episode_mates(&hit.record.node_id))
+                .filter(|mate_id| !seen.contains(mate_id.as_str()))
+                .take(window * result.len().max(1))
+                .collect()
+        };
+
+        for mate_id in mates {
+            if seen.contains(&mate_id) {
+                continue;
+            }
+            if let Some(record) = self.get_node(&mate_id).await? {
+                seen.insert(mate_id);
+                result.push(SearchHit {
+                    score: 0.01,
+                    record,
+                    source: SearchSource::Keyword,
+                });
+            }
+        }
+        Ok(result)
+    }
 }
 
 impl<V: VectorStore> MemoryBackend for VectorMemoryBackend<V> {
@@ -218,7 +325,57 @@ impl<V: VectorStore> MemoryBackend for VectorMemoryBackend<V> {
                 limit: query.limit,
                 ..RrfOptions::default()
             };
-            self.hybrid_rrf(query.clone(), query, options).await
+
+            let signals_active = self.config.entity_linking
+                || self.config.temporal_decay_lambda > 0.0
+                || self.config.knowledge_update_supersession
+                || self.config.episode_context_window > 0;
+
+            if !signals_active {
+                // Fast path: existing 2-channel hybrid RRF (uses server-side if available).
+                return self.hybrid_rrf(query.clone(), query, options).await;
+            }
+
+            // Signal path: client-side multi-channel RRF + post-processing.
+            self.ensure_ready().await?;
+            let mut channels: Vec<Vec<SearchHit>> = vec![
+                self.keyword_hits(query.clone()).await?,
+                self.vector_hits(query.clone()).await?,
+            ];
+
+            if self.config.entity_linking {
+                let guard = self
+                    .entity_index
+                    .lock()
+                    .map_err(|e| MemoryError::Database(e.to_string()))?;
+                let entity_hits = guard.entity_hits(&query.text, query.limit);
+                if !entity_hits.is_empty() {
+                    channels.push(entity_hits);
+                }
+            }
+
+            let mut hits = reciprocal_rank_fusion(&channels, options);
+
+            if self.config.temporal_decay_lambda > 0.0 {
+                hits = apply_recency_decay(hits, self.config.temporal_decay_lambda);
+            }
+
+            if self.config.knowledge_update_supersession {
+                let guard = self
+                    .entity_index
+                    .lock()
+                    .map_err(|e| MemoryError::Database(e.to_string()))?;
+                hits = apply_knowledge_supersession(hits, &guard, 0.3);
+            }
+
+            if self.config.episode_context_window > 0 {
+                hits = self
+                    .expand_episode_context(hits, self.config.episode_context_window)
+                    .await?;
+                hits.truncate(query.limit);
+            }
+
+            Ok(hits)
         }
         .boxed()
     }
@@ -255,11 +412,30 @@ impl<V: VectorStore> MemoryBackend for VectorMemoryBackend<V> {
                     &self.config.collection,
                     vec![VectorPoint {
                         id: record.id.to_string(),
-                        vector,
+                        vector: vector.clone(),
                         payload: serde_json::to_value(MemoryPayload::from(&record))?,
                     }],
                 )
                 .await?;
+
+            // Update session-local indexes.
+            if self.config.entity_linking {
+                self.entity_index
+                    .lock()
+                    .map_err(|e| MemoryError::Database(e.to_string()))?
+                    .index_record(record.clone());
+            }
+            if self.config.episode_context_window > 0 {
+                self.episode_index
+                    .lock()
+                    .map_err(|e| MemoryError::Database(e.to_string()))?
+                    .add_record(
+                        &record.node_id,
+                        &vector,
+                        self.config.episode_similarity_threshold,
+                    );
+            }
+
             Ok(record)
         }
         .boxed()

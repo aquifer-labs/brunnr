@@ -65,6 +65,42 @@
       "answer": "connection-pool exhaustion",
       "relevant_docs": ["memory/incident-march-postmortem.md"],
       "distractor_docs": ["distractors/db-migration-notes.md", "distractors/march-outage-briefing.md", "distractors/reliability-principles.md"]
+    },
+    {
+      "id": "background-job-retry",
+      "difficulty": "medium",
+      "ability": "entity-disambiguation",
+      "question": "What is the retry policy for background job workers?",
+      "answer": "BackgroundJobRetryPolicy: 3 max attempts, exponential backoff",
+      "relevant_docs": ["memory/background-job-retry.md"],
+      "distractor_docs": ["memory/retry-policy.md", "distractors/job-worker-general.md"]
+    },
+    {
+      "id": "pg-pool-config",
+      "difficulty": "hard",
+      "ability": "entity-disambiguation",
+      "question": "What are the PostgreSQL connection pool size limits?",
+      "answer": "min=5, max=20 connections per instance",
+      "relevant_docs": ["memory/pg-pool-config.md"],
+      "distractor_docs": ["memory/datastore-choice.md", "distractors/pg-scaling.md"]
+    },
+    {
+      "id": "rate-limit-update",
+      "difficulty": "medium",
+      "ability": "knowledge-update",
+      "question": "What is the current public API rate limit per key after the most recent update?",
+      "answer": "200 requests per minute",
+      "relevant_docs": ["memory/rate-limit-v2.md"],
+      "distractor_docs": ["distractors/rate-limit-v1.md", "memory/rate-limits.md"]
+    },
+    {
+      "id": "db-pool-size-current",
+      "difficulty": "hard",
+      "ability": "knowledge-update",
+      "question": "What is the current maximum database connection pool size after the most recent update?",
+      "answer": "max=25 connections per instance",
+      "relevant_docs": ["memory/db-pool-size-v2.md"],
+      "distractor_docs": ["distractors/db-pool-size-v1.md", "memory/pg-pool-config.md"]
     }
   ]
 }

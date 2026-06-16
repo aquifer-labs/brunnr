@@ -26,7 +26,7 @@ pub struct OkfExportReport {
     pub verified_records: usize,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MigrationPlan {
     pub okf_root: PathBuf,
     pub alias: String,

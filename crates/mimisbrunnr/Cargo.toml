@@ -11,6 +11,7 @@ license.workspace = true
 chrono.workspace = true
 fastembed = { workspace = true, optional = true }
 futures-util.workspace = true
+pgvector = { workspace = true, optional = true }
 qdrant-client = { workspace = true, optional = true }
 reqwest = { workspace = true, optional = true }
 rusqlite = { workspace = true, optional = true }
@@ -21,10 +22,12 @@ sha2.workspace = true
 sqlite-vec = { workspace = true, optional = true }
 thiserror.workspace = true
 tokio.workspace = true
+tokio-postgres = { workspace = true, optional = true }
 toml.workspace = true
 
 [features]
 default = ["sqlite-vec"]
+pgvector = ["vector", "dep:pgvector", "dep:tokio-postgres"]
 qdrant = ["vector", "dep:qdrant-client", "dep:reqwest"]
 sqlite-vec = ["vector", "dep:rusqlite", "dep:sqlite-vec"]
 vector = ["dep:fastembed"]

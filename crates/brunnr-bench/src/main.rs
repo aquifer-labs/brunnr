@@ -10,11 +10,13 @@ use std::{
 use anyhow::{bail, Context, Result};
 use clap::Parser;
 use mimisbrunnr::{
-    backfill_directory, LocalLexicalReranker, MemoryBackend, MemoryQuery, Reranker, SearchHit,
-    SqliteVecVectorStore,
+    backfill_directory, FastembedTextEmbedder, LocalLexicalReranker, MemoryBackend, MemoryQuery,
+    Reranker, SearchHit, SqliteVecVectorStore, TextEmbedder, VectorMemoryBackend,
+    VectorMemoryConfig,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::sync::Arc;
 use tiktoken_rs::{cl100k_base, CoreBPE};
 
 const SUITE_VERSION: &str = "seed-honest-v1";
@@ -47,6 +49,8 @@ struct TaskSuite {
 struct TaskSpec {
     id: String,
     difficulty: String,
+    #[serde(default)]
+    ability: Option<String>,
     question: String,
     relevant_docs: Vec<String>,
     #[serde(default)]
@@ -74,6 +78,14 @@ enum ArmKind {
     Reflection,
     Debate,
     NoMemory,
+    // D1: entity-overlap channel
+    EntityOverlap,
+    // D2: temporal recency decay
+    TemporalDecay,
+    // D2: knowledge-update supersession
+    Supersession,
+    // D3: episodic context expansion
+    EpisodeContext,
 }
 
 impl ArmKind {
@@ -90,6 +102,10 @@ impl ArmKind {
             Self::Reflection,
             Self::Debate,
             Self::NoMemory,
+            Self::EntityOverlap,
+            Self::TemporalDecay,
+            Self::Supersession,
+            Self::EpisodeContext,
         ]
     }
 
@@ -106,6 +122,10 @@ impl ArmKind {
             Self::Reflection => "B-reflection-consolidated",
             Self::Debate => "B-plus-debate",
             Self::NoMemory => "D-no-memory",
+            Self::EntityOverlap => "B-plus-entity-overlap",
+            Self::TemporalDecay => "B-plus-temporal-decay",
+            Self::Supersession => "B-plus-supersession",
+            Self::EpisodeContext => "B-plus-episode-context",
         }
     }
 
@@ -129,6 +149,10 @@ impl ArmKind {
             Self::Reflection => "real-memory-context-over-derived-reflection-index",
             Self::Debate => "real-memory-context-plus-answer-time-critique-accounting",
             Self::NoMemory => "no-context-negative-control",
+            Self::EntityOverlap => "real-memory-rrf-keyword-vector-entity-overlap",
+            Self::TemporalDecay => "real-memory-rrf-with-recency-decay-lambda-0.01",
+            Self::Supersession => "real-memory-rrf-with-entity-linking-and-supersession",
+            Self::EpisodeContext => "real-memory-rrf-with-episode-context-window-2",
         }
     }
 }
@@ -136,6 +160,14 @@ impl ArmKind {
 struct BenchState {
     raw_backend: Box<dyn MemoryBackend>,
     reflection_backend: Box<dyn MemoryBackend>,
+    // D1: entity-overlap channel (entity_linking=true)
+    entity_backend: Box<dyn MemoryBackend>,
+    // D2: temporal decay (temporal_decay_lambda=0.01)
+    temporal_backend: Box<dyn MemoryBackend>,
+    // D2: knowledge-update supersession (entity_linking=true, supersession=true)
+    supersession_backend: Box<dyn MemoryBackend>,
+    // D3: episodic context expansion (entity_linking=true, episode_context_window=2)
+    episode_backend: Box<dyn MemoryBackend>,
     raw_docs: Vec<CorpusDoc>,
     reflection_docs: Vec<CorpusDoc>,
     raw_index: String,
@@ -156,6 +188,7 @@ struct RawRow {
     rep: usize,
     task_id: String,
     difficulty: String,
+    ability: Option<String>,
     prompt: String,
     output: String,
     token_usage: TokenUsage,
@@ -367,6 +400,28 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
+/// Create a [`VectorMemoryBackend`] with the shared embedder and the given config.
+fn make_backend(
+    collection: &str,
+    config: VectorMemoryConfig,
+    embedder: Arc<dyn TextEmbedder>,
+) -> Result<VectorMemoryBackend<SqliteVecVectorStore>> {
+    let store = SqliteVecVectorStore::in_memory()
+        .with_context(|| format!("open {collection} sqlite-vec"))?;
+    VectorMemoryBackend::with_embedder(store, config, embedder)
+        .with_context(|| format!("create {collection} backend"))
+}
+
+async fn backfill_both(backend: &dyn MemoryBackend, import_root: &Path) -> Result<()> {
+    backfill_directory(backend, import_root.join("memory"))
+        .await
+        .context("backfill memory")?;
+    backfill_directory(backend, import_root.join("distractors"))
+        .await
+        .context("backfill distractors")?;
+    Ok(())
+}
+
 async fn prepare_state(
     repo_root: &Path,
     seed_root: &Path,
@@ -386,25 +441,65 @@ async fn prepare_state(
     }
     fs::create_dir_all(&work_root).with_context(|| format!("create {}", work_root.display()))?;
 
+    // Shared embedder — loaded once, referenced by all backends.
+    let embedder: Arc<dyn TextEmbedder> =
+        Arc::new(FastembedTextEmbedder::new().context("initialize fastembed embedder")?);
+
     let raw_import = work_root.join("raw-import");
     copy_seed_corpus(seed_root, &raw_import)?;
-    let raw_backend = SqliteVecVectorStore::in_memory()
-        .context("open in-memory sqlite-vec store")?
-        .memory_backend("bench_raw")
-        .context("create raw vector memory backend")?;
-    backfill_directory(&raw_backend, raw_import.join("memory"))
-        .await
-        .context("backfill seed memory docs")?;
-    backfill_directory(&raw_backend, raw_import.join("distractors"))
-        .await
-        .context("backfill seed distractor docs")?;
 
+    // Baseline backend (entity=off, all signals off).
+    let raw_backend = make_backend(
+        "bench_raw",
+        VectorMemoryConfig::new("bench_raw"),
+        embedder.clone(),
+    )?;
+    backfill_both(&raw_backend, &raw_import).await?;
+
+    // D1: entity-overlap backend.
+    let entity_backend = make_backend(
+        "bench_entity",
+        VectorMemoryConfig::new("bench_entity").with_entity_linking(true),
+        embedder.clone(),
+    )?;
+    backfill_both(&entity_backend, &raw_import).await?;
+
+    // D2: temporal decay backend (lambda=0.01: ~1% score decay per day).
+    let temporal_backend = make_backend(
+        "bench_temporal",
+        VectorMemoryConfig::new("bench_temporal").with_temporal_decay(0.01),
+        embedder.clone(),
+    )?;
+    backfill_both(&temporal_backend, &raw_import).await?;
+
+    // D2: knowledge-update supersession backend (entity + supersession).
+    let supersession_backend = make_backend(
+        "bench_supersession",
+        VectorMemoryConfig::new("bench_supersession")
+            .with_entity_linking(true)
+            .with_knowledge_update_supersession(true),
+        embedder.clone(),
+    )?;
+    backfill_both(&supersession_backend, &raw_import).await?;
+
+    // D3: episode context expansion backend (entity + episode window=2).
+    let episode_backend = make_backend(
+        "bench_episode",
+        VectorMemoryConfig::new("bench_episode")
+            .with_entity_linking(true)
+            .with_episode_context_window(2),
+        embedder.clone(),
+    )?;
+    backfill_both(&episode_backend, &raw_import).await?;
+
+    // Reflection backend (existing arm).
     let reflection_import = work_root.join("reflection-import");
     write_reflection_corpus(&reflection_docs, &reflection_import)?;
-    let reflection_backend = SqliteVecVectorStore::in_memory()
-        .context("open reflection in-memory sqlite-vec store")?
-        .memory_backend("bench_reflection")
-        .context("create reflection vector memory backend")?;
+    let reflection_backend = make_backend(
+        "bench_reflection",
+        VectorMemoryConfig::new("bench_reflection"),
+        embedder.clone(),
+    )?;
     backfill_directory(&reflection_backend, reflection_import.join("memory"))
         .await
         .context("backfill reflection memory docs")?;
@@ -415,6 +510,10 @@ async fn prepare_state(
     Ok(BenchState {
         raw_backend: Box::new(raw_backend),
         reflection_backend: Box::new(reflection_backend),
+        entity_backend: Box::new(entity_backend),
+        temporal_backend: Box::new(temporal_backend),
+        supersession_backend: Box::new(supersession_backend),
+        episode_backend: Box::new(episode_backend),
         raw_docs,
         reflection_docs,
         raw_index,
@@ -468,6 +567,7 @@ async fn run_row(
         rep,
         task_id: task.id.clone(),
         difficulty: task.difficulty.clone(),
+        ability: task.ability.clone(),
         prompt,
         output,
         token_usage,
@@ -588,6 +688,54 @@ async fn retrieve(arm: ArmKind, task: &TaskSpec, state: &BenchState) -> Result<R
         ArmKind::Debate => {
             retrieve_find(
                 state.raw_backend.as_ref(),
+                &state.raw_docs,
+                &task.question,
+                DEFAULT_TOP_M,
+                DEFAULT_TOP_K,
+                true,
+                Some(&state.raw_index),
+            )
+            .await
+        }
+        ArmKind::EntityOverlap => {
+            retrieve_find(
+                state.entity_backend.as_ref(),
+                &state.raw_docs,
+                &task.question,
+                DEFAULT_TOP_M,
+                DEFAULT_TOP_K,
+                true,
+                Some(&state.raw_index),
+            )
+            .await
+        }
+        ArmKind::TemporalDecay => {
+            retrieve_find(
+                state.temporal_backend.as_ref(),
+                &state.raw_docs,
+                &task.question,
+                DEFAULT_TOP_M,
+                DEFAULT_TOP_K,
+                true,
+                Some(&state.raw_index),
+            )
+            .await
+        }
+        ArmKind::Supersession => {
+            retrieve_find(
+                state.supersession_backend.as_ref(),
+                &state.raw_docs,
+                &task.question,
+                DEFAULT_TOP_M,
+                DEFAULT_TOP_K,
+                true,
+                Some(&state.raw_index),
+            )
+            .await
+        }
+        ArmKind::EpisodeContext => {
+            retrieve_find(
+                state.episode_backend.as_ref(),
                 &state.raw_docs,
                 &task.question,
                 DEFAULT_TOP_M,
@@ -889,6 +1037,10 @@ fn marginal_verdicts(
         "B-plus-multi-query",
         "B-reflection-consolidated",
         "B-plus-debate",
+        "B-plus-entity-overlap",
+        "B-plus-temporal-decay",
+        "B-plus-supersession",
+        "B-plus-episode-context",
     ]
     .into_iter()
     .filter_map(|arm| {
@@ -1255,6 +1407,7 @@ mod tests {
         let task = TaskSpec {
             id: "hard-task".to_string(),
             difficulty: "hard".to_string(),
+            ability: None,
             question: "What is the hidden answer?".to_string(),
             relevant_docs: vec!["memory/right.md".to_string()],
             distractor_docs: vec!["distractors/near-miss.md".to_string()],
@@ -1286,6 +1439,7 @@ mod tests {
             rep: 0,
             task_id: "hard-task".to_string(),
             difficulty: "hard".to_string(),
+            ability: None,
             prompt: "Question only".to_string(),
             output: "Retrieval missed at least one relevant document.".to_string(),
             token_usage: TokenUsage::answer(10, 4),

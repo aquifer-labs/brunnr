@@ -62,10 +62,10 @@ async fn embedding_model_mismatch_refuses_collection_access() {
     let backend = VectorMemoryBackend::with_embedder(
         store.clone(),
         VectorMemoryConfig {
-            collection: "mismatch".to_string(),
             embedding_model: "test-model-a".to_string(),
             dimensions: TEST_DIMENSIONS,
             distance: Distance::Cosine,
+            ..VectorMemoryConfig::new("mismatch")
         },
         Arc::new(TestEmbedder),
     )
@@ -78,10 +78,10 @@ async fn embedding_model_mismatch_refuses_collection_access() {
     let incompatible = VectorMemoryBackend::with_embedder(
         store,
         VectorMemoryConfig {
-            collection: "mismatch".to_string(),
             embedding_model: "test-model-b".to_string(),
             dimensions: TEST_DIMENSIONS,
             distance: Distance::Cosine,
+            ..VectorMemoryConfig::new("mismatch")
         },
         Arc::new(TestEmbedder),
     )
@@ -118,10 +118,10 @@ Re-embedded memory is rebuilt from OKF.
         new_collection: "memory_new".to_string(),
         retention_days: 30,
         config: VectorMemoryConfig {
-            collection: "memory".to_string(),
             embedding_model: "test-model".to_string(),
             dimensions: TEST_DIMENSIONS,
             distance: Distance::Cosine,
+            ..VectorMemoryConfig::new("memory")
         },
     };
 
