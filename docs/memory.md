@@ -136,16 +136,38 @@ sequenceDiagram
   VM->>VM: reciprocal_rank_fusion([kw, vec], k=60)
   VM-->>Ag: top-k SearchHit (record, score, source=hybrid)
   Ag->>VM: store(memory)
-  VM->>VM: stable_memory_id (content hash) — dedup
-  VM->>Em: embed_passage("passage: …")
-  VM->>VS: upsert(point{id, vector, payload})
+  VM->>VM: chunk_text(content) — recursive, bounded chunks
+  loop per chunk
+    VM->>VM: stable_memory_id (content hash) — dedup
+    VM->>Em: embed_passage(chunk)
+    VM->>VS: upsert(point{id, vector, payload, parent_node})
+  end
 ```
 
 `store` is idempotent: `stable_memory_id` hashes content, and an existing id short-circuits the
 upsert (`vector_memory.rs`), so re-running a backfill never duplicates. This gives the
 idempotency the literature calls for in heterogeneous memory writes.
 
-### 3.5 Retrieval enhancements
+### 3.5 Chunking — bounded, coherent recall [implemented, default]
+
+Records are split into bounded chunks **on store**, so retrieval returns a small relevant slice
+(top-k chunks) instead of whole documents. This is the standard RAG granularity: a memory that
+returns a whole 100 KB record per query defeats the point. `chunking::chunk_text` is deterministic
+and zero-LLM — it splits recursively on the most semantic boundary available (markdown heading →
+blank line → line break → sentence → a hard character window only as a last resort), packing pieces
+up to ~400 tokens with a small overlap so context carries across boundaries.
+
+- Each chunk is its own retrievable record with **parent linkage** — `parent_node` plus a node id
+  `<parent>#chunk-N` and `chunk_index`/`chunk_count` — so the full document is always reachable by
+  drilling down on the parent `node_id`.
+- Small content yields a single chunk and keeps the original id, so dedup/idempotency is unchanged.
+- Recall is therefore bounded by **chunk size × top-k**, not by record size — there is no content
+  truncation on the read path; the relevant passage is retrieved, not an arbitrary prefix.
+
+This is why the [benchmark](../benchmarks/README.md) holds per-query cost at ~1k tokens even as the
+durable memory grows past a million tokens.
+
+### 3.6 Retrieval enhancements
 
 The default path stays cheap and non-intrusive. Brunnr now exposes these measurable stages:
 
@@ -155,13 +177,22 @@ The default path stays cheap and non-intrusive. Brunnr now exposes these measura
   or LLM call is made.
 - **Index-first context [implemented]** — `memory.context` returns a compact `index.md` slice and
   targeted `memory.find` hits, matching the read-first catalog pattern from LLM-wiki.
+- **Entity-overlap channel [implemented, opt-in]** — extract entities deterministically and fuse an
+  entity-overlap signal alongside keyword + vector in RRF, linking records that share entities.
+- **Temporal signals [implemented, opt-in]** — recency-weighted scoring ($S \times e^{-\lambda
+  \Delta t}$) and knowledge-update **supersession** (a newer record about the same entity wins for
+  recall; the older stays as drillable history).
+- **Episodic context expansion [implemented, opt-in]** — cluster records into coherent episodes and
+  expand a hit with a small window of its episode-mates for continuity.
 - **HyDE [opt-in LLM cost]** — embed a hypothetical answer $d_{hypo} = \text{LLM}(q)$ instead of
   the bare query, to close the query-document vocabulary gap.
 - **Multi-query [opt-in LLM cost]** — expand $q$ into $\{q_1..q_N\}$, search each, merge+dedup for
   topic coverage.
 - **Debate/critique [opt-in LLM cost]** — answer-time proposer/critic loop, reusing the judge seam.
 
-These map onto the same `VectorStore`/RRF stack; only the query/scoring stage changes.
+These map onto the same `VectorStore`/RRF stack; only the query/scoring stage changes. Each opt-in
+signal ships **off by default** and is enabled only where a target corpus shows a measured retrieval
+gain (precision/recall) — measured against the benchmark, not assumed.
 
 ---
 
