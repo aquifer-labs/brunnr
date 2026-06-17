@@ -468,6 +468,18 @@ impl VectorCollectionAdmin for QdrantVectorStore {
         }
         .boxed()
     }
+
+    fn delete_collection(&self, collection: &str) -> BoxFuture<'_, MemoryResult<()>> {
+        let collection = collection.to_string();
+        async move {
+            self.client
+                .delete_collection(collection)
+                .await
+                .map_err(qdrant_error)?;
+            Ok(())
+        }
+        .boxed()
+    }
 }
 
 fn qdrant_distance(distance: Distance) -> qdrant_client::qdrant::Distance {

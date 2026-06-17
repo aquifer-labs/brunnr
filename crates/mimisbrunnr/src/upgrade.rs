@@ -71,6 +71,9 @@ pub trait VectorCollectionAdmin: VectorStore {
         collection: &str,
         target_dir: &Path,
     ) -> BoxFuture<'_, MemoryResult<SnapshotReport>>;
+
+    /// Delete a collection. Idempotent: deleting a missing collection succeeds.
+    fn delete_collection(&self, collection: &str) -> BoxFuture<'_, MemoryResult<()>>;
 }
 
 impl<T: VectorCollectionAdmin + ?Sized> VectorCollectionAdmin for &T {
@@ -93,6 +96,10 @@ impl<T: VectorCollectionAdmin + ?Sized> VectorCollectionAdmin for &T {
         target_dir: &Path,
     ) -> BoxFuture<'_, MemoryResult<SnapshotReport>> {
         (**self).snapshot_collection(collection, target_dir)
+    }
+
+    fn delete_collection(&self, collection: &str) -> BoxFuture<'_, MemoryResult<()>> {
+        (**self).delete_collection(collection)
     }
 }
 

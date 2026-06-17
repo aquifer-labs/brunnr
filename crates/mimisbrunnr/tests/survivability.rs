@@ -331,4 +331,8 @@ impl VectorCollectionAdmin for MockAdminStore {
         }
         .boxed()
     }
+
+    fn delete_collection(&self, _collection: &str) -> BoxFuture<'_, MemoryResult<()>> {
+        async { Ok(()) }.boxed()
+    }
 }

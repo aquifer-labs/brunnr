@@ -7,8 +7,8 @@ use std::{collections::BTreeMap, env};
 use chrono::Utc;
 use mimisbrunnr::{
     preflight_qdrant, MemoryBackend, MemoryQuery, MemoryTier, QdrantEndpoints, QdrantVectorStore,
-    QdrantVectorStoreConfig, RrfOptions, StoreMemory, VectorMemoryBackend, VectorMemoryConfig,
-    PINNED_FASTEMBED_DIMENSIONS, PINNED_FASTEMBED_MODEL,
+    QdrantVectorStoreConfig, RrfOptions, StoreMemory, VectorCollectionAdmin, VectorMemoryBackend,
+    VectorMemoryConfig, PINNED_FASTEMBED_DIMENSIONS, PINNED_FASTEMBED_MODEL,
 };
 
 #[test]
@@ -64,12 +64,10 @@ async fn live_qdrant_vector_backend_satisfies_memory_contract() {
     };
     let mut config = QdrantVectorStoreConfig::new(url);
     config.api_key = env::var("QDRANT_API_KEY").ok();
+    let collection = format!("brunnr_test_{}", Utc::now().timestamp_millis());
     let store = QdrantVectorStore::connect(config).expect("Qdrant store should connect");
-    let backend = VectorMemoryBackend::new(
-        store,
-        VectorMemoryConfig::new(format!("brunnr_test_{}", Utc::now().timestamp_millis())),
-    )
-    .expect("backend should construct");
+    let backend = VectorMemoryBackend::new(store, VectorMemoryConfig::new(collection.clone()))
+        .expect("backend should construct");
 
     let stored = backend
         .store(StoreMemory {
@@ -135,6 +133,94 @@ async fn live_qdrant_vector_backend_satisfies_memory_contract() {
             .any(|hit| hit.record.node_id == "node:qdrant-rrf"),
         "hybrid should return Qdrant RRF record, got {hybrid:?}"
     );
+
+    backend
+        .vector_store()
+        .delete_collection(&collection)
+        .await
+        .expect("cleanup test collection");
+}
+
+/// Live small-to-big on Qdrant: a multi-chunk document must expand to its bounded
+/// parent-section window (same-parent hits deduped to one, node_id = parent) and be
+/// reconstructable via `get_node`. This exercises the filter-only sibling lookup that
+/// the empty-text fix repaired on Qdrant.
+#[tokio::test]
+#[ignore = "requires a local Qdrant instance and QDRANT_URL"]
+async fn live_qdrant_small_to_big_expands_and_reconstructs() {
+    let Ok(url) = env::var("QDRANT_URL") else {
+        eprintln!("QDRANT_URL is not set; skipping live Qdrant test");
+        return;
+    };
+    let mut config = QdrantVectorStoreConfig::new(url);
+    config.api_key = env::var("QDRANT_API_KEY").ok();
+    let collection = format!("brunnr_test_s2b_{}", Utc::now().timestamp_millis());
+    let store = QdrantVectorStore::connect(config).expect("Qdrant store should connect");
+    let backend = VectorMemoryBackend::new(store, VectorMemoryConfig::new(collection.clone()))
+        .expect("backend should construct");
+
+    let marker = "qdrant-kumquat-marker-nine";
+    let big = format!(
+        "{}\n\nthe key fact is {marker}\n\n{}",
+        "alpha beta gamma. ".repeat(2_000),
+        "delta epsilon zeta. ".repeat(2_000),
+    );
+    backend
+        .store(StoreMemory {
+            content: big,
+            tags: vec!["big".to_string()],
+            metadata: BTreeMap::new(),
+            tier: MemoryTier::L1Atom,
+            node_id: Some("node:s2b".to_string()),
+            created_at: None,
+            scope: None,
+            agent_id: None,
+            session_id: None,
+            task_id: None,
+            user_id: None,
+        })
+        .await
+        .expect("store should succeed");
+
+    let hits = backend
+        .find(MemoryQuery::new("the key fact qdrant-kumquat-marker-nine").with_limit(5))
+        .await
+        .expect("find should succeed");
+    let marker_hit = hits
+        .iter()
+        .find(|hit| hit.record.content.contains(marker))
+        .expect("the marker chunk must be retrieved");
+    assert_eq!(marker_hit.record.node_id, "node:s2b");
+    assert!(
+        marker_hit.record.content.chars().count() > 1_600,
+        "small-to-big must expand the matched chunk on Qdrant; got {} chars",
+        marker_hit.record.content.chars().count()
+    );
+    assert_eq!(
+        hits.iter()
+            .filter(|hit| hit.record.node_id == "node:s2b")
+            .count(),
+        1,
+        "same-parent hits must dedup to one expanded hit"
+    );
+
+    let full = backend
+        .get_node("node:s2b")
+        .await
+        .expect("get_node should succeed")
+        .expect("parent node should reconstruct from chunks");
+    assert!(
+        full.content.chars().count() > 50_000,
+        "drill-down must reconstruct the full document; got {} chars",
+        full.content.chars().count()
+    );
+    assert!(full.content.contains(marker));
+
+    backend
+        .vector_store()
+        .delete_collection(&collection)
+        .await
+        .expect("cleanup test collection");
 }
 
 #[tokio::test]
@@ -206,4 +292,15 @@ async fn live_qdrant_collections_isolate_two_projects() {
     assert_eq!(hits_a[0].record.node_id, "node:qdrant-project-a");
     assert_eq!(hits_b.len(), 1);
     assert_eq!(hits_b[0].record.node_id, "node:qdrant-project-b");
+
+    project_a
+        .vector_store()
+        .delete_collection(&format!("brunnr_project_a_{collection_suffix}"))
+        .await
+        .expect("cleanup project A collection");
+    project_b
+        .vector_store()
+        .delete_collection(&format!("brunnr_project_b_{collection_suffix}"))
+        .await
+        .expect("cleanup project B collection");
 }

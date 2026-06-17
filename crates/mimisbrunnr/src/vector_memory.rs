@@ -467,8 +467,12 @@ impl<V: VectorStore> VectorMemoryBackend<V> {
             let idx = chunk_index_of(&hit.record);
             match groups.get_mut(&key) {
                 Some(group) => {
+                    // Keep the highest-scored chunk as the window anchor.
                     if hit.score > group.score {
                         group.score = hit.score;
+                        if parent.is_some() {
+                            group.anchor = idx;
+                        }
                     }
                     if parent.is_some() {
                         group.matched.insert(idx);
@@ -486,6 +490,7 @@ impl<V: VectorStore> VectorMemoryBackend<V> {
                             score: hit.score,
                             source: hit.source,
                             parent,
+                            anchor: idx,
                             matched,
                             record: hit.record,
                         },
@@ -581,6 +586,9 @@ struct SmallToBigGroup {
     score: f32,
     source: SearchSource,
     parent: Option<String>,
+    /// Chunk index of the **best-scored** matched chunk — the window is centered here.
+    anchor: usize,
+    /// All matched chunk indices of this parent (recorded in `expanded_from_chunk`).
     matched: std::collections::BTreeSet<usize>,
     record: MemoryRecord,
 }
@@ -658,9 +666,12 @@ fn append_with_overlap(acc: &mut String, next: &str, max_overlap: usize) {
     acc.push_str(&rest);
 }
 
-/// Build a parent-section window: take the contiguous span covering the matched
-/// chunks, then grow outward symmetrically while the estimated merged length stays
-/// within `budget`, merge with overlap removed, and hard-cap to `budget` chars.
+/// Build a parent-section window centered on the **anchor** (the best-scored matched
+/// chunk), grown outward symmetrically while the estimated merged length stays within
+/// `budget`, merged with overlap removed, and hard-capped to `budget` chars. Centering on
+/// the single best chunk (rather than spanning every matched chunk) keeps the relevant
+/// passage in the window even when unrelated sibling chunks of the same parent also
+/// matched — a wide span would otherwise be truncated before reaching the anchor.
 fn build_parent_window(
     siblings: &[MemoryRecord],
     group: &SmallToBigGroup,
@@ -670,22 +681,17 @@ fn build_parent_window(
     let n = siblings.len();
     let clen = |i: usize| siblings[i].content.chars().count();
 
-    let matched_positions: Vec<usize> = (0..n)
-        .filter(|&i| group.matched.contains(&chunk_index_of(&siblings[i])))
-        .collect();
-    let (mut lo, mut hi) = match (matched_positions.first(), matched_positions.last()) {
-        (Some(&first), Some(&last)) => (first, last),
-        _ => {
-            let pos = siblings
+    let anchor = (0..n)
+        .find(|&i| chunk_index_of(&siblings[i]) == group.anchor)
+        .or_else(|| {
+            siblings
                 .iter()
                 .position(|s| s.node_id == group.record.node_id)
-                .unwrap_or(0);
-            (pos, pos)
-        }
-    };
+        })
+        .unwrap_or(0);
+    let (mut lo, mut hi) = (anchor, anchor);
 
-    let mut total: usize = (lo..=hi).map(clen).sum();
-    total = total.saturating_sub((hi - lo) * max_overlap);
+    let mut total: usize = clen(anchor);
     loop {
         let mut grew = false;
         if lo > 0 {
