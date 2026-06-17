@@ -3,7 +3,7 @@
 # Self-Repair Across Auto-Compaction
 
 Long agent sessions hit context auto-compaction: the host summarizes or truncates the context and
-the agent can lose its place. Brunnr makes this a non-event by combining a deterministic anchor
+the agent can lose its place. Artesian makes this a non-event by combining a deterministic anchor
 with targeted recall, so even switching agents mid-task (e.g. Claude Code → Codex) is lossless.
 
 Three mechanisms:
@@ -26,6 +26,6 @@ flowchart LR
 ```
 
 Status: `MuninnAnchorStore` writes and reads the anchor in OKF `log.md`; MCP exposes
-`memory.anchor.get` / `memory.anchor.set`; the CLI exposes `brunnr memory anchor get|set|recover`.
+`memory.anchor.get` / `memory.anchor.set`; the CLI exposes `artesian memory anchor get|set|recover`.
 The host-specific compaction detector remains an integration concern, but the replay primitive is
 implemented and tested.

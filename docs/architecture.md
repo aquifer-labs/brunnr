@@ -2,10 +2,10 @@
 
 # Architecture Overview
 
-Brunnr is a multi-agent context orchestration system: pluggable **memory**, optional
+Artesian is a multi-agent context orchestration system: pluggable **memory**, optional
 **orchestration** (master/worker/judge), optional **task tracking**, and optional **sandboxing** —
 all **non-intrusive**. It integrates with agents over **MCP**, so any MCP-capable tool (Claude
-Code, Codex, Zed, opencode, …) gains Brunnr's capabilities without changing how it is driven. You
+Code, Codex, Zed, opencode, …) gains Artesian's capabilities without changing how it is driven. You
 adopt only what you want via [modes](modes.md).
 
 This page is the map; each concern has its own doc.
@@ -18,12 +18,12 @@ This page is the map; each concern has its own doc.
 
 | Crate | Responsibility |
 |---|---|
-| `brunnr-core` | roles (Óðinn/Þórr/Týr + master/worker/judge), task-queue types (Erindi/Þing/Galdr), config, modes, the `Agent` adapter trait, the event envelope |
-| `mimisbrunnr` | memory: `MemoryBackend`, the `VectorStore` seam, `VectorMemoryBackend<V>`, RRF, tiers, OKF files |
-| `thingr` | task tracking: `TaskStore` (Files/Vector/External), the task DAG |
-| `brunnr-mcp` | exposes tools over MCP (`memory.*`, `tools.find`, task tools); the agent integration point |
-| `brunnr-cli` / `brunnrd` | user entrypoint + optional daemon (init, memory ops, spawn, pooling) |
-| `bifrost` | TUI control surface · `hvergelmir` optional Docker sandbox · `huginn` optional macOS tray |
+| `artesian-core` | roles (master/worker/judge), task-queue types (Erindi/Thing/Galdr), config, modes, the `Agent` adapter trait, the event envelope |
+| `aquifer` | memory: `MemoryBackend`, the `VectorStore` seam, `VectorMemoryBackend<V>`, RRF, tiers, OKF files |
+| `headrace` | task tracking: `TaskStore` (Files/Vector/External), the task DAG |
+| `artesian-mcp` | exposes tools over MCP (`memory.*`, `tools.find`, task tools); the agent integration point |
+| `artesian-cli` / `artesiand` | user entrypoint + optional daemon (init, memory ops, spawn, pooling) |
+| `gauge` | TUI control surface · `sandbox` optional Docker sandbox · `tray` optional macOS tray |
 
 Engine/agent/tracker specifics live behind traits (`VectorStore`, `Agent`, `TaskStore`,
 `MemoryBackend`) so adding a backend, agent, or tracker is a small adapter, never a core change.

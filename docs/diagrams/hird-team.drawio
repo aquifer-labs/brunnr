@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <mxfile host="drawio" version="26.0.0">
-  <diagram name="Hird-team">
+  <diagram name="Flotilla-team">
     <mxGraphModel dx="900" dy="700" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="980" pageHeight="760" math="0" shadow="0">
       <root>
         <mxCell id="0" />
@@ -12,26 +12,26 @@
         <mxCell id="s_mcp" value="MCP team tools&#xa;team.create / spawn / task / message" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="s1">
           <mxGeometry x="30" y="45" width="190" height="50" as="geometry" />
         </mxCell>
-        <mxCell id="s_cli" value="CLI&#xa;brunnr team …" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="s1">
+        <mxCell id="s_cli" value="CLI&#xa;artesian team …" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="s1">
           <mxGeometry x="255" y="45" width="190" height="50" as="geometry" />
         </mxCell>
         <mxCell id="s_skill" value="Lead role-skill&#xa;(drive the team from a session)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;" vertex="1" parent="s1">
           <mxGeometry x="480" y="45" width="190" height="50" as="geometry" />
         </mxCell>
 
-        <mxCell id="r1" value="Hirð runtime — a topology of orchestrate mode" style="swimlane;startSize=30;html=1;whiteSpace=wrap;fillColor=#eef3fb;strokeColor=#6c8ebf;fontStyle=1;" vertex="1" parent="1">
+        <mxCell id="r1" value="Flotilla runtime — a topology of orchestrate mode" style="swimlane;startSize=30;html=1;whiteSpace=wrap;fillColor=#eef3fb;strokeColor=#6c8ebf;fontStyle=1;" vertex="1" parent="1">
           <mxGeometry x="60" y="210" width="700" height="140" as="geometry" />
         </mxCell>
-        <mxCell id="r_lead" value="Óðinn · lead&#xa;(master)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="r1">
+        <mxCell id="r_lead" value="master · lead&#xa;(odin)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;" vertex="1" parent="r1">
           <mxGeometry x="30" y="55" width="150" height="60" as="geometry" />
         </mxCell>
-        <mxCell id="r_w1" value="Þórr · teammate&#xa;(worker · Claude)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="r1">
+        <mxCell id="r_w1" value="worker · teammate&#xa;(thor · Claude)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="r1">
           <mxGeometry x="200" y="55" width="150" height="60" as="geometry" />
         </mxCell>
-        <mxCell id="r_w2" value="Þórr · teammate&#xa;(worker · Codex)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="r1">
+        <mxCell id="r_w2" value="worker · teammate&#xa;(thor · Codex)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;" vertex="1" parent="r1">
           <mxGeometry x="370" y="55" width="150" height="60" as="geometry" />
         </mxCell>
-        <mxCell id="r_judge" value="Týr · judge&#xa;(verifier / committer)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="r1">
+        <mxCell id="r_judge" value="judge&#xa;(tyr · verifier / committer)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;" vertex="1" parent="r1">
           <mxGeometry x="540" y="55" width="140" height="60" as="geometry" />
         </mxCell>
 
@@ -42,14 +42,14 @@
         <mxCell id="c1" value="Coordination substrate" style="swimlane;startSize=30;html=1;whiteSpace=wrap;fillColor=#fdf6e3;strokeColor=#d6b656;fontStyle=1;" vertex="1" parent="1">
           <mxGeometry x="60" y="420" width="700" height="120" as="geometry" />
         </mxCell>
-        <mxCell id="c_thing" value="Þing — task board&#xa;atomic-claim + DAG" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="c1">
+        <mxCell id="c_thing" value="headrace — task board&#xa;atomic-claim + DAG" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="c1">
           <mxGeometry x="40" y="45" width="290" height="55" as="geometry" />
         </mxCell>
         <mxCell id="c_black" value="Blackboard — message pool&#xa;EventEnvelope publish-subscribe" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;" vertex="1" parent="c1">
           <mxGeometry x="370" y="45" width="290" height="55" as="geometry" />
         </mxCell>
 
-        <mxCell id="mem" value="Mímisbrunnr — shared persistent memory&#xa;token-saving recall · tenancy-scoped (team / agent / task / session)" style="shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;verticalAlign=middle;" vertex="1" parent="1">
+        <mxCell id="mem" value="Aquifer — shared persistent memory&#xa;token-saving recall · tenancy-scoped (team / agent / task / session)" style="shape=cylinder3;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontStyle=1;verticalAlign=middle;" vertex="1" parent="1">
           <mxGeometry x="260" y="600" width="300" height="100" as="geometry" />
         </mxCell>
 

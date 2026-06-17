@@ -2,8 +2,8 @@
 
 # Modes
 
-Brunnr is **non-intrusive**: set it up once and keep driving your agent exactly as before. You opt
-into only the capabilities you want. Mode is a config choice (`brunnr init` writes `brunnr.toml`).
+Artesian is **non-intrusive**: set it up once and keep driving your agent exactly as before. You opt
+into only the capabilities you want. Mode is a config choice (`artesian init` writes `artesian.toml`).
 
 ## `memory` (default, zero workflow change)
 
@@ -17,20 +17,20 @@ infra), `sqlite-vec` (local hybrid, zero infra), or feature-gated `qdrant` (shar
 ## `orchestrate` (opt-in)
 
 Adds the optional master/worker/judge roles (Óðinn/Þórr/Týr; aliases `master`/`worker`/`judge`)
-and the Þing task queue. Composable: master-judge only, one agent bound to all roles
+and the headrace task queue. Composable: master-judge only, one agent bound to all roles
 (e.g. Codex everywhere), or the full triad. No mandatory agent loop — leave delegation off if you
 don't want it. See [task-tracking.md](task-tracking.md).
 
 ## `full`
 
-`memory` + `orchestrate` + the optional `hvergelmir` Docker sandbox for isolated workers.
+`memory` + `orchestrate` + the optional `sandbox` Docker sandbox for isolated workers.
 
 ## `advanced` (bring-your-own)
 
-For power users who already have a memory layout. Point Brunnr at an **existing** markdown tree
+For power users who already have a memory layout. Point Artesian at an **existing** markdown tree
 (including any **OKF** bundle) or vector collection and it adapts and overlays without owning or
-rewriting your schema: it reads your structure, serves retrieval over it, and adds Brunnr
-capabilities on top. You keep full control of your data model; Brunnr meets it where it is.
+rewriting your schema: it reads your structure, serves retrieval over it, and adds Artesian
+capabilities on top. You keep full control of your data model; Artesian meets it where it is.
 
 ---
 

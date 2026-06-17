@@ -126,6 +126,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "artesian"
+version = "0.0.0"
+
+[[package]]
 name = "artesian-bench"
 version = "0.1.0"
 dependencies = [

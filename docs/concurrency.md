@@ -2,7 +2,7 @@
 
 # Concurrency & Multi-Tenancy (vector memory)
 
-Brunnr must hold up under real parallelism: many agents across **different projects**, many agents
+Artesian must hold up under real parallelism: many agents across **different projects**, many agents
 on the **same project** doing **different tasks**, and **multiple users** hitting the shared vector
 memory at once. This doc states the data model and operational rules that make that safe.
 
@@ -50,7 +50,7 @@ flowchart TD
 3. **Strict per-user (optional).** If users must never see each other's data, give each a
    collection (`<project>__<user>`); same trait, just more collections.
 
-**Agent teams (Hirð)** are the canonical "many agents on one project" case: teammates share the
+**Agent teams (Flotilla)** are the canonical "many agents on one project" case: teammates share the
 project collection and read each other's `shared` knowledge, while their `agent`/`task` owners keep
 per-teammate scratch isolated — so a team coordinates over one memory without cross-contamination.
 See [teams.md](teams.md).
@@ -76,13 +76,13 @@ on write and to a filter on read.
   - Concurrent reads/writes to one collection are native; no app-level locking needed.
   - **Read-after-write:** when an agent must immediately retrieve what it just wrote, upsert with
     `wait=true` (apply before returning); otherwise default async for throughput.
-  - **Connection funneling:** local agents reach Qdrant **through `brunnr-mcp` / `brunnrd`**, which
+  - **Connection funneling:** local agents reach Qdrant **through `artesian-mcp` / `artesiand`**, which
     owns a pooled client — many agents, controlled connections. Per-user/tenant **API keys** for
     multi-user deployments.
   - Index tenancy + frequently-filtered fields; keep payload lean.
 - **sqlite-vec (single host)**
   - Opens in **WAL mode** with a `busy_timeout`; WAL gives concurrent readers + one writer.
-  - **Serialize writers through one process** (the `brunnrd` daemon) so multiple local agents don't
+  - **Serialize writers through one process** (the `artesiand` daemon) so multiple local agents don't
     collide; readers may open the file directly. Per-project file = per-project lock.
 - **The few non-idempotent ops** (consolidation/dedup merges, redundancy pruning) run as a
   **single async job** (one writer), or use Qdrant optimistic concurrency — never concurrently from
@@ -96,16 +96,16 @@ Writes are serialized per `(collection, session_id)` lane with a process-aware l
 owner process is gone, and fails with a bounded timeout instead of waiting forever. Reads do not
 take lane locks.
 
-This is the OpenClaw-style "session lane" rule in Brunnr terms: independent sessions can write in
+This is the OpenClaw-style "session lane" rule in Artesian terms: independent sessions can write in
 parallel, but a single session's append stream is ordered so two concurrent runs cannot interleave
-destructively. The lock directory defaults to `.brunnr/locks` and can be overridden with
-`BRUNNR_LANE_LOCK_DIR`.
+destructively. The lock directory defaults to `.artesian/locks` and can be overridden with
+`ARTESIAN_LANE_LOCK_DIR`.
 
 ## Access funnel
 
 ```mermaid
 flowchart LR
-  A1[agent: project A / task 1] --> MCP[brunnr-mcp / brunnrd]
+  A1[agent: project A / task 1] --> MCP[artesian-mcp / artesiand]
   A2[agent: project A / task 2] --> MCP
   A3[agent: project B] --> MCP
   U[other user's agents] --> MCP
@@ -127,32 +127,32 @@ without each one managing raw DB connections.
 - Session-lane locks serialize writes per collection/session with bounded timeouts; reads remain
   concurrent.
 - Qdrant for parallel/multi-user; sqlite-vec/files for single-host.
-- Funnel access through `brunnr-mcp`/`brunnrd` for pooling, `wait=true` read-after-write, tenant
+- Funnel access through `artesian-mcp`/`artesiand` for pooling, `wait=true` read-after-write, tenant
   filtering, and per-user keys.
 
 ## Container model
 
-The repository includes a multi-stage `Dockerfile` that builds the `brunnr` and `brunnrd` binaries
+The repository includes a multi-stage `Dockerfile` that builds the `artesian` and `artesiand` binaries
 and copies only those binaries into a minimal Debian trixie runtime image. The trixie base keeps
 the glibc/libstdc++ runtime new enough for the fastembed/ONNX Runtime dependency used by vector
 backends. Build it with:
 
 ```shell
-docker build -t brunnr:local .
+docker build -t artesian:local .
 ```
 
-Run `brunnrd` against an external Qdrant by mounting config/data and passing credentials through
+Run `artesiand` against an external Qdrant by mounting config/data and passing credentials through
 the runtime environment or an orchestrator secret store:
 
 ```shell
 docker run --rm \
-  -v "$PWD/.brunnr:/data" \
+  -v "$PWD/.artesian:/data" \
   -e QDRANT_URL=http://qdrant.example:6333 \
   -e QDRANT_REST_URL=http://qdrant.example:6333 \
-  brunnr:local --config /data/brunnr.toml --root /data
+  artesian:local --config /data/artesian.toml --root /data
 ```
 
 No provider secrets are baked into the image. Spawned agent CLIs are also outside the image by
 default: either mount the specific CLI and its credential/config directory into the container, or
-run orchestration on the host and use the container only for `brunnrd`/memory. The optional
-`deploy/brunnr/compose.yml` starts Brunnr with a local Qdrant for development.
+run orchestration on the host and use the container only for `artesiand`/memory. The optional
+`deploy/artesian/compose.yml` starts Artesian with a local Qdrant for development.

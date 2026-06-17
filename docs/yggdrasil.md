@@ -2,7 +2,7 @@
 
 # Yggdrasil
 
-Yggdrasil is Brunnr's layered context tree.
+Yggdrasil is Artesian's layered context tree.
 
 The model is intentionally simple: high-priority root documents describe project-wide policy, while deeper package-level documents add local context. Retrieval should assemble a bounded slice instead of replaying an entire repository memory dump.
 

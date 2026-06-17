@@ -7,16 +7,16 @@ flowchart LR
     OC[opencode]:::agent
   end
 
-  subgraph surfaces["Brunnr surfaces"]
+  subgraph surfaces["Artesian surfaces"]
     direction TB
-    MCP[brunnr-mcp]:::surface
-    CLI["brunnr-cli / brunnrd"]:::surface
-    TUI["bifrost — TUI"]:::surface
+    MCP[artesian-mcp]:::surface
+    CLI["artesian-cli / artesiand"]:::surface
+    TUI["gauge — TUI"]:::surface
   end
 
-  CORE[brunnr-core]:::core
+  CORE[artesian-core]:::core
 
-  MEM["Mímisbrunnr — memory<br/><b>the flagship: own it, ~1k tokens/query</b>"]:::flagship
+  MEM["Aquifer — memory<br/><b>the flagship: own it, ~1k tokens/query</b>"]:::flagship
 
   subgraph stores["Memory stores — pluggable"]
     direction TB
@@ -26,10 +26,10 @@ flowchart LR
 
   subgraph opt["Optional components — opt in as needed"]
     direction TB
-    ORCH["Urðarbrunnr<br/>master / worker / judge"]:::cap
-    TEAMS["Hirð — agent teams"]:::cap
-    TASKS["Þing — task tracking"]:::cap
-    SBX["Hvergelmir — sandbox"]:::cap
+    ORCH["Basin<br/>master / worker / judge"]:::cap
+    TEAMS["Flotilla — agent teams"]:::cap
+    TASKS["headrace — task tracking"]:::cap
+    SBX["Sandbox — sandbox"]:::cap
   end
 
   agents -->|MCP| MCP

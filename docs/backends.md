@@ -23,18 +23,18 @@ small-to-big algorithm and the adaptive budget.
 
 ## Hybrid And RRF
 
-Brunnr uses reciprocal rank fusion with `rank_constant = 60.0` by default. A document at rank `r`
+Artesian uses reciprocal rank fusion with `rank_constant = 60.0` by default. A document at rank `r`
 contributes `1 / (rank_constant + r)` to its fused score. Duplicate `node_id` results across
 channels merge into one hit, preserving deterministic drill-down.
 
 Vector engines may advertise `supports_server_side_hybrid`. When they do, `VectorMemoryBackend`
-delegates hybrid search to the engine. When they do not, Brunnr runs keyword and vector searches
+delegates hybrid search to the engine. When they do not, Artesian runs keyword and vector searches
 separately and fuses them with the same RRF implementation.
 
 ## FilesBackend
 
-`FilesBackend` stores OKF markdown records under `.brunnr/memory/YYYY-MM-DD/<id>.md`. It writes
-YAML `---` frontmatter with required `type: memory`, recommended `tags`/`timestamp`, and Brunnr
+`FilesBackend` stores OKF markdown records under `.artesian/memory/YYYY-MM-DD/<id>.md`. It writes
+YAML `---` frontmatter with required `type: memory`, recommended `tags`/`timestamp`, and Artesian
 extensions such as `node_id`, `tier`, and optional tenancy fields. It still reads legacy TOML
 `+++` records.
 
@@ -61,10 +61,10 @@ Storage:
 Hybrid behavior:
 
 - `supports_server_side_hybrid = false`.
-- Brunnr runs FTS5 BM25 keyword search and sqlite-vec vector search separately.
-- Results are fused by Brunnr RRF.
+- Artesian runs FTS5 BM25 keyword search and sqlite-vec vector search separately.
+- Results are fused by Artesian RRF.
 
-Default CLI config stores the SQLite file at `.brunnr/memory.sqlite3` when `backend = "sqlite-vec"`.
+Default CLI config stores the SQLite file at `.artesian/memory.sqlite3` when `backend = "sqlite-vec"`.
 
 ## QdrantBackend
 
@@ -73,7 +73,7 @@ Default CLI config stores the SQLite file at `.brunnr/memory.sqlite3` when `back
 Storage:
 
 - Qdrant owns the collection and vector index.
-- Brunnr stores the normalized memory payload in Qdrant point payload.
+- Artesian stores the normalized memory payload in Qdrant point payload.
 - Upserts use `wait=true` for read-after-write behavior.
 - Payload indexes are created for `node_id` and tenancy fields.
 - The first shared embedding default is pinned to `intfloat/multilingual-e5-small` with 384
@@ -81,9 +81,9 @@ Storage:
 
 Hybrid behavior:
 
-- `supports_server_side_hybrid = false` today because Brunnr does not yet configure a sparse
+- `supports_server_side_hybrid = false` today because Artesian does not yet configure a sparse
   vector channel.
-- Brunnr runs vector search through Qdrant and keyword fallback over Qdrant payload scroll, then
+- Artesian runs vector search through Qdrant and keyword fallback over Qdrant payload scroll, then
   fuses with RRF.
 - Future sparse support can flip capabilities without changing `MemoryBackend` callers.
 
@@ -92,10 +92,10 @@ Run a local Qdrant for development:
 ```shell
 docker compose -f deploy/qdrant/compose.yml up -d
 QDRANT_URL=http://127.0.0.1:6333 \
-  cargo test -p mimisbrunnr --features qdrant --test qdrant -- --ignored
+  cargo test -p aquifer --features qdrant --test qdrant -- --ignored
 ```
 
-Do not hardcode Qdrant hosts in code. On default ports, Brunnr accepts one `QDRANT_URL` /
+Do not hardcode Qdrant hosts in code. On default ports, Artesian accepts one `QDRANT_URL` /
 `qdrant_url`: `:6333` is treated as REST and derives gRPC `:6334`; `:6334` derives REST `:6333`.
 Use `QDRANT_REST_URL` / `qdrant_rest_url` only when the REST API is not the default sibling of the
 configured gRPC endpoint. CLI setup/import preflights both endpoints before writing memory.
@@ -112,7 +112,7 @@ A new vector engine is a thin adapter, not a fork. Implement the six `VectorStor
 generic `VectorMemoryBackend<V>` gives you embedding, chunk-on-store, RRF hybrid, reranking, L0-L3
 tiering, payload tenancy, and `node_id` drill-down for free — no core change.
 
-Worked example: `crates/mimisbrunnr/src/pgvector.rs` (feature `pgvector`).
+Worked example: `crates/aquifer/src/pgvector.rs` (feature `pgvector`).
 
 1. **Feature + deps** — add a Cargo feature and optional client deps; gate the module with
    `#[cfg(feature = "<name>")]`.
@@ -124,7 +124,7 @@ Worked example: `crates/mimisbrunnr/src/pgvector.rs` (feature `pgvector`).
    - `search` — vector ANN and/or keyword, honoring the normalized `Filter` (eq / in / range /
      exists, with must / should / must_not);
    - `get` — fetch a point by id (used for dedup and drill-down);
-   - `capabilities` — advertise e.g. `supports_server_side_hybrid`; return `false` and Brunnr runs
+   - `capabilities` — advertise e.g. `supports_server_side_hybrid`; return `false` and Artesian runs
      RRF itself.
    Optionally `impl VectorCollectionAdmin` for snapshot / migrate support.
 4. **Alias** — `pub type YourBackend = VectorMemoryBackend<YourVectorStore>;`.

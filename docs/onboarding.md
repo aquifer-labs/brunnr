@@ -2,32 +2,32 @@
 
 # Onboarding
 
-Two ways to bring Brunnr up: **a human follows the Quickstart**, or **an AI agent follows the
+Two ways to bring Artesian up: **a human follows the Quickstart**, or **an AI agent follows the
 agent recipe** below. Both are non-destructive and idempotent — running them twice changes
 nothing the second time, and they never delete existing memory or overwrite unrelated config.
 
-Brunnr runs with **zero configuration** in `memory` mode on the Files (OKF) backend. Add a vector
+Artesian runs with **zero configuration** in `memory` mode on the Files (OKF) backend. Add a vector
 backend or orchestration only when you want them. Sensible defaults everywhere.
 
 ---
 
 ## A. Human path (Quickstart)
 
-Install the `brunnr` CLI (see the [README](../README.md#install)), or run from source by prefixing
-any command with `cargo run -p brunnr-cli -- ` instead of `brunnr`.
+Install the `artesian` CLI (see the [README](../README.md#install)), or run from source by prefixing
+any command with `cargo run -p artesian-cli -- ` instead of `artesian`.
 
 ```shell
 # memory mode, zero-infra Files (OKF) backend — the default
-brunnr init
-brunnr memory store "Brunnr keeps durable context" --tag bootstrap
-brunnr memory find durable
+artesian init
+artesian memory store "Artesian keeps durable context" --tag bootstrap
+artesian memory find durable
 ```
 
 Pick a backend (config choice, not a code change):
 
 ```shell
-brunnr init --backend sqlite-vec          # local hybrid, zero infra
-brunnr init --backend qdrant \            # shared / multi-user
+artesian init --backend sqlite-vec          # local hybrid, zero infra
+artesian init --backend qdrant \            # shared / multi-user
   --project my-project --qdrant-url http://HOST:6333
 ```
 
@@ -36,33 +36,33 @@ For Qdrant, one URL is enough on default ports: `:6333` is treated as REST and t
 `--qdrant-url` and `--qdrant-rest-url`. `init` and import commands preflight both endpoints
 (gRPC health + REST `/healthz` + auth) and fail with the exact endpoint that is wrong.
 
-`brunnr init` detects installed agent CLIs and writes the MCP registration for each (Claude Code,
-Codex, Zed) pointing at `brunnr-mcp` with the pinned embedding model and behavior-guiding tool
+`artesian init` detects installed agent CLIs and writes the MCP registration for each (Claude Code,
+Codex, Zed) pointing at `artesian-mcp` with the pinned embedding model and behavior-guiding tool
 descriptions. Then drive your agent exactly as before — it now has `memory.find` / `memory.store`.
 
 Backfill existing notes (idempotent), and explore modes:
 
 ```shell
-brunnr backfill ./memory-export   # md/json + task md -> OKF/Thingr
-brunnr memory context "what matters now"
+artesian backfill ./memory-export   # md/json + task md -> OKF/Headrace
+artesian memory context "what matters now"
 ```
 
 `backfill` is robust: a bad file is skipped and reported, not fatal. Markdown is section-chunked
-by heading, an OKF `index.md` catalog is generated, task/status markdown is routed into Thingr, and
+by heading, an OKF `index.md` catalog is generated, task/status markdown is routed into Headrace, and
 the command prints a JSON summary with `{scanned, imported, skipped_duplicates, failed}` counts.
-After import it prints the next opt-in step, `brunnr consolidate`, for LLM semantic consolidation.
+After import it prints the next opt-in step, `artesian consolidate`, for LLM semantic consolidation.
 
 For a non-expert second project/user on the same Qdrant, use the wrapper:
 
 ```shell
-brunnr onboard my-project ./memory-export \
+artesian onboard my-project ./memory-export \
   --qdrant-url http://HOST:6333 --user-id user-a
 ```
 
 Each project gets its own collection. `user_id` is also written as payload tenancy metadata inside
 the project collection.
 
-**Many agents on one project (Hirð teams).** A team of agents shares the project collection and
+**Many agents on one project (Flotilla teams).** A team of agents shares the project collection and
 reads each other's `shared` knowledge while keeping per-teammate `agent`/`task` scratch isolated —
 no extra setup beyond the shared backend. See [teams.md](teams.md) and
 [concurrency.md](concurrency.md).
@@ -79,7 +79,7 @@ See [modes.md](modes.md), [memory.md](memory.md), [concurrency.md](concurrency.m
 
 ## B. AI-agent path (recipe any agent can follow)
 
-Any agent (Codex, Claude Code, Gemini CLI, opencode, …) can bring Brunnr up from these minimal,
+Any agent (Codex, Claude Code, Gemini CLI, opencode, …) can bring Artesian up from these minimal,
 deterministic steps. Ask the human operator for the four inputs, then execute — **idempotently and
 without breaking anything**.
 
@@ -92,15 +92,15 @@ without breaking anything**.
   existing memory to backfill
 
 **Steps:**
-1. Build or locate the binary: `cargo build --workspace` (or use a prebuilt `brunnr`).
-2. `brunnr init --project <project> --backend <backend> [--qdrant-url …]`. This is
-   idempotent and only writes Brunnr's own MCP entry; it must NOT touch unrelated config.
+1. Build or locate the binary: `cargo build --workspace` (or use a prebuilt `artesian`).
+2. `artesian init --project <project> --backend <backend> [--qdrant-url …]`. This is
+   idempotent and only writes Artesian's own MCP entry; it must NOT touch unrelated config.
 3. If `backend = qdrant`: verify the server is reachable (`/healthz`) and that the collection's
    compat metadata (model + dim) matches the pinned model; if it mismatches, STOP and ask — run
-   `brunnr migrate` rather than mixing vector spaces.
+   `artesian migrate` rather than mixing vector spaces.
 4. Backfill the project's existing memory/tasks into the OKF bundle and selected backend:
-   `brunnr backfill <path>` (idempotent, content-hash dedup; never deletes the originals).
-5. Verify: `brunnr memory store "<probe>"` then `brunnr memory find "<probe>"` returns it; report
+   `artesian backfill <path>` (idempotent, content-hash dedup; never deletes the originals).
+5. Verify: `artesian memory store "<probe>"` then `artesian memory find "<probe>"` returns it; report
    the backend, collection, and counts back to the operator.
 6. Report what changed (config entries added, records backfilled) and what was left untouched.
 

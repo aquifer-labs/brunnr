@@ -1,35 +1,35 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
-# Agent Teams — Hirð
+# Agent Teams — Flotilla
 
-A **Hirð** (Old Norse for a lord's retinue) is a vendor-neutral agent team: a **lead** plus
+A **Flotilla** (Old Norse for a lord's retinue) is a vendor-neutral agent team: a **lead** plus
 **teammates** (and an optional **judge**) that coordinate over a shared task board and a shared
 message pool, all reading and writing **one shared persistent memory**. Teammates can be backed by
 any agent and model — Claude, Codex, opencode, Gemini, a local model — and every teammate runs
 **supervised**, so a team never leaks or orphans processes.
 
-Hirð is not a separate product or a rewrite. It composes primitives Brunnr already has: the Þing
-task board, the EventEnvelope message pool, the Urðarbrunnr role loop, supervised process spawning,
-and Mímisbrunnr memory.
+Flotilla is not a separate product or a rewrite. It composes primitives Artesian already has: the headrace
+task board, the EventEnvelope message pool, the Basin role loop, supervised process spawning,
+and Aquifer memory.
 
-![Hirð team architecture](diagrams/hird-team.png)
+![Flotilla team architecture](diagrams/flotilla-team.png)
 
 ## Where it fits: a topology, not a new mode
 
-Teams are a **topology of `orchestrate` / `full`**, not a fifth [mode](modes.md). A Hirð is simply
+Teams are a **topology of `orchestrate` / `full`**, not a fifth [mode](modes.md). A Flotilla is simply
 `orchestrate` scaled from a single worker to several coordinating teammates — you opt in exactly as
 you opt into orchestration, and `memory` mode is unaffected.
 
 | Mode | Memory | Orchestration | Team topology |
 |---|---|---|---|
 | `memory` | yes | — | — |
-| `orchestrate` | yes | master / worker / judge | single worker **or** a Hirð |
-| `full` | yes | + sandbox | single worker **or** a Hirð |
-| `advanced` | your store | bring-your-own | Brunnr coordinates your agents |
+| `orchestrate` | yes | master / worker / judge | single worker **or** a Flotilla |
+| `full` | yes | + sandbox | single worker **or** a Flotilla |
+| `advanced` | your store | bring-your-own | Artesian coordinates your agents |
 
 ## Roles: three archetypes, your own names
 
-Brunnr keeps a small, clear coordination grammar — three **archetypes** (kinds), with both plain and
+Artesian keeps a small, clear coordination grammar — three **archetypes** (kinds), with both plain and
 Norse aliases:
 
 | Kind | Aliases | Responsibility |
@@ -62,11 +62,11 @@ validation. Report findings with severity ratings. (appended to the teammate's s
 - **Definitions are configuration, so they live in files** — version-controllable and shareable in
   the repo, not in the vector store. (Memory *records* and their tenancy metadata do live in the
   vector store payload, as usual — see [memory.md](memory.md). Definitions are not search objects.)
-- Brunnr also **reads existing `.claude/agents/*.md`** definitions, so you can reuse roles you have
+- Artesian also **reads existing `.claude/agents/*.md`** definitions, so you can reuse roles you have
   already written instead of redefining them. Interop reads `name`, `description`, `tools`,
-  `model`, and the body prompt addendum; if no Brunnr `kind` is present, Brunnr infers the
+  `model`, and the body prompt addendum; if no Artesian `kind` is present, Artesian infers the
   archetype from the name (`lead`/`master` -> `master`, `review`/`judge` -> `judge`, otherwise
-  `worker`). Brunnr does not copy vendor-reserved schema semantics.
+  `worker`). Artesian does not copy vendor-reserved schema semantics.
 - Optional: definitions can additionally be indexed for semantic "find a role that does X"
   discovery; the files remain the source of truth.
 - `agents.list` includes both reachable agent/model entries and these role-definition summaries.
@@ -75,7 +75,7 @@ validation. Report findings with severity ratings. (appended to the teammate's s
 
 ## How a team works
 
-- **Shared task board (Þing):** the lead creates tasks with dependencies (a DAG); teammates
+- **Shared task board (headrace):** the lead creates tasks with dependencies (a DAG); teammates
   self-claim the next unblocked task (atomic file-lock claim) or the lead assigns explicitly;
   completing a task unblocks its dependents automatically. See [task-tracking.md](task-tracking.md).
 - **Shared message pool / blackboard (EventEnvelope, publish-subscribe):** teammates post and read
@@ -97,7 +97,7 @@ validation. Report findings with severity ratings. (appended to the teammate's s
 
 ## Memory is the substrate (and the flagship)
 
-Every teammate reads and writes **one shared persistent memory** (Mímisbrunnr), scoped by tenancy
+Every teammate reads and writes **one shared persistent memory** (Aquifer), scoped by tenancy
 (`team` / `agent` / `task` / `session`). So teammates share a working context **and** that context
 survives across sessions and context compaction — the gap in current team systems, where teammates
 do not inherit each other's history and nothing persists between runs. `memory.context` returns each
@@ -107,28 +107,28 @@ teammate just the slice it needs, which is where the token saving comes from
 ## Integration depths — use as little or as much as you want
 
 1. **Memory only (the flagship):** point your **existing** team / sub-agent / orchestrator system at
-   Brunnr's memory over MCP (`memory.find` / `memory.context` / `memory.store`). You add persistent,
+   Artesian's memory over MCP (`memory.find` / `memory.context` / `memory.store`). You add persistent,
    token-saving shared memory to whatever you already run — Claude agent-teams, a custom
    orchestrator, LangGraph — with no orchestration takeover.
-2. **Coordination (`advanced`):** keep your own agents; use Brunnr's shared task board and message
+2. **Coordination (`advanced`):** keep your own agents; use Artesian's shared task board and message
    pool as the coordination substrate.
-3. **Full Hirð:** Brunnr runs the team end to end — vendor-neutral, verifier-gated, supervised.
+3. **Full Flotilla:** Artesian runs the team end to end — vendor-neutral, verifier-gated, supervised.
 
 Interop rule — **do not double-orchestrate.** When a native team system (e.g. Claude Code agent
-teams) is driving the loop, run Brunnr in `memory` / `advanced`, not `orchestrate`. Brunnr's
+teams) is driving the loop, run Artesian in `memory` / `advanced`, not `orchestrate`. Artesian's
 orchestration tools are off outside `orchestrate` / `full`, so this is the default.
 
 ## Surfaces
 
 - **MCP team tools:** `team.create`, `team.spawn`, `team.task.add` / `claim` / `complete`,
   `team.message`, `team.status`, `team.cleanup` — over the same supervised engine.
-- **CLI:** `brunnr team …` exposes the same operations for foreground/local use.
-- **Lead role-skill:** a short instruction `brunnr init` writes so an in-session lead drives the team
+- **CLI:** `artesian team …` exposes the same operations for foreground/local use.
+- **Lead role-skill:** a short instruction `artesian init` writes so an in-session lead drives the team
   natively (read the catalog, recall via `memory.context`, delegate, gate via the judge).
 
 ## Prior art and naming
 
-Hirð builds on established multi-agent patterns — MetaGPT's role-based publish-subscribe message
+Flotilla builds on established multi-agent patterns — MetaGPT's role-based publish-subscribe message
 pool, OpenAI Symphony's single-authority dispatch, agent-teams-ai, and Claude Code's agent teams and
-sub-agents. Brunnr reuses ideas and credits them; it does not reproduce their code, specifications,
-or marks. The `.agent/agents/*.md` schema and the Norse naming are Brunnr's own.
+sub-agents. Artesian reuses ideas and credits them; it does not reproduce their code, specifications,
+or marks. The `.agent/agents/*.md` schema and the Norse naming are Artesian's own.

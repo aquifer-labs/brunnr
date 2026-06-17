@@ -1,16 +1,16 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
-# Mímisbrunnr — Brunnr Memory Architecture
+# Aquifer — Artesian Memory Architecture
 
-> *Mímisbrunnr is the well of wisdom at the root of Yggdrasil. Brunnr's memory subsystem is the
+> *Aquifer is the well of wisdom at the root of Yggdrasil. Artesian's memory subsystem is the
 > well your agents drink from before they act.*
 
-This document describes how Brunnr models, stores, and retrieves agent memory: the taxonomy
+This document describes how Artesian models, stores, and retrieves agent memory: the taxonomy
 (short-term vs long-term), the concrete data model, the retrieval mathematics as actually
 implemented, the pluggable backend seam, and the self-repair mechanism that survives context
 auto-compaction. Formulas here match the code; each section links to the implementing file.
 
-Status legend: **[implemented]** = present in `crates/mimisbrunnr`; **[planned]** = designed,
+Status legend: **[implemented]** = present in `crates/aquifer`; **[planned]** = designed,
 not yet built (tracked in the roadmap).
 
 ---
@@ -24,9 +24,9 @@ pressures follow for any agent that runs longer than one prompt:
 2. **Token economy** — replaying whole project docs into every session is expensive and
    crowds out reasoning budget.
 
-Brunnr's thesis: replace *replaying everything* with *retrieving only what is relevant*. A
+Artesian's thesis: replace *replaying everything* with *retrieving only what is relevant*. A
 targeted recall of a few hundred tokens substitutes for thousands of tokens of re-read context,
-which is both cheaper and more focused. This is the same lever the Brunnr project itself was
+which is both cheaper and more focused. This is the same lever the Artesian project itself was
 created to pull.
 
 [![Memory overview](diagrams/memory-overview.png)](diagrams/memory-overview.mmd)
@@ -42,10 +42,10 @@ created to pull.
 
 ## 2. Taxonomy and data model
 
-Brunnr follows the standard agent-memory split (short-term working memory vs long-term
+Artesian follows the standard agent-memory split (short-term working memory vs long-term
 persistent memory; see references) and layers a TencentDB-style tiering over long-term records.
 
-Every long-term unit is a `MemoryRecord` (`crates/mimisbrunnr/src/types.rs`):
+Every long-term unit is a `MemoryRecord` (`crates/aquifer/src/types.rs`):
 
 | Field | Meaning |
 |---|---|
@@ -78,10 +78,10 @@ ground-truth record only when needed — "context offloading" that keeps prompts
 
 Text is embedded into a dense vector $e = f(\text{text})$ with a pinned model so vectors are
 comparable across every machine and backend
-(`crates/mimisbrunnr/src/vector_memory.rs`):
+(`crates/aquifer/src/vector_memory.rs`):
 
 - model `intfloat/multilingual-e5-small`, $d = 384$ dimensions, multilingual (RU/EN);
-- E5 requires asymmetric prefixes — Brunnr embeds queries as `query: …` and stored passages as
+- E5 requires asymmetric prefixes — Artesian embeds queries as `query: …` and stored passages as
   `passage: …` (`FastembedTextEmbedder::embed_query` / `embed_passage`). Skipping the prefixes
   measurably degrades E5 recall, so this is enforced in one place.
 
@@ -97,13 +97,13 @@ configured `Distance::Cosine`):
 
 Range $[-1, 1]$; higher means more semantically related. The vector store performs **approximate
 nearest-neighbour (ANN)** search to return the top-$k$ records by this metric without scanning
-every point — single-digit milliseconds at Brunnr's scale.
+every point — single-digit milliseconds at Artesian's scale.
 
 ### 3.3 Hybrid retrieval via Reciprocal Rank Fusion
 
 Pure vector search misses exact tokens (identifiers, error codes); pure keyword search misses
-paraphrase. Brunnr runs **both channels** and fuses them with Reciprocal Rank Fusion
-(`crates/mimisbrunnr/src/rrf.rs`). For a document $d$ appearing at rank $r_c(d)$ (1-based) in
+paraphrase. Artesian runs **both channels** and fuses them with Reciprocal Rank Fusion
+(`crates/aquifer/src/rrf.rs`). For a document $d$ appearing at rank $r_c(d)$ (1-based) in
 channel $c$:
 
 ```math
@@ -184,7 +184,7 @@ grows past a million tokens.
 
 ### 3.6 Retrieval enhancements
 
-The default path stays cheap and non-intrusive. Brunnr now exposes these measurable stages:
+The default path stays cheap and non-intrusive. Artesian now exposes these measurable stages:
 
 - **Two-stage reranking [implemented seam]** — retrieve a wider candidate set of $M \gg k$ by RRF,
   then re-score through the `Reranker` trait. `LocalLexicalReranker` is deterministic and cheap for
@@ -214,8 +214,8 @@ gain (precision/recall) — measured against the benchmark, not assumed.
 ## 4. Pluggable backends [implemented]
 
 Memory is engine-agnostic. The top contract is `MemoryBackend`
-(`crates/mimisbrunnr/src/backend.rs`); the vector engines sit behind the thin `VectorStore` seam
-(`crates/mimisbrunnr/src/vector.rs`) and the generic `VectorMemoryBackend<V>` writes embedding,
+(`crates/aquifer/src/backend.rs`); the vector engines sit behind the thin `VectorStore` seam
+(`crates/aquifer/src/vector.rs`) and the generic `VectorMemoryBackend<V>` writes embedding,
 tiering, RRF, and payload schema **once** for all of them.
 
 ```mermaid
@@ -249,14 +249,14 @@ filters. Engine specifics (metric names, id types, index knobs) never leak above
 The `FilesBackend` stores memory as a directory of markdown files — Karpathy's
 ["LLM wiki" pattern](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f)
 (`index.md` catalog read first, `log.md` history, interlinked entity/concept pages, maintained by
-ingest/query/lint). Brunnr
+ingest/query/lint). Artesian
 aligns this on-disk format with the **Open Knowledge Format (OKF)** (Google Cloud, Apache-2.0): a
 vendor-neutral spec that is *just markdown, just files, just YAML frontmatter*, git-friendly and
-readable with `cat`, with **no vector-DB dependency**. Adopting OKF makes Brunnr's file memory
+readable with `cat`, with **no vector-DB dependency**. Adopting OKF makes Artesian's file memory
 interoperable with the wider OKF ecosystem (e.g. the OKF static HTML graph visualizer — a free
 *visual control surface* over memory) and standardizes the md ↔ vector import/export.
 
-OKF requires exactly one frontmatter field, `type`; Brunnr keeps its own fields as allowed
+OKF requires exactly one frontmatter field, `type`; Artesian keeps its own fields as allowed
 extensions (consumers tolerate unknown keys):
 
 ```yaml
@@ -266,8 +266,8 @@ title: RRF k constant     # OKF recommended
 description: Why k=60      # OKF recommended
 tags: [retrieval, rrf]    # OKF recommended
 timestamp: 2026-06-14T00:00:00Z   # OKF recommended (== created_at)
-node_id: node:abc         # Brunnr extension (drill-down handle)
-tier: l2-scenario         # Brunnr extension (L0–L3)
+node_id: node:abc         # Artesian extension (drill-down handle)
+tier: l2-scenario         # Artesian extension (L0–L3)
 ---
 Body markdown; relationships are plain links to other concepts ([k=60](/retrieval/rrf.md)).
 ```
@@ -293,7 +293,7 @@ Graphs* (2021).
 ## 5. Short-term memory
 
 Long-term memory answers "what do we know"; short-term memory answers "what are we doing right
-now". Brunnr provides three standard mechanisms behind a `WorkingMemory` seam:
+now". Artesian provides three standard mechanisms behind a `WorkingMemory` seam:
 
 - **buffer** — full recent turns (highest fidelity, smallest horizon);
 - **sliding window** — last $k$ turns, bounded prompt contribution;
@@ -316,7 +316,7 @@ The consolidation path is opt-in; by default, short-term memory is an in-process
 ## 6. Self-repair across auto-compaction
 
 Long sessions hit auto-compaction: the host summarizes/truncates context and the agent can lose
-its place. Brunnr makes this a non-event (see `docs/self-repair.md`):
+its place. Artesian makes this a non-event (see `docs/self-repair.md`):
 
 1. **Session anchor (Muninn)** — a tiny, always-current record of the in-flight task, the plan
    pointer, the last N decisions, and the next concrete step. Cheap to write every turn.
@@ -341,7 +341,7 @@ agents (e.g. Claude Code → Codex) lossless.
 Implemented surfaces:
 
 - MCP: `memory.anchor.get` / `memory.anchor.set`
-- CLI: `brunnr memory anchor get|set|recover`
+- CLI: `artesian memory anchor get|set|recover`
 - File: the current Muninn anchor is appended to OKF `log.md`
 
 ---
@@ -363,7 +363,7 @@ drill-down fetches raw evidence only on demand, so the common path pays for summ
 transcripts. Local embedding (fastembed) adds bounded latency (~10–50 ms/query) and **zero
 tokens**, so the retrieval path is a net token win, not a cost.
 
-Additional levers Brunnr uses or exposes (each cheap or opt-in):
+Additional levers Artesian uses or exposes (each cheap or opt-in):
 
 - **Embedding cache** — passages are embedded once on write; query embeddings can be cached, so
   repeats cost nothing.
@@ -380,7 +380,7 @@ Additional levers Brunnr uses or exposes (each cheap or opt-in):
 ## 8. Memory lifecycle — consolidation, decay, pruning [planned, opt-in]
 
 Unbounded growth raises latency and dilutes relevance, so a long-lived memory needs active
-management. Brunnr will run these as an **optional, asynchronous, off-by-default** consolidation
+management. Artesian will run these as an **optional, asynchronous, off-by-default** consolidation
 pass (never on the agent's critical path; not active in plain memory mode unless enabled):
 
 - **Reflection / consolidation** — periodically summarize recent `L0Raw`/`L1Atom` records into

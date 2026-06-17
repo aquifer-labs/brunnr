@@ -1,8 +1,8 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
-# Brunnr Documentation
+# Artesian Documentation
 
-Brunnr is a multi-agent context orchestration system: pluggable agent **memory**, optional
+Artesian is a multi-agent context orchestration system: pluggable agent **memory**, optional
 **master / worker / judge** orchestration, and optional task tracking — all non-intrusive, so you
 keep driving your agent the way you already do and simply gain speed and lower token cost.
 
@@ -14,11 +14,11 @@ New here? Start with **[onboarding](onboarding.md)**, then **[positioning](posit
 | Doc | What it covers |
 |---|---|
 | [architecture.md](architecture.md) | Top-level system architecture and crates |
-| [positioning.md](positioning.md) | Why Brunnr, and how it relates to adjacent projects |
+| [positioning.md](positioning.md) | Why Artesian, and how it relates to adjacent projects |
 | [modes.md](modes.md) | Operating modes: `memory`, `orchestrate`, `full`, `advanced` |
 | [yggdrasil.md](yggdrasil.md) | Layered, priority-ordered context-md tree |
 
-### Memory — Mímisbrunnr (the flagship)
+### Memory — Aquifer (the flagship)
 
 | Doc | What it covers |
 |---|---|
@@ -27,20 +27,20 @@ New here? Start with **[onboarding](onboarding.md)**, then **[positioning](posit
 | [upgrades.md](upgrades.md) | Rebuild-from-OKF migration, Qdrant snapshots, compatibility guards |
 | [self-repair.md](self-repair.md) | Surviving context auto-compaction (session anchor) |
 
-### Orchestration — Urðarbrunnr
+### Orchestration — Basin
 
 | Doc | What it covers |
 |---|---|
 | [orchestration.md](orchestration.md) | Master/worker/judge, topologies, model-aware bindings, router |
-| [teams.md](teams.md) | Agent teams (Hirð): vendor-neutral lead + teammates over shared memory |
-| [task-tracking.md](task-tracking.md) | Þing task tracker: DAG; md / vector / external (Jira, Linear) |
+| [teams.md](teams.md) | Agent teams (Flotilla): vendor-neutral lead + teammates over shared memory |
+| [task-tracking.md](task-tracking.md) | headrace task tracker: DAG; md / vector / external (Jira, Linear) |
 | [concurrency.md](concurrency.md) | Multi-tenancy: many agents/users, parallel access, session lanes |
 
 ### Guides
 
 | Doc | What it covers |
 |---|---|
-| [onboarding.md](onboarding.md) | Bring Brunnr up: human Quickstart **and** an AI-agent recipe |
+| [onboarding.md](onboarding.md) | Bring Artesian up: human Quickstart **and** an AI-agent recipe |
 | [development.md](development.md) | Build, test, and contribution workflow |
 
 ### Reference
@@ -52,5 +52,4 @@ New here? Start with **[onboarding](onboarding.md)**, then **[positioning](posit
 
 ---
 
-Naming is Norse (Mímisbrunnr = memory, Urðarbrunnr = roles, Þing = tasks, Óðinn/Þórr/Týr =
-master/worker/judge); plain-English aliases exist everywhere it matters.
+Role aliases: `master`/`worker`/`judge` (canonical) and `odin`/`thor`/`tyr` (accepted everywhere).

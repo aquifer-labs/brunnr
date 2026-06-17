@@ -1,12 +1,12 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
-# Urðarbrunnr — Orchestration (master / worker / judge)
+# Basin — Orchestration (master / worker / judge)
 
-> *Urðarbrunnr is the well of the Norns, where fate is decided. Brunnr's orchestrator decides who
+> *Basin is the well of the Norns, where fate is decided. Artesian's orchestrator decides who
 > does what, when, and whether the work is accepted.*
 
 Orchestration is **opt-in** (`orchestrate`/`full` modes). If you only want memory, skip this — your
-agent workflow is unchanged. When enabled, Brunnr coordinates multiple agent invocations through a
+agent workflow is unchanged. When enabled, Artesian coordinates multiple agent invocations through a
 **shared blackboard** (memory + task queue) rather than chatty direct messaging, which is the
 token-efficient MAS pattern.
 
@@ -40,7 +40,7 @@ breadth of what an agent may do unattended is exactly the breadth your verifiers
 ### Visual artifacts as control surfaces
 
 Long-running agents are steered through **visual artifacts**, not transcripts: the task board
-(Þing), the TUI (Bifröst), an optional macOS tray (Huginn), and the **OKF HTML visualizer** over
+(headrace), the TUI (Gauge), an optional macOS tray (Tray), and the **OKF HTML visualizer** over
 the memory bundle (see [memory.md](memory.md) §4.1). External mirrors (Jira/Linear) give the same
 board in a familiar UI. These surfaces let a human glance, redirect, and approve without reading
 raw logs.
@@ -53,12 +53,12 @@ Agents do **not** stream long messages to each other (expensive, lossy). They co
 [![Orchestrator blackboard](diagrams/orchestrator-blackboard.png)](diagrams/orchestrator-blackboard.mmd)
 
 A **single mutation authority** serializes task-state changes (anti-race; from Symphony). The
-blackboard is the task DAG (Þing) plus long-term memory (Mímisbrunnr); each agent reads only the
+blackboard is the task DAG (headrace) plus long-term memory (Aquifer); each agent reads only the
 slice it needs via `memory.find`, never the whole history.
 
 ## Coordination & communication primitives
 
-Even with blackboard coordination, the records exchanged need a defined shape. Brunnr standardizes
+Even with blackboard coordination, the records exchanged need a defined shape. Artesian standardizes
 a small **event envelope** (JSON, LLM-parseable) so any agent adapter and the observability layer
 speak the same language — inspired by agent communication languages (FIPA ACL) but minimal:
 
@@ -72,7 +72,7 @@ speak the same language — inspired by agent communication languages (FIPA ACL)
 ```
 
 `correlation_id` links a result/verdict back to its task (no need to replay history). Events are
-represented by `brunnr-core::EventEnvelope` and are intended for the blackboard (Þing/memory) and
+represented by `artesian-core::EventEnvelope` and are intended for the blackboard (headrace/memory) and
 run log.
 
 **Coordination mechanisms** (the orchestrator is a centralized coordinator by default — simplest,
@@ -85,7 +85,7 @@ one authority):
   for all parallel sub-tasks before proceeding; claim/complete are events.
 - **Resource management** — shared resources (model rate limits, API keys, DB connections) are
   governed by **quotas/scheduling**: per-agent/per-user token budgets and rate limits, connection
-  pooling funneled through `brunnrd` (see [concurrency.md](concurrency.md)).
+  pooling funneled through `artesiand` (see [concurrency.md](concurrency.md)).
 - **Consensus (optional)** — debate/critique or simple voting among multiple critics when one
   judge is not enough.
 
@@ -93,7 +93,7 @@ one authority):
 an **isolated workspace** (a git worktree or scratch directory) so concurrent workers on the same
 repo do not clobber each other's files; results are integrated only through the judge gate. This is
 the file-level complement to the memory concurrency model, and it composes with the optional
-`hvergelmir` Docker sandbox.
+`sandbox` Docker sandbox.
 
 **Observability.** Every event carries `id`/`correlation_id`/`timestamp`/`sender`; the orchestrator
 emits structured run logs and per-agent/session token accounting, so multi-agent runs are
@@ -101,7 +101,7 @@ debuggable and the evaluator/judge has evidence to gate on.
 
 ## Topologies (config, hybrids allowed)
 
-Brunnr supports the standard collaborative architectures; pick per project, compose freely:
+Artesian supports the standard collaborative architectures; pick per project, compose freely:
 
 - **Hierarchical team** (default, core loop implemented) — task DAG → workers execute → judge gate
   accepts/retries/blocks. Master decomposition remains a seam before dispatch.
@@ -112,17 +112,17 @@ Brunnr supports the standard collaborative architectures; pick per project, comp
 
 ## Runtime entrypoints
 
-`brunnr run` / `brunnr orchestrate` runs the loop in the foreground. `brunnrd` runs the same loop as
+`artesian run` / `artesian orchestrate` runs the loop in the foreground. `artesiand` runs the same loop as
 a daemon-style foreground process. Both are strictly gated to `orchestrate` or `full` mode; `memory`
 mode returns without orchestration side effects. `--dry-run` uses mock agents and still exercises
 task planning, dispatch, event emission, verifier gates, and memory writes without launching real
 agent CLIs.
 
 Process-backed agents are supervised. Each worker/judge subprocess is launched in its own process
-group, recorded under `coordination.spawn_registry_path` (default `.brunnr/spawns`), and terminated
+group, recorded under `coordination.spawn_registry_path` (default `.artesian/spawns`), and terminated
 as a whole group on success, timeout, cancellation, verifier rejection, quota exhaustion, SIGINT,
 SIGTERM, or adapter drop. Shutdown is SIGTERM, `coordination.spawn_shutdown_grace_millis` of grace,
-then SIGKILL. Startup reaps registry entries whose owning Brunnr process is no longer alive, so a
+then SIGKILL. Startup reaps registry entries whose owning Artesian process is no longer alive, so a
 crashed daemon does not leave orphaned agent trees behind.
 
 Spawn ceilings are config-gated:
@@ -133,7 +133,7 @@ concurrency_limit = 2
 max_concurrent_spawns = 32
 spawn_max_lifetime_seconds = 1800
 spawn_shutdown_grace_millis = 2000
-spawn_registry_path = ".brunnr/spawns"
+spawn_registry_path = ".artesian/spawns"
 ```
 
 `concurrency_limit` controls task dispatch. `max_concurrent_spawns` is the hard process cap enforced
@@ -169,11 +169,11 @@ args = ["exec", "--model", "{model}", "{prompt}"]
 ```
 
 The same binary can therefore back multiple roles with different models. `{role}`, `{alias}`,
-`{agent}`, `{model}`, and `{prompt}` are rendered by `brunnr-process-agent` immediately before the
-supervised subprocess launch. If `model` is set, Brunnr validates it against the agent catalog
+`{agent}`, `{model}`, and `{prompt}` are rendered by `artesian-process-agent` immediately before the
+supervised subprocess launch. If `model` is set, Artesian validates it against the agent catalog
 before spawning; unavailable models fail early and do not create a process-tree registry entry.
 
-`brunnr agents refresh` probes configured agents and writes the cached catalog to
+`artesian agents refresh` probes configured agents and writes the cached catalog to
 `<memory.root>/agents.json`:
 
 ```json
@@ -197,14 +197,14 @@ If an entry is not reachable, `unreachable_reason` is one of `no-command`, `no-c
 `quota`, `network`, or `unknown`. `last_checked` lets callers decide whether to refresh stale
 catalog data.
 
-Discovery order is: an optional agent-specific CLI list command (`BRUNNR_<AGENT>_MODELS_CMD`),
+Discovery order is: an optional agent-specific CLI list command (`ARTESIAN_<AGENT>_MODELS_CMD`),
 provider-specific discovery hooks where credentials exist, curated static fallbacks for known
 agents, and a cheap reachability probe for the configured command. Cache files are written with
 restrictive permissions where the platform supports it.
 
 ## Credential handling contract
 
-Brunnr treats model/provider credentials as external runtime state:
+Artesian treats model/provider credentials as external runtime state:
 
 - reuse the provider session or CLI credentials the operator already configured;
 - do not collect or persist tokens unless the operator explicitly provides a storage path or
@@ -219,7 +219,7 @@ This contract applies to discovery, reachability probes, spawned role agents, an
 
 ## MCP orchestration tools
 
-When `brunnr-mcp` is started from a config in `orchestrate` or `full` mode, it exposes orchestration
+When `artesian-mcp` is started from a config in `orchestrate` or `full` mode, it exposes orchestration
 tools in addition to memory tools. In `memory` mode these routes are disabled and do not appear in
 `tools/list`.
 
@@ -233,7 +233,7 @@ Delegation always uses the configured `ProcessAgent` path, so process-group clea
 reaping, spawn caps, per-spawn timeouts, and max-lifetime watchdogs are inherited from the normal
 orchestration runtime.
 
-`brunnr init` writes a short master role prompt under the memory root. The prompt tells an
+`artesian init` writes a short master role prompt under the memory root. The prompt tells an
 in-session master to call `agents.list`, recall with `memory.context`, delegate bounded subtasks via
 `orchestrate.delegate(worker)`, and hand results through `orchestrate.handoff` before accepting
 durable outcomes.
@@ -249,11 +249,11 @@ standardizing on a cheap coordinator.
 ## Agent adapter provider guide
 
 Adding a new agent such as OpenClaw or `pi` should not require core changes. Implement the
-`Agent` trait: `spawn`, `send`, `stream`, `capabilities`, and `list_models`. Brunnr supports two
+`Agent` trait: `spawn`, `send`, `stream`, `capabilities`, and `list_models`. Artesian supports two
 integration modes:
 
-- Brunnr spawns the adapter as a role agent through supervised orchestration.
-- The agent consumes Brunnr's MCP memory/orchestration tools as a peer and keeps its own process
+- Artesian spawns the adapter as a role agent through supervised orchestration.
+- The agent consumes Artesian's MCP memory/orchestration tools as a peer and keeps its own process
   lifecycle.
 
 The default `ProcessAgent` adapter is enough for CLIs that accept prompt/model arguments. Native
@@ -273,15 +273,15 @@ Provider authors should keep detection lean:
 
 ## Router — agent routing and tool selection (token-saver)
 
-Two routing problems, one embedding-backed mechanism (reuses Mímisbrunnr's embedder):
+Two routing problems, one embedding-backed mechanism (reuses Aquifer's embedder):
 
 1. **Agent routing** — given a task, route it to the most suitable agent/role/specialist (e.g. a
    cheap OSS model for formatting, a frontier model for planning). Right-sizing the model per
    sub-task cuts cost.
 2. **Semantic tool selection** — when an agent has many MCP tools, including every tool
-  description in the prompt is wasteful. Brunnr can return only the **relevant subset** for the
+  description in the prompt is wasteful. Artesian can return only the **relevant subset** for the
   current task (`tools.find`), materially cutting prompt tokens. This is opt-in
-  (`coordination.router_enabled = true`) and directly serves Brunnr's token-economy mission.
+  (`coordination.router_enabled = true`) and directly serves Artesian's token-economy mission.
 
 ```mermaid
 flowchart LR
@@ -299,7 +299,7 @@ into primitive (directly executable) ones. See [task-tracking.md](task-tracking.
 
 ## Cost discipline (MAS scales by tokens)
 
-Many agents = communication/token overhead. Brunnr's defaults keep it cheap: indirect blackboard
+Many agents = communication/token overhead. Artesian's defaults keep it cheap: indirect blackboard
 comms, `memory.find` slices instead of full-history replay, the master "listening" while the
 worker spends, parallel independent sub-tasks, right-sized models per role, and embedding/result
 caching. Orchestration never becomes the bottleneck the literature warns about.
