@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Þingr task tracking primitives and file-backed task store.
+//! Headrace task tracking primitives and file-backed task store.
 
 mod files;
 mod store;

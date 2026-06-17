@@ -36,7 +36,7 @@ scales (13k → 1M tokens). See the [chart, tables, and methodology](benchmarks/
 - **Plugs into anything** — MCP-first: run memory-only and add persistent context to *any* agent or
   orchestrator (Claude Code, Codex, agent teams, your own loop) with no takeover and no lock-in.
 - **More than memory, when you want it** — optional master/worker/judge orchestration and
-  vendor-neutral [agent teams (Hirð)](docs/teams.md), as composable components you opt into.
+  vendor-neutral [agent teams (Flotilla)](docs/teams.md), as composable components you opt into.
 
 **New here?** [docs/onboarding.md](docs/onboarding.md) has a human Quickstart **and** an idempotent
 AI-agent bring-up recipe (any agent — Codex, Claude Code, Gemini CLI, opencode — can deploy Artesian
@@ -93,12 +93,12 @@ Backfill markdown or JSON memories idempotently:
 cargo run -p artesian-cli -- backfill ./memory-export
 ```
 
-Spawn role aliases are available in plain English and Norse form:
+Spawn a role-bound agent with the canonical role name (`master` / `worker` / `judge`):
 
 ```shell
 cargo run -p artesian-cli -- spawn master claude-code
-cargo run -p artesian-cli -- spawn thor codex
-cargo run -p artesian-cli -- spawn tyr gemini
+cargo run -p artesian-cli -- spawn worker codex
+cargo run -p artesian-cli -- spawn judge gemini
 ```
 
 ## Workspace

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Artesian-native agent teams (Hirð).
+//! Artesian-native agent teams (Flotilla).
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -252,13 +252,9 @@ fn parse_kind(input: &str) -> FlotillaResult<Role> {
 
 fn infer_kind(name: &str) -> Role {
     let name = name.to_ascii_lowercase();
-    if name.contains("judge") || name.contains("review") || name.contains("tyr") {
+    if name.contains("judge") || name.contains("review") {
         Role::Judge
-    } else if name.contains("master")
-        || name.contains("lead")
-        || name.contains("odin")
-        || name.contains("coordinator")
-    {
+    } else if name.contains("master") || name.contains("lead") || name.contains("coordinator") {
         Role::Master
     } else {
         Role::Worker

@@ -19,4 +19,4 @@ pub use config::{
 };
 pub use coordination::{Barrier, ResourceQuota, TokenAccounting};
 pub use event::{EventEnvelope, EventSender, EventType};
-pub use roles::{Erindi, ErindiStatus, Galdr, Role, RoleParseError, Thing};
+pub use roles::{CompletedJob, Job, JobStatus, Queue, Role, RoleParseError};

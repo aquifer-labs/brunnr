@@ -9,8 +9,9 @@ use aquifer::{
 };
 use artesian_core::{
     Agent, AgentCapabilities, AgentError, AgentEvent, AgentEventStream, AgentMessage,
-    AgentResponse, AgentResult, AgentSession, ArtesianConfig, Erindi, ErindiStatus, EventEnvelope,
-    EventSender, EventType, Galdr, Mode, ResourceQuota, Role, SpawnRequest, TokenAccounting,
+    AgentResponse, AgentResult, AgentSession, ArtesianConfig, CompletedJob, EventEnvelope,
+    EventSender, EventType, Job, JobStatus, Mode, ResourceQuota, Role, SpawnRequest,
+    TokenAccounting,
 };
 use chrono::Utc;
 use futures_util::{future::BoxFuture, stream, FutureExt};
@@ -103,7 +104,7 @@ pub struct RunUntilIdleReport {
 pub struct RunLog {
     pub events: Vec<EventEnvelope>,
     pub token_accounting: Vec<TokenAccounting>,
-    pub galdr: Vec<Galdr>,
+    pub completed: Vec<CompletedJob>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -325,8 +326,8 @@ impl Orchestrator {
                             "passed": true
                         }),
                     );
-                    let galdr = Galdr {
-                        erindi: erindi_from_task(&task, ErindiStatus::Done),
+                    let completed = CompletedJob {
+                        job: job_from_task(&task, JobStatus::Done),
                         commit: None,
                         completed_at: Utc::now(),
                     };
@@ -338,7 +339,7 @@ impl Orchestrator {
                         })
                         .await?;
                     self.state.retries.remove(&done.id);
-                    self.run_log.galdr.push(galdr);
+                    self.run_log.completed.push(completed);
                     report.completed += 1;
                 }
                 Ok(DispatchOutcome::Failed { task, reason }) => {
@@ -652,8 +653,8 @@ fn estimate_tokens(text: &str) -> u64 {
     text.split_whitespace().count() as u64
 }
 
-fn erindi_from_task(task: &Task, status: ErindiStatus) -> Erindi {
-    Erindi {
+fn job_from_task(task: &Task, status: JobStatus) -> Job {
+    Job {
         id: task.id.clone(),
         title: task.title.clone(),
         role: task.role,

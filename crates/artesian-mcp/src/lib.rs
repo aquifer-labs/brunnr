@@ -47,7 +47,7 @@ use aquifer::{QdrantVectorStore, QdrantVectorStoreConfig};
 
 const TOOL_INSTRUCTIONS: &str =
     "ALWAYS search the project memory before non-trivial work; store durable, reusable learnings.";
-const MASTER_ROLE_SKILL: &str = "In orchestrate/full mode, first call agents.list to inspect reachable agents, models, and role definitions. Use memory.context for compact project recall, create Hirð teams with team.create/team.spawn when several teammates are useful, delegate bounded subtasks through team.task.* or orchestrate.delegate(worker), and gate accepted outcomes through the judge/master path before marking work done.";
+const MASTER_ROLE_SKILL: &str = "In orchestrate/full mode, first call agents.list to inspect reachable agents, models, and role definitions. Use memory.context for compact project recall, create Flotilla teams with team.create/team.spawn when several teammates are useful, delegate bounded subtasks through team.task.* or orchestrate.delegate(worker), and gate accepted outcomes through the judge/master path before marking work done.";
 const ORCHESTRATION_TOOLS: &[&str] = &[
     "agents.list",
     "orchestrate.bind",
@@ -1120,7 +1120,7 @@ impl MemoryServer {
 
     #[tool(
         name = "team.create",
-        description = "Create an opt-in Hirð team topology for orchestrate/full mode."
+        description = "Create an opt-in Flotilla team topology for orchestrate/full mode."
     )]
     pub async fn team_create(
         &self,
@@ -1166,7 +1166,7 @@ impl MemoryServer {
 
     #[tool(
         name = "team.task.add",
-        description = "Add a task to the shared Þing task board for a Hirð team."
+        description = "Add a task to the shared headrace task board for a Flotilla team."
     )]
     pub async fn team_task_add(
         &self,
@@ -1247,7 +1247,7 @@ impl MemoryServer {
 
     #[tool(
         name = "team.message",
-        description = "Post a typed Hirð message (ASK/RESULT/REVIEW/DONE); direct addressing rides the shared EventEnvelope pool."
+        description = "Post a typed Flotilla message (ASK/RESULT/REVIEW/DONE); direct addressing rides the shared EventEnvelope pool."
     )]
     pub async fn team_message(
         &self,
@@ -1277,7 +1277,7 @@ impl MemoryServer {
 
     #[tool(
         name = "team.status",
-        description = "Return Hirð team lifecycle, teammates, and redacted EventEnvelope pool."
+        description = "Return Flotilla team lifecycle, teammates, and redacted EventEnvelope pool."
     )]
     pub async fn team_status(
         &self,
@@ -1296,7 +1296,7 @@ impl MemoryServer {
 
     #[tool(
         name = "team.cleanup",
-        description = "Terminate tracked teammate process groups for the current owner and mark the Hirð team cleaned up."
+        description = "Terminate tracked teammate process groups for the current owner and mark the Flotilla team cleaned up."
     )]
     pub async fn team_cleanup(
         &self,
@@ -1481,7 +1481,7 @@ fn tool_registry() -> &'static [RegisteredTool] {
         },
         RegisteredTool {
             name: "team.create",
-            description: "Create a Hirð agent team topology in orchestrate or full mode.",
+            description: "Create a Flotilla agent team topology in orchestrate or full mode.",
         },
         RegisteredTool {
             name: "team.spawn",
@@ -1489,7 +1489,7 @@ fn tool_registry() -> &'static [RegisteredTool] {
         },
         RegisteredTool {
             name: "team.task.add",
-            description: "Add a task to the shared Þing task board for a team.",
+            description: "Add a task to the shared headrace task board for a team.",
         },
         RegisteredTool {
             name: "team.task.claim",

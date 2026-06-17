@@ -2,8 +2,8 @@
 
 # Aquifer — Artesian Memory Architecture
 
-> *Aquifer is the well of wisdom at the root of Yggdrasil. Artesian's memory subsystem is the
-> well your agents drink from before they act.*
+> *An aquifer is a saturated layer that holds water under pressure and yields it on demand.
+> Artesian's memory subsystem is the well your agents draw from before they act.*
 
 This document describes how Artesian models, stores, and retrieves agent memory: the taxonomy
 (short-term vs long-term), the concrete data model, the retrieval mathematics as actually
@@ -273,7 +273,7 @@ Body markdown; relationships are plain links to other concepts ([k=60](/retrieva
 ```
 
 Reserved files follow OKF: `index.md` (directory listing) and `log.md` (chronological update
-history — also where the self-repair anchor/Muninn log lives, see §6). `FilesBackend` now writes
+history — also where the self-repair anchor log lives, see §6). `FilesBackend` now writes
 YAML `---` OKF files and keeps a backward-compatible reader for legacy TOML `+++` records.
 Ref: OKF v0.1 spec (Apache-2.0).
 
@@ -318,7 +318,7 @@ The consolidation path is opt-in; by default, short-term memory is an in-process
 Long sessions hit auto-compaction: the host summarizes/truncates context and the agent can lose
 its place. Artesian makes this a non-event (see `docs/self-repair.md`):
 
-1. **Session anchor (Muninn)** — a tiny, always-current record of the in-flight task, the plan
+1. **Session anchor (Anchor)** — a tiny, always-current record of the in-flight task, the plan
    pointer, the last N decisions, and the next concrete step. Cheap to write every turn.
 2. **Continuous externalization** — durable learnings are flushed to long-term memory as they
    occur, so truncation loses nothing recoverable via `find`.
@@ -342,7 +342,7 @@ Implemented surfaces:
 
 - MCP: `memory.anchor.get` / `memory.anchor.set`
 - CLI: `artesian memory anchor get|set|recover`
-- File: the current Muninn anchor is appended to OKF `log.md`
+- File: the current session anchor is appended to OKF `log.md`
 
 ---
 

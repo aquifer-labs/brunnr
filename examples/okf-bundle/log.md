@@ -10,7 +10,7 @@ timestamp: 2026-06-14T00:00:00Z
 - 2026-06-14T00:00:00Z — Created the example bundle with `rrf` and `embedding-model` concepts.
 
 <!--
-Artesian's session anchor (Muninn) is appended here as a single always-current entry, e.g.:
+Artesian's session anchor (Anchor) is appended here as a single always-current entry, e.g.:
   ## anchor
   task: implement SqliteVecVectorStore
   plan_pointer: docs/memory.md#3.3

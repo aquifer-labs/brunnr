@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Bifröst TUI crate placeholder.
+//! Gauge TUI / observability crate placeholder.
 
 use serde::{Deserialize, Serialize};
 

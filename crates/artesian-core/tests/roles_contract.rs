@@ -1,37 +1,35 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use artesian_core::{Erindi, ErindiStatus, Role, Thing};
+use artesian_core::{Job, JobStatus, Queue, Role};
 
 #[test]
-fn role_aliases_resolve_plain_english_and_norse_names() {
+fn role_aliases_resolve_canonical_names() {
     assert_eq!("master".parse::<Role>(), Ok(Role::Master));
-    assert_eq!("odin".parse::<Role>(), Ok(Role::Master));
     assert_eq!("worker".parse::<Role>(), Ok(Role::Worker));
-    assert_eq!("thor".parse::<Role>(), Ok(Role::Worker));
     assert_eq!("judge".parse::<Role>(), Ok(Role::Judge));
-    assert_eq!("tyr".parse::<Role>(), Ok(Role::Judge));
+    assert!("overseer".parse::<Role>().is_err());
 }
 
 #[test]
-fn thing_queue_preserves_fifo_order() {
-    let first = Erindi {
+fn queue_preserves_fifo_order() {
+    let first = Job {
         id: "0001".to_string(),
         title: "Scaffold".to_string(),
         role: Role::Worker,
-        status: ErindiStatus::Todo,
+        status: JobStatus::Todo,
     };
-    let second = Erindi {
+    let second = Job {
         id: "0002".to_string(),
         title: "Review".to_string(),
         role: Role::Judge,
-        status: ErindiStatus::Todo,
+        status: JobStatus::Todo,
     };
-    let mut thing = Thing::default();
+    let mut queue = Queue::default();
 
-    thing.push(first.clone());
-    thing.push(second.clone());
+    queue.push(first.clone());
+    queue.push(second.clone());
 
-    assert_eq!(thing.pop_next(), Some(first));
-    assert_eq!(thing.pop_next(), Some(second));
-    assert_eq!(thing.pop_next(), None);
+    assert_eq!(queue.pop_next(), Some(first));
+    assert_eq!(queue.pop_next(), Some(second));
+    assert_eq!(queue.pop_next(), None);
 }

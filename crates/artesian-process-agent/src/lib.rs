@@ -974,7 +974,7 @@ fn render_arg(template: &str, context: &SessionContext, prompt: &str) -> String 
     template
         .replace("{prompt}", prompt)
         .replace("{role}", context.role.canonical_alias())
-        .replace("{alias}", context.role.norse_alias())
+        .replace("{alias}", context.role.canonical_alias())
         .replace("{agent}", &context.agent)
         .replace("{model}", context.model.as_deref().unwrap_or_default())
 }

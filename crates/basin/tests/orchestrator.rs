@@ -56,8 +56,8 @@ async fn three_task_dag_dispatches_parallel_then_synthesis_task() {
 }
 
 #[tokio::test]
-async fn verifier_failure_retries_then_blocks_and_pass_creates_galdr() {
-    let tempdir = TempDir::new("urdar-retry");
+async fn verifier_failure_retries_then_blocks_and_pass_creates_completed_job() {
+    let tempdir = TempDir::new("basin-retry");
     let store = Arc::new(FilesTaskStore::new(tempdir.join("tasks")));
     create_task(store.as_ref(), "fail", "Fails verification", []).await;
     let agent = Arc::new(MockAgent::new(Duration::ZERO));
@@ -84,9 +84,9 @@ async fn verifier_failure_retries_then_blocks_and_pass_creates_galdr() {
         .expect("task lookup should succeed")
         .expect("task exists");
     assert_eq!(task.status, TaskStatus::Blocked);
-    assert!(orchestrator.run_log().galdr.is_empty());
+    assert!(orchestrator.run_log().completed.is_empty());
 
-    let tempdir = TempDir::new("urdar-pass");
+    let tempdir = TempDir::new("basin-pass");
     let store = Arc::new(FilesTaskStore::new(tempdir.join("tasks")));
     create_task(store.as_ref(), "pass", "Passes verification", []).await;
     let agent = Arc::new(MockAgent::new(Duration::ZERO));
@@ -110,7 +110,7 @@ async fn verifier_failure_retries_then_blocks_and_pass_creates_galdr() {
         .expect("task lookup should succeed")
         .expect("task exists");
     assert_eq!(task.status, TaskStatus::Done);
-    assert_eq!(orchestrator.run_log().galdr.len(), 1);
+    assert_eq!(orchestrator.run_log().completed.len(), 1);
 }
 
 #[tokio::test]

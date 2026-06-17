@@ -16,8 +16,7 @@ infra), `sqlite-vec` (local hybrid, zero infra), or feature-gated `qdrant` (shar
 
 ## `orchestrate` (opt-in)
 
-Adds the optional master/worker/judge roles (Óðinn/Þórr/Týr; aliases `master`/`worker`/`judge`)
-and the headrace task queue. Composable: master-judge only, one agent bound to all roles
+Adds the optional master/worker/judge roles and the headrace task queue. Composable: master-judge only, one agent bound to all roles
 (e.g. Codex everywhere), or the full triad. No mandatory agent loop — leave delegation off if you
 don't want it. See [task-tracking.md](task-tracking.md).
 

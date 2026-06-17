@@ -17,11 +17,11 @@ the judge gate passes. Debate/router/Contract-Net/pipeline remain config-selecta
 
 ## Roles
 
-| Role (Norse / alias) | Job | MAS pattern |
+| Role | Job | MAS pattern |
 |---|---|---|
-| Óðinn / `master` | plan, decompose, decide when to delegate, "listen" for results | manager |
-| Þórr / `worker` | execute one task; write code, not commits | worker |
-| Týr / `judge` | review against gates (tests/lint); the **only** committer (Galdr) | critic / gatekeeper |
+| `master` | plan, decompose, decide when to delegate, "listen" for results | manager |
+| `worker` | execute one task; write code, not commits | worker |
+| `judge` | review against gates (tests/lint); the **only** committer (`CompletedJob`) | critic / gatekeeper |
 
 Roles are composable: master-judge only, one agent bound to all roles (e.g. Codex everywhere), or
 the full triad. The master spends its tokens planning and **launches the worker so the worker's
@@ -31,7 +31,7 @@ gate.
 ### Verifiers define the boundary of trust
 
 The judge does not "vibe-accept" — it gates on **configurable verifiers**: concrete, deterministic
-checks the work must pass before reaching `done`/commit (`Galdr`). Typical verifiers: test suite,
+checks the work must pass before reaching `done`/commit (`CompletedJob`). Typical verifiers: test suite,
 linter, type-check, build, format. Verifiers are declared in config; only when they pass is the
 worker's output trusted enough to commit. This is what makes long-running autonomy safe: the
 breadth of what an agent may do unattended is exactly the breadth your verifiers cover. Durable

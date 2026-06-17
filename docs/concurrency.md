@@ -86,7 +86,7 @@ on write and to a filter on read.
     collide; readers may open the file directly. Per-project file = per-project lock.
 - **The few non-idempotent ops** (consolidation/dedup merges, redundancy pruning) run as a
   **single async job** (one writer), or use Qdrant optimistic concurrency — never concurrently from
-  many agents. The session anchor (Muninn) is per-session, so it never contends.
+  many agents. The session anchor (Anchor) is per-session, so it never contends.
 
 ## Session lanes
 

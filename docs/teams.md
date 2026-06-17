@@ -2,7 +2,7 @@
 
 # Agent Teams — Flotilla
 
-A **Flotilla** (Old Norse for a lord's retinue) is a vendor-neutral agent team: a **lead** plus
+A **Flotilla** (a fleet that moves together) is a vendor-neutral agent team: a **lead** plus
 **teammates** (and an optional **judge**) that coordinate over a shared task board and a shared
 message pool, all reading and writing **one shared persistent memory**. Teammates can be backed by
 any agent and model — Claude, Codex, opencode, Gemini, a local model — and every teammate runs
@@ -29,14 +29,13 @@ you opt into orchestration, and `memory` mode is unaffected.
 
 ## Roles: three archetypes, your own names
 
-Artesian keeps a small, clear coordination grammar — three **archetypes** (kinds), with both plain and
-Norse aliases:
+Artesian keeps a small, clear coordination grammar — three **archetypes** (kinds):
 
-| Kind | Aliases | Responsibility |
-|---|---|---|
-| `master` | `odin` | the lead: plans, splits work, assigns/synthesizes |
-| `worker` | `thor` | a teammate that executes a bounded task |
-| `judge` | `tyr` | verifies a result before it is accepted (sole committer) |
+| Kind | Responsibility |
+|---|---|
+| `master` | the lead: plans, splits work, assigns/synthesizes |
+| `worker` | a teammate that executes a bounded task |
+| `judge` | verifies a result before it is accepted (sole committer) |
 
 On top of that, **you define your own named specializations** — `security-reviewer`, `architect`,
 `test-runner` — each mapping to one archetype. So you name roles in your own language while the
@@ -131,4 +130,4 @@ orchestration tools are off outside `orchestrate` / `full`, so this is the defau
 Flotilla builds on established multi-agent patterns — MetaGPT's role-based publish-subscribe message
 pool, OpenAI Symphony's single-authority dispatch, agent-teams-ai, and Claude Code's agent teams and
 sub-agents. Artesian reuses ideas and credits them; it does not reproduce their code, specifications,
-or marks. The `.agent/agents/*.md` schema and the Norse naming are Artesian's own.
+or marks. The `.agent/agents/*.md` schema and the hydro naming are Artesian's own.

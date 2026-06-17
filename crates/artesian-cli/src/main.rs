@@ -1005,7 +1005,7 @@ fn write_master_role_skill(memory_root: &Path) -> Result<()> {
     }
     fs::write(
         path,
-        "<!-- SPDX-License-Identifier: Apache-2.0 -->\n\n# Artesian Lead Role Skill\n\nWhen Artesian is running in `orchestrate` or `full` mode, inspect `agents.list` for reachable agents, models, and role definitions. Use `memory.context` for compact project recall. For multi-teammate work, create a Hirð with `team.create`, admit definitions with `team.spawn`, coordinate through `team.task.*` and `team.message`, and gate accepted outcomes through the judge/master path before marking work done. For a single bounded subtask, `orchestrate.delegate(worker)` is still sufficient.\n",
+        "<!-- SPDX-License-Identifier: Apache-2.0 -->\n\n# Artesian Lead Role Skill\n\nWhen Artesian is running in `orchestrate` or `full` mode, inspect `agents.list` for reachable agents, models, and role definitions. Use `memory.context` for compact project recall. For multi-teammate work, create a Flotilla with `team.create`, admit definitions with `team.spawn`, coordinate through `team.task.*` and `team.message`, and gate accepted outcomes through the judge/master path before marking work done. For a single bounded subtask, `orchestrate.delegate(worker)` is still sufficient.\n",
     )?;
     Ok(())
 }
@@ -1094,9 +1094,8 @@ async fn spawn(
         )
         .await?;
     println!(
-        "spawn completed: role={} alias={} agent={} cwd={}",
+        "spawn completed: role={} agent={} cwd={}",
         request.role.canonical_alias(),
-        request.role.norse_alias(),
         request.agent,
         request.working_dir.as_deref().unwrap_or(".")
     );

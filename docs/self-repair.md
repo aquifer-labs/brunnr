@@ -8,7 +8,7 @@ with targeted recall, so even switching agents mid-task (e.g. Claude Code → Co
 
 Three mechanisms:
 
-1. **Session anchor (Muninn)** — a tiny, always-current record of the in-flight task, the active
+1. **Session anchor (Anchor)** — a tiny, always-current record of the in-flight task, the active
    plan pointer, the last N decisions, and the next concrete step. Cheap to update every turn.
 2. **Continuous externalization** — durable learnings are written to long-term memory as they
    occur, so truncation loses nothing recoverable via `memory.find`.
@@ -25,7 +25,7 @@ flowchart LR
   C -->|no| ACT
 ```
 
-Status: `MuninnAnchorStore` writes and reads the anchor in OKF `log.md`; MCP exposes
+Status: `AnchorAnchorStore` writes and reads the anchor in OKF `log.md`; MCP exposes
 `memory.anchor.get` / `memory.anchor.set`; the CLI exposes `artesian memory anchor get|set|recover`.
 The host-specific compaction detector remains an integration concern, but the replay primitive is
 implemented and tested.

@@ -24,27 +24,19 @@ impl Role {
         }
     }
 
-    pub const fn norse_alias(self) -> &'static str {
-        match self {
-            Self::Master => "odin",
-            Self::Worker => "thor",
-            Self::Judge => "tyr",
-        }
-    }
-
     pub const fn display_name(self) -> &'static str {
         match self {
-            Self::Master => "Óðinn",
-            Self::Worker => "Þórr",
-            Self::Judge => "Týr",
+            Self::Master => "Master",
+            Self::Worker => "Worker",
+            Self::Judge => "Judge",
         }
     }
 
     pub const fn aliases(self) -> &'static [&'static str] {
         match self {
-            Self::Master => &["master", "odin"],
-            Self::Worker => &["worker", "thor"],
-            Self::Judge => &["judge", "tyr"],
+            Self::Master => &["master"],
+            Self::Worker => &["worker"],
+            Self::Judge => &["judge"],
         }
     }
 }
@@ -54,9 +46,9 @@ impl FromStr for Role {
 
     fn from_str(input: &str) -> Result<Self, Self::Err> {
         match input.trim().to_ascii_lowercase().as_str() {
-            "master" | "odin" => Ok(Self::Master),
-            "worker" | "thor" => Ok(Self::Worker),
-            "judge" | "tyr" => Ok(Self::Judge),
+            "master" => Ok(Self::Master),
+            "worker" => Ok(Self::Worker),
+            "judge" => Ok(Self::Judge),
             other => Err(RoleParseError {
                 value: other.to_string(),
             }),
@@ -72,32 +64,35 @@ pub struct RoleParseError {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
-pub enum ErindiStatus {
+pub enum JobStatus {
     Todo,
     Doing,
     Done,
     Blocked,
 }
 
+/// A lightweight, role-tagged unit of work in the in-core queue. (The file-backed task
+/// tracker with its DAG lives in the `headrace` crate; this is the minimal queue primitive.)
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Erindi {
+pub struct Job {
     pub id: String,
     pub title: String,
     pub role: Role,
-    pub status: ErindiStatus,
+    pub status: JobStatus,
 }
 
+/// A FIFO queue of role-tagged jobs.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub struct Thing {
-    entries: VecDeque<Erindi>,
+pub struct Queue {
+    entries: VecDeque<Job>,
 }
 
-impl Thing {
-    pub fn push(&mut self, erindi: Erindi) {
-        self.entries.push_back(erindi);
+impl Queue {
+    pub fn push(&mut self, job: Job) {
+        self.entries.push_back(job);
     }
 
-    pub fn pop_next(&mut self) -> Option<Erindi> {
+    pub fn pop_next(&mut self) -> Option<Job> {
         self.entries.pop_front()
     }
 
@@ -110,9 +105,10 @@ impl Thing {
     }
 }
 
+/// A completed job together with the commit that recorded it — the judge's accepted output.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Galdr {
-    pub erindi: Erindi,
+pub struct CompletedJob {
+    pub job: Job,
     pub commit: Option<String>,
     pub completed_at: DateTime<Utc>,
 }

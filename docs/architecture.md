@@ -18,7 +18,7 @@ This page is the map; each concern has its own doc.
 
 | Crate | Responsibility |
 |---|---|
-| `artesian-core` | roles (master/worker/judge), task-queue types (Erindi/Thing/Galdr), config, modes, the `Agent` adapter trait, the event envelope |
+| `artesian-core` | roles (master/worker/judge), task-queue types (Job/Queue/CompletedJob), config, modes, the `Agent` adapter trait, the event envelope |
 | `aquifer` | memory: `MemoryBackend`, the `VectorStore` seam, `VectorMemoryBackend<V>`, RRF, tiers, OKF files |
 | `headgate` | ACC control plane: `RecallStore` data-plane seam, the `QualifyGate`, the bounded `CommittedContextState`, the commit-loop controller, `GaugeMetrics` |
 | `headrace` | task tracking: `TaskStore` (Files/Vector/External), the task DAG |
@@ -43,7 +43,7 @@ retrieval store, gate, or compressor is a small adapter, never a core change.
   (Jira/Linear). → [task-tracking.md](task-tracking.md)
 - **Self-repair** — surviving auto-compaction via a deterministic anchor + recall. → [self-repair.md](self-repair.md)
 - **Modes** — `memory` | `orchestrate` | `full` | `advanced` (BYO). → [modes.md](modes.md)
-- **Context tree** — layered, priority-ordered AGENTS/CLAUDE md. → [yggdrasil.md](yggdrasil.md)
+- **Context tree** — layered, priority-ordered AGENTS/CLAUDE md. → [context-tree.md](context-tree.md)
 - **Build & contribute** — [development.md](development.md)
 
 ## Design invariants

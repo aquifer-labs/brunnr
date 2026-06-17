@@ -16,7 +16,7 @@ New here? Start with **[onboarding](onboarding.md)**, then **[positioning](posit
 | [architecture.md](architecture.md) | Top-level system architecture and crates |
 | [positioning.md](positioning.md) | Why Artesian, and how it relates to adjacent projects |
 | [modes.md](modes.md) | Operating modes: `memory`, `orchestrate`, `full`, `advanced` |
-| [yggdrasil.md](yggdrasil.md) | Layered, priority-ordered context-md tree |
+| [context-tree.md](context-tree.md) | Layered, priority-ordered context-md tree |
 
 ### Memory — Aquifer (the flagship)
 
@@ -52,4 +52,4 @@ New here? Start with **[onboarding](onboarding.md)**, then **[positioning](posit
 
 ---
 
-Role aliases: `master`/`worker`/`judge` (canonical) and `odin`/`thor`/`tyr` (accepted everywhere).
+Role names: `master` / `worker` / `judge`.

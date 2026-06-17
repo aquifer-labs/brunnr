@@ -28,7 +28,7 @@ The naming family draws from hydrology — the physics of water moving through r
 | **tap / spout** | auto-surfacing of relevant context — what flows out at the surface |
 | **well / draw** | recall: drawing from the aquifer |
 
-Canonical role strings: `master` / `worker` / `judge`. Accepted aliases: `odin` / `thor` / `tyr`.
+Canonical role strings: `master` / `worker` / `judge`.
 
 ## Origin
 

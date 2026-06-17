@@ -2,7 +2,7 @@
 
 # headrace — Artesian Task Tracking
 
-> *headrace was the Norse assembly where matters were decided. Artesian's task tracker is where work
+> *A headrace is the channel that carries water to the wheel. Artesian's task tracker is where work
 > items are filed, claimed, and resolved.*
 
 Task tracking is a first-class Artesian component, not just an orchestrator internal. It is usable
@@ -27,29 +27,29 @@ orchestrator loop remains future work.
 
 ## 2. Model
 
-A task is an `Erindi` (already a core type). It carries: `id`, `title`, `priority`, `state`,
+A task is a `Job` (a core queue type). It carries: `id`, `title`, `priority`, `state`,
 `body` (md), `tags`, `blockers`, `created_at`, `updated_at`, and optional `external_ref`
-(e.g. a Linear/Jira issue id). States form the queue (`headrace`):
+(e.g. a Linear/Jira issue id). States form the queue:
 
 ```mermaid
 stateDiagram-v2
   [*] --> todo
   todo --> doing: claim (single authority)
-  doing --> done: judge accepts (Galdr)
+  doing --> done: judge accepts (CompletedJob)
   doing --> blocked: blocker / needs input
   blocked --> todo: unblocked
   doing --> todo: retry
   done --> [*]
 ```
 
-`Galdr` (a completed task) is reached only through the judge gate in orchestrate mode; in
+`CompletedJob` (a completed task) is reached only through the judge gate in orchestrate mode; in
 standalone `tasks` mode the human moves the task. A **single mutation authority** serializes
 state transitions (the orchestrator, or the CLI lock) to prevent duplicate claims — the
 anti-race lesson from Symphony.
 
 ### Tasks form a DAG (dependencies → parallelism + targeted retry)
 
-`Erindi.blockers` are edges: tasks form a **directed acyclic graph**, not a flat list. This lets
+`Job.blockers` are edges: tasks form a **directed acyclic graph**, not a flat list. This lets
 independent sub-tasks run in **parallel workers**, encodes prerequisites explicitly, and isolates
 a failed sub-task for retry without restarting the plan. Decomposition (by the planner/master)
 refines **compound** tasks into **primitive** (directly executable) ones — a Hierarchical Task
@@ -101,13 +101,13 @@ flowchart LR
   end
   subgraph orchestrate["mode = orchestrate"]
     UR[Basin orchestrator] --> TSy[TaskStore]
-    UR --> OD[Óðinn/master]
-    UR --> TH[Þórr/worker]
-    UR --> TY[Týr/judge]
+    UR --> OD[master]
+    UR --> TH[worker]
+    UR --> TY[judge]
   end
   TSx -. same trait .- TSy
   TSy -. mirror .-> EXT[(Jira / Linear via MCP)]
-  TSy -. index .-> Aquifer)]
+  TSy -. index .-> MEM[(Aquifer)]
 ```
 
 Standalone users get a useful queue with one binary; orchestrate users get the same queue driven
