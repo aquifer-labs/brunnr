@@ -1,15 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use aquifer::{
-    recover_after_compaction, FilesBackend, MemoryBackend, MemoryTier, MuninnAnchorStore,
+    recover_after_compaction, AnchorAnchorStore, FilesBackend, MemoryBackend, MemoryTier,
     SessionAnchor, StoreMemory,
 };
 use artesian_test_support::TempDir;
 
 #[tokio::test]
-async fn muninn_anchor_round_trips_through_log() {
+async fn anchor_anchor_round_trips_through_log() {
     let tempdir = TempDir::new("anchor-roundtrip");
-    let store = MuninnAnchorStore::new(tempdir.path());
+    let store = AnchorAnchorStore::new(tempdir.path());
     let mut anchor = SessionAnchor::new("implement task store", "write contract tests");
     anchor.plan_pointer = Some("docs/task-tracking.md#taskstore".to_string());
     anchor.last_decisions = vec!["single mutation authority".to_string()];
@@ -52,7 +52,7 @@ async fn simulated_compaction_replays_anchor_and_targeted_memory() {
         .await
         .expect("memory store should succeed");
 
-    let anchors = MuninnAnchorStore::new(tempdir.path());
+    let anchors = AnchorAnchorStore::new(tempdir.path());
     anchors
         .set(SessionAnchor::new(
             "simulated compaction recovery",

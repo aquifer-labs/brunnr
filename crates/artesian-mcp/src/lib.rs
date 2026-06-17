@@ -12,7 +12,7 @@ use std::{
 use std::env;
 
 use aquifer::{
-    FilesBackend, MemoryBackend, MemoryQuery, MemoryScope, MemoryTier, MuninnAnchorStore,
+    AnchorAnchorStore, FilesBackend, MemoryBackend, MemoryQuery, MemoryScope, MemoryTier,
     SessionAnchor, SqliteVecVectorStore, SqliteVecVectorStoreConfig, StoreMemory,
     VectorMemoryBackend, VectorMemoryConfig,
 };
@@ -67,7 +67,7 @@ const ORCHESTRATION_TOOLS: &[&str] = &[
 #[derive(Clone)]
 pub struct MemoryServer {
     backend: Arc<dyn MemoryBackend>,
-    anchor_store: Option<MuninnAnchorStore>,
+    anchor_store: Option<AnchorAnchorStore>,
     okf_root: Option<PathBuf>,
     router_enabled: bool,
     mode: Mode,
@@ -86,7 +86,7 @@ impl MemoryServer {
         let root = root.into();
         Self::with_backend_and_anchor(
             Arc::new(FilesBackend::new(&root)),
-            Some(MuninnAnchorStore::new(&root)),
+            Some(AnchorAnchorStore::new(&root)),
         )
         .with_okf_root(Some(root))
     }
@@ -97,7 +97,7 @@ impl MemoryServer {
 
     pub fn with_backend_and_anchor(
         backend: Arc<dyn MemoryBackend>,
-        anchor_store: Option<MuninnAnchorStore>,
+        anchor_store: Option<AnchorAnchorStore>,
     ) -> Self {
         Self {
             backend,
@@ -214,7 +214,7 @@ impl MemoryServer {
     pub fn from_config(config: &MemoryConfig) -> anyhow::Result<Self> {
         Ok(Self::with_backend_and_anchor(
             open_memory_backend(config)?,
-            Some(MuninnAnchorStore::new(&config.root)),
+            Some(AnchorAnchorStore::new(&config.root)),
         )
         .with_okf_root(Some(PathBuf::from(&config.root))))
     }

@@ -33,11 +33,11 @@ impl SessionAnchor {
 }
 
 #[derive(Debug, Clone)]
-pub struct MuninnAnchorStore {
+pub struct AnchorAnchorStore {
     log_path: PathBuf,
 }
 
-impl MuninnAnchorStore {
+impl AnchorAnchorStore {
     pub fn new(root: impl AsRef<Path>) -> Self {
         let root = root.as_ref();
         let log_path = if root.join("log.md").exists() {
@@ -100,7 +100,7 @@ pub struct RecoveryContext {
 }
 
 pub async fn recover_after_compaction(
-    anchors: &MuninnAnchorStore,
+    anchors: &AnchorAnchorStore,
     backend: &dyn MemoryBackend,
     limit: usize,
 ) -> MemoryResult<Option<RecoveryContext>> {

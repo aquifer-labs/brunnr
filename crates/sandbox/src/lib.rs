@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Optional Hvergelmir sandbox runtime seam.
+//! Optional Sandbox sandbox runtime seam.
 
 use std::{
     path::{Path, PathBuf},

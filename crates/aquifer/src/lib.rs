@@ -29,7 +29,7 @@ mod vector;
 mod vector_memory;
 mod working;
 
-pub use anchor::{recover_after_compaction, MuninnAnchorStore, RecoveryContext, SessionAnchor};
+pub use anchor::{recover_after_compaction, AnchorAnchorStore, RecoveryContext, SessionAnchor};
 pub use backend::MemoryBackend;
 pub use backfill::{
     backfill_directory, collect_memory_paths, parse_memory_path, BackfillFailure, BackfillStats,

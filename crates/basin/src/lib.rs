@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Urdarbrunnr orchestration loop.
+//! Basin orchestration loop.
 
 use std::{collections::HashMap, path::PathBuf, sync::Arc, time::Duration};
 

@@ -217,13 +217,10 @@ async fn vector_task_store_indexes_tasks_for_find() {
     let store = VectorTaskStore::new(source, memory);
     let mut new_task = NewTask::primitive("indexed task search");
     new_task.id = Some("task-indexed".to_string());
-    new_task.description = "find this task through Mimisbrunnr".to_string();
+    new_task.description = "find this task through Aquifer".to_string();
     store.create(new_task).await.expect("create should succeed");
 
-    let found = store
-        .find("Mimisbrunnr")
-        .await
-        .expect("find should succeed");
+    let found = store.find("Aquifer").await.expect("find should succeed");
 
     assert_eq!(found.len(), 1);
     assert_eq!(found[0].id, "task-indexed");

@@ -12,8 +12,8 @@ use std::{
 use anyhow::{bail, Context, Result};
 use aquifer::{
     default_migration_collection, export_okf_bundle, recover_after_compaction, verify_okf_bundle,
-    CollectionCompat, MemoryBackend, MemoryQuery, MemoryScope, MemoryTier, MigrationPlan,
-    MuninnAnchorStore, SessionAnchor, StoreMemory, VectorMemoryConfig,
+    AnchorAnchorStore, CollectionCompat, MemoryBackend, MemoryQuery, MemoryScope, MemoryTier,
+    MigrationPlan, SessionAnchor, StoreMemory, VectorMemoryConfig,
 };
 use artesian_core::{
     Agent, AgentBinding, BrunnrConfig, MemoryBackendKind, MemoryConfig, Mode, Role, SpawnRequest,
@@ -1266,7 +1266,7 @@ async fn anchor(command: AnchorCommand) -> Result<()> {
     match command {
         AnchorCommand::Get { config, root } => {
             let memory = memory_config_for_command(&config, root, None)?;
-            let store = MuninnAnchorStore::new(&memory.root);
+            let store = AnchorAnchorStore::new(&memory.root);
             println!("{}", serde_json::to_string_pretty(&store.get().await?)?);
         }
         AnchorCommand::Set {
@@ -1278,7 +1278,7 @@ async fn anchor(command: AnchorCommand) -> Result<()> {
             root,
         } => {
             let memory = memory_config_for_command(&config, root, None)?;
-            let store = MuninnAnchorStore::new(&memory.root);
+            let store = AnchorAnchorStore::new(&memory.root);
             let mut anchor = SessionAnchor::new(current_task, next_step);
             anchor.plan_pointer = plan_pointer;
             anchor.last_decisions = last_decisions;
@@ -1292,7 +1292,7 @@ async fn anchor(command: AnchorCommand) -> Result<()> {
             backend,
         } => {
             let memory = memory_config_for_command(&config, root, backend)?;
-            let anchor_store = MuninnAnchorStore::new(&memory.root);
+            let anchor_store = AnchorAnchorStore::new(&memory.root);
             let backend = open_memory_backend(&memory)?;
             let recovered =
                 recover_after_compaction(&anchor_store, backend.as_ref(), limit).await?;
