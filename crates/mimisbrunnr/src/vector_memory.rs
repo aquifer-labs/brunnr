@@ -263,6 +263,9 @@ impl<V: VectorStore> VectorMemoryBackend<V> {
             "session_id",
             "task_id",
             "user_id",
+            // Indexed so small-to-big sibling lookups (filter by parent) hit an index
+            // instead of scanning the whole collection.
+            "metadata.parent_node",
         ] {
             self.store
                 .ensure_payload_index(

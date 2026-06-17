@@ -11,9 +11,10 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::Value;
 
 use crate::{
-    vector::payload_matches_filter, Distance, Filter, MemoryError, MemoryResult, PayloadIndex,
-    VectorCollection, VectorMemoryBackend, VectorMemoryConfig, VectorPoint, VectorSearch,
-    VectorSearchHit, VectorSearchSource, VectorStore, VectorStoreCapabilities,
+    vector::payload_matches_filter, Distance, Filter, FilterCondition, FilterValue, MemoryError,
+    MemoryResult, PayloadIndex, VectorCollection, VectorMemoryBackend, VectorMemoryConfig,
+    VectorPoint, VectorSearch, VectorSearchHit, VectorSearchSource, VectorStore,
+    VectorStoreCapabilities,
 };
 
 pub type SqliteVecBackend = VectorMemoryBackend<SqliteVecVectorStore>;
@@ -120,16 +121,36 @@ impl VectorStore for SqliteVecVectorStore {
     ) -> BoxFuture<'_, MemoryResult<()>> {
         let collection = collection.to_string();
         async move {
-            if index.field != "node_id" {
-                return Ok(());
-            }
             let tables = Tables::new(&collection)?;
             let connection = self.lock()?;
+            if index.field == "node_id" {
+                connection
+                    .execute(
+                        &format!(
+                            "CREATE INDEX IF NOT EXISTS {index} ON {records}(node_id)",
+                            index = tables.node_index,
+                            records = tables.records,
+                        ),
+                        [],
+                    )
+                    .map_err(sqlite_error)?;
+                return Ok(());
+            }
+            // Expression index over a JSON payload field (supports nested dotted paths
+            // such as `metadata.parent_node`) so equality filters use an index instead
+            // of a full table scan. Unrecognized field shapes are simply not indexed.
+            let Some(path) = json_field_path(&index.field) else {
+                return Ok(());
+            };
+            let index_name = quote_identifier(&format!(
+                "{}_{}_idx",
+                sanitize_collection(&collection)?,
+                sanitize_field(&index.field),
+            ));
             connection
                 .execute(
                     &format!(
-                        "CREATE INDEX IF NOT EXISTS {index} ON {records}(node_id)",
-                        index = tables.node_index,
+                        "CREATE INDEX IF NOT EXISTS {index_name} ON {records}(json_extract(payload, '{path}'))",
                         records = tables.records,
                     ),
                     [],
@@ -454,14 +475,53 @@ fn scan(
     filter: &Filter,
     limit: usize,
 ) -> MemoryResult<Vec<VectorSearchHit>> {
+    use rusqlite::types::Value as SqlValue;
+
+    // Push simple `must` equality conditions into SQL so the query uses an index and
+    // returns *all* matching rows (e.g. every sibling chunk of a parent), instead of
+    // scanning the first N rows and filtering in Rust — which both was slow and could
+    // miss matches that sat beyond the row cap. `payload_matches_filter` still runs as
+    // the full-correctness backstop for conditions not pushed down.
+    let mut clauses: Vec<String> = Vec::new();
+    let mut binds: Vec<SqlValue> = Vec::new();
+    for condition in &filter.must {
+        if let FilterCondition::Eq {
+            field,
+            value: FilterValue::String(text),
+        } = condition
+        {
+            if field == "node_id" {
+                clauses.push("node_id = ?".to_string());
+                binds.push(SqlValue::Text(text.clone()));
+            } else if let Some(path) = json_field_path(field) {
+                clauses.push(format!("json_extract(payload, '{path}') = ?"));
+                binds.push(SqlValue::Text(text.clone()));
+            }
+        }
+    }
+    let pushed = !clauses.is_empty();
+    let where_clause = if pushed {
+        format!("WHERE {}", clauses.join(" AND "))
+    } else {
+        String::new()
+    };
+    // When narrowed in SQL the limit is exact; otherwise keep headroom so the
+    // Rust-side filter still has rows to match.
+    let sql_limit = if pushed {
+        limit.max(1)
+    } else {
+        limit.max(1) * 10
+    };
+    binds.push(SqlValue::Integer(sql_limit as i64));
+
     let mut statement = connection
         .prepare(&format!(
-            "SELECT id, payload FROM {records} LIMIT ?1",
+            "SELECT id, payload FROM {records} {where_clause} LIMIT ?",
             records = tables.records,
         ))
         .map_err(sqlite_error)?;
     let rows = statement
-        .query_map([(limit.max(1) * 10) as i64], row_to_point)
+        .query_map(rusqlite::params_from_iter(binds), row_to_point)
         .map_err(sqlite_error)?;
 
     let mut hits = Vec::new();
@@ -489,6 +549,29 @@ fn row_to_point(row: &rusqlite::Row<'_>) -> rusqlite::Result<VectorPoint> {
         vector: Vec::new(),
         payload,
     })
+}
+
+/// Map a filter field to a JSON path for `json_extract`, e.g. `metadata.parent_node`
+/// -> `$.metadata.parent_node`. Returns `None` for fields containing characters other
+/// than ASCII alphanumerics, `_`, or `.` (so the path is never an injection vector and
+/// the equality filter falls back to the in-Rust check).
+fn json_field_path(field: &str) -> Option<String> {
+    if field.is_empty()
+        || !field
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.')
+    {
+        return None;
+    }
+    Some(format!("$.{field}"))
+}
+
+/// Sanitize a field into an identifier fragment for an index name (`.` -> `_`).
+fn sanitize_field(field: &str) -> String {
+    field
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+        .collect()
 }
 
 fn sanitize_collection(collection: &str) -> MemoryResult<String> {

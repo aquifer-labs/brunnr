@@ -518,3 +518,64 @@ async fn single_chunk_records_are_unaffected_by_small_to_big() {
         );
     }
 }
+
+/// Small-to-big must find a parent's sibling chunks regardless of where they sit in the
+/// collection. Storing many unrelated docs first pushes the multi-chunk document's chunks
+/// to high row positions; a scan that only looked at the first rows would miss them and
+/// silently skip expansion. The indexed sibling lookup must still return the full window.
+#[tokio::test]
+async fn small_to_big_finds_siblings_beyond_the_scan_window() {
+    let store = SqliteVecVectorStore::in_memory().expect("sqlite-vec store should open");
+    let backend = VectorMemoryBackend::with_embedder(
+        store,
+        VectorMemoryConfig {
+            collection: "scale".to_string(),
+            dimensions: TEST_DIMENSIONS,
+            ..VectorMemoryConfig::new("scale")
+        },
+        Arc::new(TestEmbedder),
+    )
+    .expect("backend should construct");
+
+    for i in 0..60 {
+        backend
+            .store(StoreMemory {
+                node_id: Some(format!("node:filler-{i}")),
+                ..StoreMemory::atom(format!("unrelated filler note number {i} about widgets"))
+            })
+            .await
+            .expect("store filler");
+    }
+
+    let marker = "kumquat-marker-nine";
+    let big = format!(
+        "{}\n\nthe key fact is {marker}\n\n{}",
+        "alpha beta gamma. ".repeat(2_000),
+        "delta epsilon zeta. ".repeat(2_000),
+    );
+    backend
+        .store(StoreMemory {
+            node_id: Some("node:late".to_string()),
+            ..StoreMemory::atom(big)
+        })
+        .await
+        .expect("store the late multi-chunk doc");
+
+    let hits = backend
+        .find(MemoryQuery::new("the key fact kumquat-marker-nine").with_limit(5))
+        .await
+        .expect("find should succeed");
+
+    let marker_hit = hits
+        .iter()
+        .find(|hit| hit.record.content.contains(marker))
+        .expect("the late document's marker must be retrieved");
+    assert_eq!(marker_hit.record.node_id, "node:late");
+    // Siblings were located despite the parent being stored after 60 other documents:
+    // the window expanded past a single ~1600-char chunk.
+    assert!(
+        marker_hit.record.content.chars().count() > 1_600,
+        "siblings must be found regardless of table position; got {} chars",
+        marker_hit.record.content.chars().count()
+    );
+}
