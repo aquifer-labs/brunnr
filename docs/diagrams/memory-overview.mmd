@@ -5,7 +5,7 @@ flowchart LR
     W[Working buffer]:::stm
     A[Session anchor]:::stm
   end
-  subgraph LTM["Long-term memory"]
+  subgraph LTM["Long-term memory — Aquifer"]
     direction TB
     V[(Vector store: tiered records)]:::ltm
     F[(Files: OKF md)]:::ltm
@@ -20,6 +20,6 @@ flowchart LR
   F -->|keyword recall| Agent
   A -->|self-repair after compaction| Agent
 
-  classDef agent fill:#fef9c3,stroke:#ca8a04,color:#422006;
-  classDef stm fill:#ecfeff,stroke:#06b6d4,color:#083344;
-  classDef ltm fill:#dcfce7,stroke:#16a34a,color:#052e16;
+  classDef agent fill:#fcecc9,stroke:#c98a1e,color:#3d2700;
+  classDef stm   fill:#cdeef2,stroke:#0f9aa8,color:#073740;
+  classDef ltm   fill:#cfeae3,stroke:#1f8a70,color:#0b3020;

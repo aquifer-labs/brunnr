@@ -29,7 +29,7 @@ flowchart LR
     ORCH["Basin<br/>master / worker / judge"]:::cap
     TEAMS["Flotilla — agent teams"]:::cap
     TASKS["headrace — task tracking"]:::cap
-    SBX["Sandbox — sandbox"]:::cap
+    SBX["sandbox — Docker isolation"]:::cap
   end
 
   agents -->|MCP| MCP
@@ -43,9 +43,9 @@ flowchart LR
   ORCH -.->|same store| MEM
   TEAMS -.->|same store| MEM
 
-  classDef agent fill:#eef2ff,stroke:#6366f1,color:#1e1b4b;
-  classDef surface fill:#ecfeff,stroke:#06b6d4,color:#083344;
-  classDef core fill:#fef9c3,stroke:#ca8a04,color:#422006;
-  classDef flagship fill:#d5e8d4,stroke:#2f8132,color:#0b3d12,stroke-width:2px;
-  classDef cap fill:#f5f5f5,stroke:#94a3b8,color:#334155;
-  classDef store fill:#f1f5f9,stroke:#64748b,color:#0f172a;
+  classDef agent    fill:#dde0f0,stroke:#3b4a96,color:#1a1f4a;
+  classDef surface  fill:#cdeef2,stroke:#0f9aa8,color:#073740;
+  classDef core     fill:#fcecc9,stroke:#c98a1e,color:#3d2700;
+  classDef flagship fill:#cfeae3,stroke:#1f8a70,color:#0b3020,stroke-width:2px;
+  classDef cap      fill:#e7e9ec,stroke:#5b6770,color:#1a1f24;
+  classDef store    fill:#d7ecf5,stroke:#1b6ca8,color:#082040;
