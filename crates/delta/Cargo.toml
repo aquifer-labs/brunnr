@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "delta"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+artesian-core = { path = "../artesian-core" }
+artesian-process-agent = { path = "../artesian-process-agent" }
+chrono.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+thiserror.workspace = true
+culvert = { path = "../culvert" }
+tokio.workspace = true
+
+[dev-dependencies]
+artesian-test-support.workspace = true
+
+[lints]
+workspace = true

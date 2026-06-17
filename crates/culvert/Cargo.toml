@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "culvert"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+artesian-core = { path = "../artesian-core" }
+chrono.workspace = true
+futures-util.workspace = true
+aquifer = { path = "../aquifer" }
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+artesian-test-support.workspace = true
+
+[lints]
+workspace = true

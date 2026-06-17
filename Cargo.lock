@@ -103,6 +103,98 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 
 [[package]]
+name = "aquifer"
+version = "0.1.0"
+dependencies = [
+ "artesian-test-support",
+ "chrono",
+ "fastembed",
+ "futures-util",
+ "pgvector",
+ "qdrant-client",
+ "reqwest",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "sha2 0.10.9",
+ "sqlite-vec",
+ "thiserror 2.0.18",
+ "tokio",
+ "tokio-postgres",
+ "toml",
+]
+
+[[package]]
+name = "artesian-bench"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "aquifer",
+ "chrono",
+ "clap",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tiktoken-rs",
+ "tokio",
+]
+
+[[package]]
+name = "artesian-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "aquifer",
+ "artesian-core",
+ "artesian-process-agent",
+ "artesian-test-support",
+ "basin",
+ "clap",
+ "culvert",
+ "delta",
+ "sandbox",
+ "serde",
+ "serde_json",
+ "tokio",
+ "toml",
+ "toml_edit",
+]
+
+[[package]]
+name = "artesian-core"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "futures-core",
+ "futures-util",
+ "schemars",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "toml",
+]
+
+[[package]]
+name = "artesian-process-agent"
+version = "0.1.0"
+dependencies = [
+ "artesian-core",
+ "artesian-test-support",
+ "futures-util",
+ "nix",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "artesian-test-support"
+version = "0.1.0"
+
+[[package]]
 name = "async-stream"
 version = "0.3.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -207,10 +299,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 
 [[package]]
-name = "bifrost"
+name = "basin"
 version = "0.1.0"
 dependencies = [
+ "aquifer",
+ "artesian-core",
+ "artesian-test-support",
+ "chrono",
+ "culvert",
+ "futures-util",
+ "sandbox",
  "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
 ]
 
 [[package]]
@@ -251,96 +353,6 @@ checksum = "d2f6c7dbe95a6ed67ad9f18e57daf93a2f034c524b99fd2b76d18fdfeb6660aa"
 dependencies = [
  "hybrid-array",
 ]
-
-[[package]]
-name = "brunnr-bench"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chrono",
- "clap",
- "mimisbrunnr",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "tiktoken-rs",
- "tokio",
-]
-
-[[package]]
-name = "brunnr-cli"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "brunnr-core",
- "brunnr-process-agent",
- "brunnr-test-support",
- "clap",
- "hird",
- "hvergelmir",
- "mimisbrunnr",
- "serde",
- "serde_json",
- "thingr",
- "tokio",
- "toml",
- "toml_edit",
- "urdarbrunnr",
-]
-
-[[package]]
-name = "brunnr-core"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "futures-core",
- "futures-util",
- "schemars",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "toml",
-]
-
-[[package]]
-name = "brunnr-mcp"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "brunnr-core",
- "brunnr-process-agent",
- "brunnr-test-support",
- "clap",
- "hird",
- "mimisbrunnr",
- "rmcp",
- "schemars",
- "serde",
- "serde_json",
- "thingr",
- "tokio",
- "toml",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "brunnr-process-agent"
-version = "0.1.0"
-dependencies = [
- "brunnr-core",
- "brunnr-test-support",
- "futures-util",
- "nix",
- "reqwest",
- "serde",
- "serde_json",
- "tokio",
-]
-
-[[package]]
-name = "brunnr-test-support"
-version = "0.1.0"
 
 [[package]]
 name = "bstr"
@@ -638,6 +650,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "culvert"
+version = "0.1.0"
+dependencies = [
+ "aquifer",
+ "artesian-core",
+ "artesian-test-support",
+ "chrono",
+ "futures-util",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "sha2 0.10.9",
+ "thiserror 2.0.18",
+ "tokio",
+]
+
+[[package]]
 name = "darling"
 version = "0.20.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -713,6 +742,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8b1e3a325bc115f096c8b77bbf027a7c2592230e70be2d985be950d3d5e60ebe"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "delta"
+version = "0.1.0"
+dependencies = [
+ "artesian-core",
+ "artesian-process-agent",
+ "artesian-test-support",
+ "chrono",
+ "culvert",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "thiserror 2.0.18",
+ "tokio",
 ]
 
 [[package]]
@@ -1035,6 +1080,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "gauge"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "generic-array"
 version = "0.14.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1177,22 +1229,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "hird"
-version = "0.1.0"
-dependencies = [
- "brunnr-core",
- "brunnr-process-agent",
- "brunnr-test-support",
- "chrono",
- "serde",
- "serde_json",
- "serde_yaml",
- "thingr",
- "thiserror 2.0.18",
- "tokio",
-]
-
-[[package]]
 name = "hmac"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1251,17 +1287,6 @@ name = "httpdate"
 version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df3b46402a9d5adb4c86a0cf463f42e19994e3ee891101b1841f30a545cb49a9"
-
-[[package]]
-name = "hvergelmir"
-version = "0.1.0"
-dependencies = [
- "brunnr-test-support",
- "futures-util",
- "serde",
- "thiserror 2.0.18",
- "tokio",
-]
 
 [[package]]
 name = "hybrid-array"
@@ -1696,29 +1721,6 @@ name = "mime"
 version = "0.3.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6877bb514081ee2a7ff5ef9de3281f14a4dd4bceac4c09388074a6b5df8a139a"
-
-[[package]]
-name = "mimisbrunnr"
-version = "0.1.0"
-dependencies = [
- "brunnr-test-support",
- "chrono",
- "fastembed",
- "futures-util",
- "pgvector",
- "qdrant-client",
- "reqwest",
- "rusqlite",
- "serde",
- "serde_json",
- "serde_yaml",
- "sha2 0.10.9",
- "sqlite-vec",
- "thiserror 2.0.18",
- "tokio",
- "tokio-postgres",
- "toml",
-]
 
 [[package]]
 name = "minimal-lexical"
@@ -2639,6 +2641,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "sandbox"
+version = "0.1.0"
+dependencies = [
+ "artesian-test-support",
+ "futures-util",
+ "serde",
+ "thiserror 2.0.18",
+ "tokio",
+]
+
+[[package]]
 name = "schannel"
 version = "0.1.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2998,20 +3011,24 @@ dependencies = [
 ]
 
 [[package]]
-name = "thingr"
+name = "tap"
 version = "0.1.0"
 dependencies = [
- "brunnr-core",
- "brunnr-test-support",
- "chrono",
- "futures-util",
- "mimisbrunnr",
+ "anyhow",
+ "aquifer",
+ "artesian-core",
+ "artesian-process-agent",
+ "artesian-test-support",
+ "clap",
+ "culvert",
+ "delta",
+ "rmcp",
+ "schemars",
  "serde",
  "serde_json",
- "serde_yaml",
- "sha2 0.10.9",
- "thiserror 2.0.18",
  "tokio",
+ "toml",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -3544,23 +3561,6 @@ name = "untrusted"
 version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
-
-[[package]]
-name = "urdarbrunnr"
-version = "0.1.0"
-dependencies = [
- "brunnr-core",
- "brunnr-test-support",
- "chrono",
- "futures-util",
- "hvergelmir",
- "mimisbrunnr",
- "serde",
- "serde_json",
- "thingr",
- "thiserror 2.0.18",
- "tokio",
-]
 
 [[package]]
 name = "ureq"

@@ -1,0 +1,33 @@
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "tap"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+artesian-core = { path = "../artesian-core" }
+artesian-process-agent = { path = "../artesian-process-agent" }
+clap.workspace = true
+delta.workspace = true
+aquifer = { path = "../aquifer" }
+rmcp = { workspace = true, features = ["transport-io"] }
+schemars.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+culvert = { path = "../culvert" }
+tokio.workspace = true
+toml.workspace = true
+tracing-subscriber.workspace = true
+
+[features]
+qdrant = ["aquifer/qdrant"]
+
+[dev-dependencies]
+artesian-test-support.workspace = true
+
+[lints]
+workspace = true
