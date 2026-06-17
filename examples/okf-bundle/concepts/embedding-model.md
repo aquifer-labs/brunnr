@@ -10,12 +10,12 @@ tier: l3-project
 
 # Embedding Model
 
-Brunnr pins one model across every workstation and backend so vectors are comparable:
+Artesian pins one model across every workstation and backend so vectors are comparable:
 `intfloat/multilingual-e5-small`, 384 dimensions, cosine distance. Queries are embedded with the
 `query:` prefix and stored passages with `passage:` (E5 convention).
 
 Used by the vector channel that [RRF](rrf.md) fuses with keyword search. Implemented in
-`crates/mimisbrunnr/src/vector_memory.rs`.
+`crates/aquifer/src/vector_memory.rs`.
 
 # Citations
 

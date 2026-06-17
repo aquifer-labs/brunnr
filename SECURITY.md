@@ -2,7 +2,7 @@
 
 # Security Policy
 
-Brunnr is early-stage software. Please report suspected security issues privately instead of opening a public issue.
+Artesian is early-stage software. Please report suspected security issues privately instead of opening a public issue.
 
 ## Supported Versions
 

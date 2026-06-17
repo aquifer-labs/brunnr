@@ -1,7 +1,7 @@
 ---
 type: Log
 title: Update History
-description: Chronological change log for this OKF bundle (also where Brunnr's self-repair anchor is written).
+description: Chronological change log for this OKF bundle (also where Artesian's self-repair anchor is written).
 timestamp: 2026-06-14T00:00:00Z
 ---
 
@@ -10,7 +10,7 @@ timestamp: 2026-06-14T00:00:00Z
 - 2026-06-14T00:00:00Z — Created the example bundle with `rrf` and `embedding-model` concepts.
 
 <!--
-Brunnr's session anchor (Muninn) is appended here as a single always-current entry, e.g.:
+Artesian's session anchor (Muninn) is appended here as a single always-current entry, e.g.:
   ## anchor
   task: implement SqliteVecVectorStore
   plan_pointer: docs/memory.md#3.3

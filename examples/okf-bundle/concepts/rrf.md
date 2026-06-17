@@ -10,14 +10,14 @@ tier: l2-scenario
 
 # Reciprocal Rank Fusion
 
-Brunnr fuses the keyword channel and the vector channel by rank, not by raw score, so a BM25
+Artesian fuses the keyword channel and the vector channel by rank, not by raw score, so a BM25
 score and a cosine score combine without normalization. For a document `d` at 1-based rank
 `r_c(d)` in channel `c`:
 
 `RRF(d) = sum over channels c of 1 / (k + r_c(d))`, with `k = 60`.
 
 See [Embedding Model](embedding-model.md) for the vector channel. Implemented in
-`crates/mimisbrunnr/src/rrf.rs`.
+`crates/aquifer/src/rrf.rs`.
 
 # Citations
 

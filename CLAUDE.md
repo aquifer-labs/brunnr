@@ -2,16 +2,16 @@
 
 # CLAUDE.md
 
-Brunnr is an English-only open-source Rust workspace. Keep all in-repository artifacts universal and free of local operator details.
+Artesian is an English-only open-source Rust workspace. Keep all in-repository artifacts universal and free of local operator details.
 
 ## Project Shape
 
 The first milestone is a working `memory` mode:
 
-1. `mimisbrunnr::MemoryBackend` is the stable memory seam.
+1. `aquifer::MemoryBackend` is the stable memory seam.
 2. `FilesBackend` provides zero-infrastructure markdown storage.
-3. `brunnr-mcp` exposes `memory.find` and `memory.store`.
-4. `brunnr-cli` provides `init`, `memory store`, `memory find`, and role-aware `spawn`.
+3. `artesian-mcp` exposes `memory.find` and `memory.store`.
+4. `artesian-cli` provides `init`, `memory store`, `memory find`, and role-aware `spawn`.
 
 ## Validation
 

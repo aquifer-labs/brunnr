@@ -1,8 +1,8 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
-# BRUNNR
+# ARTESIAN
 
-Brunnr is a multi-agent context orchestration system. It is designed to be useful in the smallest mode first: memory tools that work with existing agents without changing normal workflows.
+Artesian is a multi-agent context orchestration system. It is designed to be useful in the smallest mode first: memory tools that work with existing agents without changing normal workflows.
 
 ## Names
 

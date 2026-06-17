@@ -2,7 +2,7 @@
 
 # Contributing
 
-Brunnr welcomes focused contributions that keep the project portable, testable, and easy to inspect.
+Artesian welcomes focused contributions that keep the project portable, testable, and easy to inspect.
 
 ## Developer Certificate of Origin
 
