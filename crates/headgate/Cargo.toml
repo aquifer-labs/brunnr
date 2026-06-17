@@ -7,6 +7,13 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
+[features]
+default = []
+# LLM-backed ACC components: the judge-eval qualify-gate and LLM compressors,
+# talking to OpenAI-compatible local servers (Ollama / LM Studio / mlx_lm.server)
+# or an agent CLI. The deterministic core needs none of this.
+llm = ["dep:reqwest", "dep:serde_json", "dep:tokio"]
+
 [dependencies]
 aquifer = { path = "../aquifer" }
 chrono.workspace = true
@@ -14,6 +21,9 @@ futures-util.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 tiktoken-rs.workspace = true
+reqwest = { workspace = true, optional = true }
+serde_json = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
 
 [dev-dependencies]
 artesian-test-support.workspace = true

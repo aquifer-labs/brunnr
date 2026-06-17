@@ -75,6 +75,60 @@ impl Compressor for ExtractiveCompressor {
     }
 }
 
+/// LLM-backed compressor: asks a model to rewrite content to fit the token budget while
+/// preserving meaning. Falls back to the deterministic [`ExtractiveCompressor`] if the model
+/// is unreachable or returns something that still overflows, so compression never fails the
+/// commit-loop.
+#[cfg(feature = "llm")]
+pub struct LlmCompressor {
+    client: std::sync::Arc<dyn crate::LlmClient>,
+    fallback: ExtractiveCompressor,
+}
+
+#[cfg(feature = "llm")]
+impl LlmCompressor {
+    pub fn new(client: std::sync::Arc<dyn crate::LlmClient>) -> Self {
+        Self {
+            client,
+            fallback: ExtractiveCompressor,
+        }
+    }
+}
+
+#[cfg(feature = "llm")]
+impl Compressor for LlmCompressor {
+    fn compress(
+        &self,
+        content: &str,
+        target_tokens: usize,
+    ) -> BoxFuture<'_, HeadgateResult<String>> {
+        let content = content.to_string();
+        async move {
+            if count_tokens(&content) <= target_tokens {
+                return Ok(content);
+            }
+            let request = crate::LlmRequest::new(format!(
+                "Compress the following note to at most {target_tokens} tokens while preserving \
+every concrete fact, decision, identifier, and number. Reply with ONLY the compressed note, no \
+preamble.\n\nNote:\n{content}"
+            ))
+            .with_temperature(0.0)
+            .with_max_tokens(target_tokens.saturating_mul(2).max(32));
+
+            match self.client.complete(request).await {
+                Ok(text)
+                    if count_tokens(text.trim()) <= target_tokens && !text.trim().is_empty() =>
+                {
+                    Ok(text.trim().to_string())
+                }
+                // Model unreachable or still over budget: fall back to extractive.
+                _ => self.fallback.compress(&content, target_tokens).await,
+            }
+        }
+        .boxed()
+    }
+}
+
 fn split_sentences(text: &str) -> Vec<&str> {
     text.split_inclusive(['.', '!', '?', '\n'])
         .map(str::trim)

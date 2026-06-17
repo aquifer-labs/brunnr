@@ -108,3 +108,73 @@ async fn compression_fits_an_oversized_candidate() {
     assert_eq!(metrics.admitted, 1);
     assert!(headgate.ccs().token_count() <= 10);
 }
+
+#[cfg(feature = "llm")]
+#[tokio::test]
+async fn judge_gate_drives_a_cycle_and_rejects_drift() {
+    use headgate::{JudgeQualifyGate, StaticLlmClient};
+
+    // A judge that flags every candidate as high-drift rejects them all.
+    let recall = Arc::new(StaticRecallStore::new(vec![
+        RecallItem::new("n1", "the team chose Rust", 1.0),
+        RecallItem::new("n2", "the team chose Go", 1.0),
+    ]));
+    let client = Arc::new(StaticLlmClient::new(
+        "{\"relevance\":0.9,\"novelty\":0.9,\"drift\":0.9,\"reason\":\"contradiction\"}",
+    ));
+    let gate = Arc::new(JudgeQualifyGate::new(client));
+    let mut headgate = Headgate::new(recall, HeadgateConfig::default()).with_gate(gate);
+
+    let metrics = headgate.cycle("which language").await.expect("cycle");
+    assert_eq!(
+        metrics.admitted, 0,
+        "high-drift candidates are rejected by the judge"
+    );
+    assert!(headgate.ccs().is_empty());
+}
+
+#[cfg(feature = "llm")]
+#[tokio::test]
+async fn judge_gate_admits_clean_candidate() {
+    use headgate::{JudgeQualifyGate, StaticLlmClient};
+
+    let recall = Arc::new(StaticRecallStore::new(vec![RecallItem::new(
+        "n1",
+        "the team chose Rust for the core crates",
+        1.0,
+    )]));
+    let client = Arc::new(StaticLlmClient::new(
+        "{\"relevance\":0.95,\"novelty\":0.9,\"drift\":0.05,\"slot\":\"decision\",\"reason\":\"ok\"}",
+    ));
+    let gate = Arc::new(JudgeQualifyGate::new(client));
+    let mut headgate = Headgate::new(recall, HeadgateConfig::default()).with_gate(gate);
+
+    let metrics = headgate.cycle("language choice").await.expect("cycle");
+    assert_eq!(metrics.admitted, 1);
+    assert!(headgate.render().contains("chose Rust"));
+}
+
+#[cfg(feature = "llm")]
+#[tokio::test]
+async fn llm_compressor_falls_back_when_model_overflows() {
+    use headgate::{LlmCompressor, StaticLlmClient};
+
+    // The "model" returns text that still overflows the budget, forcing the extractive fallback.
+    let long = "First clause here. Second clause here. Third clause here. \
+                Fourth clause here. Fifth clause here. Sixth clause here.";
+    let recall = Arc::new(StaticRecallStore::new(vec![RecallItem::new(
+        "big", long, 0.9,
+    )]));
+    let client = Arc::new(StaticLlmClient::new(long)); // no real compression
+    let compressor = Arc::new(LlmCompressor::new(client));
+    let config = HeadgateConfig {
+        budget_tokens: 10,
+        compress_on_saturation: true,
+        ..HeadgateConfig::default()
+    };
+    let mut headgate = Headgate::new(recall, config).with_compressor(compressor);
+
+    let metrics = headgate.cycle("query").await.expect("cycle");
+    assert_eq!(metrics.admitted, 1);
+    assert!(headgate.ccs().token_count() <= 10);
+}

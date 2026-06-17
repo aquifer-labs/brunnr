@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use futures_util::{future::BoxFuture, FutureExt};
 use serde::{Deserialize, Serialize};
 
 use crate::{CommittedContextState, RecallItem};
@@ -35,10 +36,18 @@ impl QualifyDecision {
 
 /// The qualify-gate — the ACC trust boundary. Only candidates that qualify (relevant,
 /// non-duplicate, non-redundant) are eligible to enter the committed state. The default
-/// implementation is deterministic; an LLM judge-eval gate (drift / hallucination scoring)
-/// is a drop-in replacement added in a later slice.
+/// implementation is deterministic; the feature-gated LLM judge-eval gate
+/// ([`crate::JudgeQualifyGate`], scoring drift / hallucination) is a drop-in replacement.
+///
+/// `qualify` is async so an implementation may consult an external judge (an LLM); the
+/// deterministic gate resolves immediately. An implementation that cannot reach its judge
+/// should return a conservative reject rather than surface an error.
 pub trait QualifyGate: Send + Sync {
-    fn qualify(&self, item: &RecallItem, ccs: &CommittedContextState) -> QualifyDecision;
+    fn qualify<'a>(
+        &'a self,
+        item: &'a RecallItem,
+        ccs: &'a CommittedContextState,
+    ) -> BoxFuture<'a, QualifyDecision>;
 }
 
 /// Deterministic default gate: relevance threshold + redundancy rejection + slot routing.
@@ -84,8 +93,8 @@ impl Default for DefaultQualifyGate {
     }
 }
 
-impl QualifyGate for DefaultQualifyGate {
-    fn qualify(&self, item: &RecallItem, ccs: &CommittedContextState) -> QualifyDecision {
+impl DefaultQualifyGate {
+    fn decide(&self, item: &RecallItem, ccs: &CommittedContextState) -> QualifyDecision {
         if item.score < self.min_score {
             return QualifyDecision::reject(
                 format!(
@@ -109,6 +118,17 @@ impl QualifyGate for DefaultQualifyGate {
             );
         }
         QualifyDecision::admit(self.route_slot(item, ccs), item.score)
+    }
+}
+
+impl QualifyGate for DefaultQualifyGate {
+    fn qualify<'a>(
+        &'a self,
+        item: &'a RecallItem,
+        ccs: &'a CommittedContextState,
+    ) -> BoxFuture<'a, QualifyDecision> {
+        let decision = self.decide(item, ccs);
+        async move { decision }.boxed()
     }
 }
 
@@ -151,7 +171,7 @@ mod tests {
     fn rejects_below_relevance() {
         let gate = DefaultQualifyGate::new(0.5, 0.8);
         let item = RecallItem::new("a", "some weakly relevant note", 0.1);
-        let decision = gate.qualify(&item, &empty_ccs());
+        let decision = gate.decide(&item, &empty_ccs());
         assert!(!decision.admitted);
         assert!(decision.reason.contains("below relevance"));
     }
@@ -160,7 +180,7 @@ mod tests {
     fn routes_decision_keyword_to_decision_slot() {
         let gate = DefaultQualifyGate::default();
         let item = RecallItem::new("a", "we chose Rust for the core crates", 1.0);
-        let decision = gate.qualify(&item, &empty_ccs());
+        let decision = gate.decide(&item, &empty_ccs());
         assert!(decision.admitted);
         assert_eq!(decision.slot.as_deref(), Some("decision"));
     }
@@ -169,7 +189,7 @@ mod tests {
     fn routes_unmatched_to_default_slot() {
         let gate = DefaultQualifyGate::default();
         let item = RecallItem::new("a", "the cluster has three nodes", 1.0);
-        let decision = gate.qualify(&item, &empty_ccs());
+        let decision = gate.decide(&item, &empty_ccs());
         assert_eq!(decision.slot.as_deref(), Some("decision")); // default_slot = first
     }
 
@@ -188,7 +208,7 @@ mod tests {
             "the deployment runs nightly on the kubernetes cluster",
             1.0,
         );
-        let decision = gate.qualify(&item, &ccs);
+        let decision = gate.decide(&item, &ccs);
         assert!(!decision.admitted);
         assert!(decision.reason.contains("redundant"));
     }

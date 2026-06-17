@@ -20,7 +20,7 @@ This page is the map; each concern has its own doc.
 |---|---|
 | `artesian-core` | roles (master/worker/judge), task-queue types (Job/Queue/CompletedJob), config, modes, the `Agent` adapter trait, the event envelope |
 | `aquifer` | memory: `MemoryBackend`, the `VectorStore` seam, `VectorMemoryBackend<V>`, RRF, tiers, OKF files |
-| `headgate` | ACC control plane: `RecallStore` data-plane seam, the `QualifyGate`, the bounded `CommittedContextState`, the commit-loop controller, `GaugeMetrics` |
+| `headgate` | ACC control plane: `RecallStore` data-plane seam, the `QualifyGate`, the bounded `CommittedContextState`, the commit-loop controller, `GaugeMetrics`; feature `llm` adds the LLM judge-eval gate (drift/hallucination) and LLM compressors over an `LlmClient` seam |
 | `headrace` | task tracking: `TaskStore` (Files/Vector/External), the task DAG |
 | `artesian-mcp` | exposes tools over MCP (`memory.*`, `tools.find`, task tools); the agent integration point |
 | `artesian-cli` / `artesiand` | user entrypoint + optional daemon (init, memory ops, spawn, pooling) |

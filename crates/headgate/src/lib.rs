@@ -34,6 +34,10 @@ mod ccs;
 mod compressor;
 mod controller;
 mod gate;
+#[cfg(feature = "llm")]
+mod judge;
+#[cfg(feature = "llm")]
+mod llm;
 mod metrics;
 mod recall;
 
@@ -43,6 +47,13 @@ pub use controller::{Headgate, HeadgateConfig};
 pub use gate::{DefaultQualifyGate, QualifyDecision, QualifyGate};
 pub use metrics::{count_tokens, GaugeMetrics};
 pub use recall::{MemoryRecallStore, RecallItem, RecallStore, StaticRecallStore};
+
+#[cfg(feature = "llm")]
+pub use compressor::LlmCompressor;
+#[cfg(feature = "llm")]
+pub use judge::{JudgeQualifyGate, JudgeVerdict};
+#[cfg(feature = "llm")]
+pub use llm::{CommandLlmClient, LlmClient, LlmRequest, OpenAiCompatibleClient, StaticLlmClient};
 
 use thiserror::Error;
 
@@ -55,6 +66,8 @@ pub enum HeadgateError {
     Recall(String),
     #[error("compressor error: {0}")]
     Compress(String),
+    #[error("llm error: {0}")]
+    Llm(String),
     #[error("memory backend error: {0}")]
     Memory(#[from] aquifer::MemoryError),
 }

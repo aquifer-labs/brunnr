@@ -117,7 +117,7 @@ impl Headgate {
         };
 
         for item in candidates {
-            let decision = self.gate.qualify(&item, &self.ccs);
+            let decision = self.gate.qualify(&item, &self.ccs).await;
             if !decision.admitted {
                 if decision.reason.starts_with("redundant")
                     || decision.reason == "already committed"
