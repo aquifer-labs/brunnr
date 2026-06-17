@@ -3,6 +3,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/artesian",
     "crates/artesian-core",
     "crates/aquifer",
     "crates/sandbox",

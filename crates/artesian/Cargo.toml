@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name = "artesian"
+version = "0.0.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Artesian — an open, local-first memory control plane for AI agents. Name-reservation placeholder; the implementation lives in the aquifer-labs/artesian workspace."
+repository = "https://github.com/aquifer-labs/artesian"
+homepage = "https://github.com/aquifer-labs/artesian"
+readme = "README.md"
+keywords = ["ai", "agents", "memory", "llm", "mcp"]
+categories = ["development-tools"]
+
+[lints]
+workspace = true
