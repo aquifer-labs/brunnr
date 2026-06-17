@@ -20,13 +20,15 @@ This page is the map; each concern has its own doc.
 |---|---|
 | `artesian-core` | roles (master/worker/judge), task-queue types (Erindi/Thing/Galdr), config, modes, the `Agent` adapter trait, the event envelope |
 | `aquifer` | memory: `MemoryBackend`, the `VectorStore` seam, `VectorMemoryBackend<V>`, RRF, tiers, OKF files |
+| `headgate` | ACC control plane: `RecallStore` data-plane seam, the `QualifyGate`, the bounded `CommittedContextState`, the commit-loop controller, `GaugeMetrics` |
 | `headrace` | task tracking: `TaskStore` (Files/Vector/External), the task DAG |
 | `artesian-mcp` | exposes tools over MCP (`memory.*`, `tools.find`, task tools); the agent integration point |
 | `artesian-cli` / `artesiand` | user entrypoint + optional daemon (init, memory ops, spawn, pooling) |
 | `gauge` | TUI control surface · `sandbox` optional Docker sandbox · `tray` optional macOS tray |
 
 Engine/agent/tracker specifics live behind traits (`VectorStore`, `Agent`, `TaskStore`,
-`MemoryBackend`) so adding a backend, agent, or tracker is a small adapter, never a core change.
+`MemoryBackend`, `RecallStore`, `QualifyGate`, `Compressor`) so adding a backend, agent, tracker,
+retrieval store, gate, or compressor is a small adapter, never a core change.
 
 ## Cross-cutting concerns (read the focused docs)
 

@@ -15,6 +15,7 @@ members = [
     "crates/artesian-process-agent",
     "crates/artesian-test-support",
     "crates/headrace",
+    "crates/headgate",
     "crates/basin",
 ]
 

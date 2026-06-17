@@ -1,0 +1,60 @@
+// SPDX-License-Identifier: Apache-2.0
+
+//! Headgate — the Agent Cognitive Compressor (ACC) control plane.
+//!
+//! Headgate implements the ACC model (arXiv:2601.11653): it separates the **recall** channel
+//! (read candidates from any retrieval store via [`RecallStore`]) from the **commit** channel
+//! (what enters the bounded, schema-governed [`CommittedContextState`]), with a
+//! [`QualifyGate`] between them as the trust boundary. The [`Headgate`] controller runs the
+//! commit-loop, compressing or evicting under saturation, and reports [`GaugeMetrics`].
+//!
+//! The crate is fully usable offline: the default gate is deterministic and the default
+//! [`Compressor`] is extractive. LLM-backed gates (judge-eval of drift / hallucination) and
+//! LLM compressors are drop-in replacements via [`Headgate::with_gate`] /
+//! [`Headgate::with_compressor`].
+//!
+//! ```
+//! use std::sync::Arc;
+//! use headgate::{Headgate, HeadgateConfig, RecallItem, StaticRecallStore};
+//!
+//! # async fn demo() -> headgate::HeadgateResult<()> {
+//! let store = Arc::new(StaticRecallStore::new(vec![
+//!     RecallItem::new("n1", "the team chose Rust for the core crates", 1.0),
+//!     RecallItem::new("n2", "the team chose Rust for the core crates", 1.0), // duplicate
+//! ]));
+//! let mut headgate = Headgate::new(store, HeadgateConfig::default());
+//! let metrics = headgate.cycle("which language").await?;
+//! assert_eq!(metrics.admitted, 1); // the redundant duplicate is rejected
+//! assert!(headgate.render().contains("chose Rust"));
+//! # Ok(())
+//! # }
+//! ```
+
+mod ccs;
+mod compressor;
+mod controller;
+mod gate;
+mod metrics;
+mod recall;
+
+pub use ccs::{CcsSchema, CommittedContextState, CommittedEntry};
+pub use compressor::{Compressor, ExtractiveCompressor, NoopCompressor};
+pub use controller::{Headgate, HeadgateConfig};
+pub use gate::{DefaultQualifyGate, QualifyDecision, QualifyGate};
+pub use metrics::{count_tokens, GaugeMetrics};
+pub use recall::{MemoryRecallStore, RecallItem, RecallStore, StaticRecallStore};
+
+use thiserror::Error;
+
+pub type HeadgateResult<T> = Result<T, HeadgateError>;
+
+/// Errors surfaced by the ACC control plane.
+#[derive(Debug, Error)]
+pub enum HeadgateError {
+    #[error("recall store error: {0}")]
+    Recall(String),
+    #[error("compressor error: {0}")]
+    Compress(String),
+    #[error("memory backend error: {0}")]
+    Memory(#[from] aquifer::MemoryError),
+}

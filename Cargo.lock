@@ -1211,6 +1211,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "headgate"
+version = "0.1.0"
+dependencies = [
+ "aquifer",
+ "artesian-test-support",
+ "chrono",
+ "futures-util",
+ "serde",
+ "thiserror 2.0.18",
+ "tiktoken-rs",
+ "tokio",
+]
+
+[[package]]
 name = "headrace"
 version = "0.1.0"
 dependencies = [
