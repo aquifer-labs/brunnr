@@ -58,3 +58,19 @@ pub trait MemoryBackend: Send + Sync {
 
     fn get_node(&self, node_id: &str) -> BoxFuture<'_, MemoryResult<Option<MemoryRecord>>>;
 }
+
+/// Delegating impl so a type-erased `Arc<dyn MemoryBackend>` can be used wherever a
+/// `MemoryBackend` is expected (e.g. wrapping a runtime-selected backend in an adapter).
+impl MemoryBackend for std::sync::Arc<dyn MemoryBackend> {
+    fn find(&self, query: MemoryQuery) -> BoxFuture<'_, MemoryResult<Vec<SearchHit>>> {
+        (**self).find(query)
+    }
+
+    fn store(&self, memory: StoreMemory) -> BoxFuture<'_, MemoryResult<MemoryRecord>> {
+        (**self).store(memory)
+    }
+
+    fn get_node(&self, node_id: &str) -> BoxFuture<'_, MemoryResult<Option<MemoryRecord>>> {
+        (**self).get_node(node_id)
+    }
+}

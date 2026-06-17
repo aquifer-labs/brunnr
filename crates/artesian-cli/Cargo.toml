@@ -18,6 +18,7 @@ aquifer = { path = "../aquifer" }
 serde.workspace = true
 serde_json.workspace = true
 headrace = { path = "../headrace" }
+headgate = { path = "../headgate" }
 tokio.workspace = true
 toml.workspace = true
 toml_edit.workspace = true

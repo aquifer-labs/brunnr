@@ -27,6 +27,7 @@ use flotilla::{
     load_role_definitions, role_summaries, TeamCreate, TeamMessage, TeamMessageKind, TeamRuntime,
     TeamRuntimeConfig, TeamSpawn, TeamTaskAdd, TeamTaskClaim, TeamTaskComplete,
 };
+use headgate::{Headgate, HeadgateConfig, MemoryRecallStore, RecallStore};
 use headrace::{
     ClaimRequest, CommandVerifier, FilesTaskStore, NewTask, TaskKind, TaskStore, VectorTaskStore,
     Verifier, VerifierGate,
@@ -457,6 +458,23 @@ enum MemoryCommand {
         limit: usize,
         #[arg(long, default_value_t = 4000)]
         index_chars: usize,
+        #[arg(long, default_value = DEFAULT_CONFIG)]
+        config: PathBuf,
+        #[arg(long, default_value = ".artesian")]
+        root: PathBuf,
+        #[arg(long, value_enum)]
+        backend: Option<BackendArg>,
+    },
+    /// Run one ACC commit-loop cycle: recall, qualify-gate, and admit into the bounded
+    /// committed context state; print the committed context and the cycle metrics.
+    Commit {
+        query: String,
+        #[arg(long, default_value_t = 2048)]
+        budget_tokens: usize,
+        #[arg(long, default_value_t = 16)]
+        recall_limit: usize,
+        #[arg(long, default_value_t = 0.2)]
+        min_score: f32,
         #[arg(long, default_value = DEFAULT_CONFIG)]
         config: PathBuf,
         #[arg(long, default_value = ".artesian")]
@@ -1255,6 +1273,35 @@ async fn memory(command: MemoryCommand) -> Result<()> {
                     hit.score, hit.record.id, hit.record.node_id, hit.record.content
                 );
             }
+        }
+        MemoryCommand::Commit {
+            query,
+            budget_tokens,
+            recall_limit,
+            min_score,
+            config,
+            root,
+            backend,
+        } => {
+            let backend = open_backend_for_command(&config, root, backend)?;
+            let recall: Arc<dyn RecallStore> = Arc::new(MemoryRecallStore::new(backend));
+            let headgate_config = HeadgateConfig {
+                budget_tokens,
+                recall_limit,
+                min_score,
+                ..HeadgateConfig::default()
+            };
+            let mut headgate = Headgate::new(recall, headgate_config);
+            let metrics = headgate.cycle(&query).await?;
+            println!("# committed context (budget {budget_tokens} tokens)");
+            let rendered = headgate.render();
+            if rendered.is_empty() {
+                println!("(nothing qualified)");
+            } else {
+                println!("{rendered}");
+            }
+            println!("\n# metrics");
+            println!("{}", serde_json::to_string_pretty(&metrics)?);
         }
         MemoryCommand::Anchor { command } => anchor(command).await?,
     }

@@ -63,6 +63,19 @@ fn cli_memory_mode_round_trip_and_spawn_alias_work() {
     assert!(find.status.success(), "{}", stderr(&find));
     assert!(stdout(&find).contains("node:cli\tArtesian memory mode works"));
 
+    let commit = Command::new(binary)
+        .args(["memory", "commit", "memory works", "--budget-tokens", "256"])
+        .current_dir(tempdir.path())
+        .output()
+        .expect("commit should run");
+    assert!(commit.status.success(), "{}", stderr(&commit));
+    let commit_out = stdout(&commit);
+    assert!(
+        commit_out.contains("Artesian memory mode works"),
+        "{commit_out}"
+    );
+    assert!(commit_out.contains("\"admitted\": 1"), "{commit_out}");
+
     let import_dir = tempdir.join("import");
     std::fs::create_dir_all(&import_dir).expect("import dir should be created");
     std::fs::write(
