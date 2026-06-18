@@ -126,6 +126,14 @@ pub struct AccConfig {
     /// Compress an admitted candidate to fit remaining headroom instead of rejecting it.
     #[serde(default = "default_acc_compress_on_saturation")]
     pub compress_on_saturation: bool,
+    /// Optional LLM judge-eval gate (drift / hallucination scoring). Requires a build with the
+    /// `llm` feature; otherwise the deterministic gate is used and this is ignored.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub judge: Option<AccLlmConfig>,
+    /// Optional LLM compressor. Requires the `llm` feature; otherwise the extractive
+    /// compressor is used.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compressor: Option<AccLlmConfig>,
 }
 
 impl Default for AccConfig {
@@ -136,8 +144,31 @@ impl Default for AccConfig {
             min_score: default_acc_min_score(),
             redundancy_threshold: default_acc_redundancy_threshold(),
             compress_on_saturation: default_acc_compress_on_saturation(),
+            judge: None,
+            compressor: None,
         }
     }
+}
+
+/// LLM endpoint config for the ACC judge gate or compressor.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct AccLlmConfig {
+    /// `openai` (OpenAI-compatible `/chat/completions`) or `command` (agent CLI subprocess).
+    pub provider: String,
+    /// API root including the version segment, e.g. `http://localhost:11434/v1` (Ollama).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub base_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    /// Name of an environment variable holding the bearer API key (the key is never stored).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub api_key_env: Option<String>,
+    /// For `provider = "command"`: the executable to run.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command: Option<String>,
+    /// For `provider = "command"`: its arguments ({prompt}/{system} placeholders supported).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub args: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]

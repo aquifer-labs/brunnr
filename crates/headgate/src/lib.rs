@@ -53,7 +53,10 @@ pub use compressor::LlmCompressor;
 #[cfg(feature = "llm")]
 pub use judge::{JudgeQualifyGate, JudgeVerdict};
 #[cfg(feature = "llm")]
-pub use llm::{CommandLlmClient, LlmClient, LlmRequest, OpenAiCompatibleClient, StaticLlmClient};
+pub use llm::{
+    llm_client_from_config, CommandLlmClient, LlmClient, LlmRequest, OpenAiCompatibleClient,
+    StaticLlmClient,
+};
 
 use thiserror::Error;
 

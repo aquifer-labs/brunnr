@@ -26,6 +26,7 @@ tracing-subscriber.workspace = true
 
 [features]
 qdrant = ["aquifer/qdrant"]
+llm = ["headgate/llm"]
 
 [dev-dependencies]
 artesian-test-support.workspace = true

@@ -273,6 +273,41 @@ impl LlmClient for CommandLlmClient {
     }
 }
 
+/// Build an [`LlmClient`] from an [`artesian_core::AccLlmConfig`]. The bearer key, when
+/// `api_key_env` is set, is read from that environment variable at build time.
+pub fn llm_client_from_config(
+    config: &artesian_core::AccLlmConfig,
+) -> HeadgateResult<std::sync::Arc<dyn LlmClient>> {
+    match config.provider.as_str() {
+        "openai" | "openai-compatible" => {
+            let base_url = config.base_url.clone().ok_or_else(|| {
+                HeadgateError::Llm("openai provider requires base_url".to_string())
+            })?;
+            let model = config
+                .model
+                .clone()
+                .ok_or_else(|| HeadgateError::Llm("openai provider requires model".to_string()))?;
+            let mut client = OpenAiCompatibleClient::new(base_url, model);
+            if let Some(env) = &config.api_key_env {
+                if let Ok(key) = std::env::var(env) {
+                    client = client.with_api_key(key);
+                }
+            }
+            Ok(std::sync::Arc::new(client))
+        }
+        "command" => {
+            let command = config.command.clone().ok_or_else(|| {
+                HeadgateError::Llm("command provider requires command".to_string())
+            })?;
+            Ok(std::sync::Arc::new(CommandLlmClient::new(
+                command,
+                config.args.clone(),
+            )))
+        }
+        other => Err(HeadgateError::Llm(format!("unknown llm provider: {other}"))),
+    }
+}
+
 /// A canned client for tests and offline development — returns a fixed response.
 pub struct StaticLlmClient {
     response: String,
@@ -326,5 +361,47 @@ mod tests {
             .await
             .expect("complete");
         assert_eq!(out, "[xyz]");
+    }
+
+    #[test]
+    fn factory_builds_clients_and_rejects_bad_config() {
+        use artesian_core::AccLlmConfig;
+
+        let openai = AccLlmConfig {
+            provider: "openai".to_string(),
+            base_url: Some("http://localhost:11434/v1".to_string()),
+            model: Some("llama3".to_string()),
+            api_key_env: None,
+            command: None,
+            args: Vec::new(),
+        };
+        assert!(llm_client_from_config(&openai).is_ok());
+
+        let command = AccLlmConfig {
+            provider: "command".to_string(),
+            base_url: None,
+            model: None,
+            api_key_env: None,
+            command: Some("cat".to_string()),
+            args: Vec::new(),
+        };
+        assert!(llm_client_from_config(&command).is_ok());
+
+        // openai without base_url/model is rejected.
+        let incomplete = AccLlmConfig {
+            provider: "openai".to_string(),
+            base_url: None,
+            model: None,
+            api_key_env: None,
+            command: None,
+            args: Vec::new(),
+        };
+        assert!(llm_client_from_config(&incomplete).is_err());
+
+        let unknown = AccLlmConfig {
+            provider: "telepathy".to_string(),
+            ..incomplete
+        };
+        assert!(llm_client_from_config(&unknown).is_err());
     }
 }

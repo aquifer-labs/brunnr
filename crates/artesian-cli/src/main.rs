@@ -1302,6 +1302,19 @@ async fn memory(command: MemoryCommand) -> Result<()> {
             let backend = open_backend_for_command(&config, root, backend)?;
             let recall: Arc<dyn RecallStore> = Arc::new(MemoryRecallStore::new(backend));
             let mut headgate = Headgate::new(recall, headgate_config);
+            #[cfg(feature = "llm")]
+            {
+                if let Some(judge) = &acc.judge {
+                    let client = headgate::llm_client_from_config(judge)?;
+                    headgate =
+                        headgate.with_gate(Arc::new(headgate::JudgeQualifyGate::new(client)));
+                }
+                if let Some(compressor) = &acc.compressor {
+                    let client = headgate::llm_client_from_config(compressor)?;
+                    headgate =
+                        headgate.with_compressor(Arc::new(headgate::LlmCompressor::new(client)));
+                }
+            }
             let metrics = headgate.cycle(&query).await?;
             println!("# committed context (budget {budget_tokens} tokens)");
             let rendered = headgate.render();

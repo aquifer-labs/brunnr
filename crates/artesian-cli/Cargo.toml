@@ -26,6 +26,7 @@ basin = { path = "../basin" }
 
 [features]
 qdrant = ["aquifer/qdrant"]
+llm = ["headgate/llm"]
 
 [[bin]]
 name = "artesian"

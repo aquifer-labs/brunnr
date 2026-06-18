@@ -849,6 +849,19 @@ context to read plus per-cycle control metrics (admitted, rejected, footprint)."
             config.min_score = score;
         }
         let mut headgate = Headgate::new(recall, config);
+        #[cfg(feature = "llm")]
+        {
+            if let Some(judge) = &self.acc.judge {
+                let client = headgate::llm_client_from_config(judge)
+                    .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
+                headgate = headgate.with_gate(Arc::new(headgate::JudgeQualifyGate::new(client)));
+            }
+            if let Some(compressor) = &self.acc.compressor {
+                let client = headgate::llm_client_from_config(compressor)
+                    .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
+                headgate = headgate.with_compressor(Arc::new(headgate::LlmCompressor::new(client)));
+            }
+        }
         let metrics = headgate
             .cycle(&request.query)
             .await

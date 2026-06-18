@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use artesian_core::{AccConfig, AgentBinding, ArtesianConfig, Role};
+use artesian_core::{AccConfig, AccLlmConfig, AgentBinding, ArtesianConfig, Role};
 
 #[test]
 fn config_round_trips_through_toml() {
@@ -17,12 +17,24 @@ fn config_round_trips_through_toml() {
     );
     config.acc.budget_tokens = 4096;
     config.acc.min_score = 0.3;
+    config.acc.judge = Some(AccLlmConfig {
+        provider: "openai".to_string(),
+        base_url: Some("http://localhost:11434/v1".to_string()),
+        model: Some("llama3".to_string()),
+        api_key_env: None,
+        command: None,
+        args: Vec::new(),
+    });
 
     let encoded = config.to_toml().expect("config should encode");
     let decoded = ArtesianConfig::from_toml(&encoded).expect("config should decode");
 
     assert_eq!(decoded, config);
     assert_eq!(decoded.acc.budget_tokens, 4096);
+    assert_eq!(
+        decoded.acc.judge.expect("judge").model.as_deref(),
+        Some("llama3")
+    );
 }
 
 #[test]
