@@ -101,8 +101,9 @@ These solve the same core problem — durable memory for agents — and are the 
 
 - **[mem0](https://github.com/mem0ai/mem0)** (Apache-2.0) — the most prominent. An LLM **extracts
   facts on every write**, stored with entity linking; hybrid semantic + BM25 + temporal retrieval;
-  strong published numbers (LoCoMo 91.6, LongMemEval 94.8), broad vector-DB and LLM support, and a
-  hosted cloud. **Artesian's wedge:** writes are **free and local** (no per-write LLM call), memory
+  strong published LoCoMo / LongMemEval results and a large token saving vs. full-context
+  (see arXiv:2504.19413 for the exact figures), broad vector-DB and LLM support, and a hosted
+  cloud. **Artesian's wedge:** writes are **free and local** (no per-write LLM call), memory
   is **white-box OKF markdown you own** (not an opaque or rented store), it runs **zero-infra**,
   and it is **MCP-first / integrate-anything**. Additionally: Artesian composes *with* mem0 as a
   retrieval backend under the ACC control plane — they are not mutually exclusive. We aim to match

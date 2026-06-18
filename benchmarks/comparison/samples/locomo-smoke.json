@@ -1,0 +1,21 @@
+[
+  {
+    "conversation": {
+      "session_1_date_time": "2:00 pm on 3 May, 2026",
+      "session_1": [
+        {"speaker": "Alice", "text": "I finally adopted a dog this weekend, a husky named Koda."},
+        {"speaker": "Bob", "text": "That's great! Are you training him yourself?"},
+        {"speaker": "Alice", "text": "Yes, and I also started a new job at a fintech called Ledgerly."}
+      ],
+      "session_2_date_time": "9:00 am on 10 May, 2026",
+      "session_2": [
+        {"speaker": "Bob", "text": "How's Koda settling in?"},
+        {"speaker": "Alice", "text": "Great. Ledgerly has me working in Rust, which I'm enjoying."}
+      ]
+    },
+    "qa": [
+      {"question": "What is the name of Alice's dog?", "answer": "Koda", "category": "single-hop"},
+      {"question": "What programming language does Alice use at her new job?", "answer": "Rust", "category": "single-hop"}
+    ]
+  }
+]

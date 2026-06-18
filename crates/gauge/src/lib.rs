@@ -4,11 +4,15 @@
 //! footprint) plus a TUI status placeholder.
 
 pub mod bench;
+pub mod eval;
 
 pub use bench::{
     demo_case, render_markdown, run_bench, run_default_arm, BenchCase, BenchResult, FactLabel,
     LabeledFact,
 };
+pub use eval::{load_locomo, load_longmemeval, LoadReport, QaCase};
+#[cfg(feature = "llm")]
+pub use eval::{run_case, run_qa_eval, CaseOutcome, EvalSummary};
 
 use serde::{Deserialize, Serialize};
 

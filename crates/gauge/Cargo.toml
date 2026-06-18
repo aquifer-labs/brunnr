@@ -21,6 +21,10 @@ tokio.workspace = true
 name = "gauge-bench"
 path = "src/bin/gauge_bench.rs"
 
+[[bin]]
+name = "gauge-eval"
+path = "src/bin/gauge_eval.rs"
+
 [dev-dependencies]
 futures-util.workspace = true
 
