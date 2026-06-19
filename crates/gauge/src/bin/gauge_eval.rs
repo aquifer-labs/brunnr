@@ -38,6 +38,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut rerank_candidates: usize = 0;
     let mut recall_limit: Option<usize> = None;
     let mut budget: Option<usize> = None;
+    let mut signals = false;
     let mut json = false;
     let rest: Vec<String> = args.collect();
     let mut iter = rest.iter();
@@ -52,6 +53,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "--rerank" => rerank_candidates = iter.next().and_then(|v| v.parse().ok()).unwrap_or(0),
             "--recall-limit" => recall_limit = iter.next().and_then(|v| v.parse().ok()),
             "--budget" => budget = iter.next().and_then(|v| v.parse().ok()),
+            "--signals" => signals = true,
             "--llm-command" => {
                 if let Some(value) = iter.next() {
                     llm_command = value.clone();
@@ -92,13 +94,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             #[cfg(feature = "vector")]
             {
                 eprintln!(
-                    "loading embedder for vector recall (rerank pool = {rerank_candidates})..."
+                    "loading embedder for vector recall (rerank pool = {rerank_candidates}, \
+signals = {signals})..."
                 );
-                Box::new(gauge::VectorRecall::new(rerank_candidates)?)
+                Box::new(gauge::VectorRecall::new(rerank_candidates, signals)?)
             }
             #[cfg(not(feature = "vector"))]
             {
-                let _ = rerank_candidates;
+                let _ = (rerank_candidates, signals);
                 eprintln!("vector recall requires building gauge with --features vector");
                 std::process::exit(2);
             }
