@@ -18,8 +18,11 @@ fn main() {
 #[cfg(feature = "llm")]
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    use gauge::{load_locomo, load_longmemeval, run_qa_eval, LexicalRecall, RecallFactory};
-    use headgate::{CommandLlmClient, HeadgateConfig};
+    use gauge::{
+        load_locomo, load_longmemeval, run_qa_eval, ExpandingRecall, LexicalRecall, RecallFactory,
+    };
+    use headgate::{CommandLlmClient, HeadgateConfig, LlmClient};
+    use std::sync::Arc;
 
     let mut args = std::env::args().skip(1);
     let dataset = args.next().unwrap_or_default();
@@ -39,6 +42,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut recall_limit: Option<usize> = None;
     let mut budget: Option<usize> = None;
     let mut signals = false;
+    let mut hyde = false;
+    let mut multi_query: usize = 0;
     let mut json = false;
     let rest: Vec<String> = args.collect();
     let mut iter = rest.iter();
@@ -54,6 +59,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "--recall-limit" => recall_limit = iter.next().and_then(|v| v.parse().ok()),
             "--budget" => budget = iter.next().and_then(|v| v.parse().ok()),
             "--signals" => signals = true,
+            "--hyde" => hyde = true,
+            "--multi-query" => multi_query = iter.next().and_then(|v| v.parse().ok()).unwrap_or(0),
             "--llm-command" => {
                 if let Some(value) = iter.next() {
                     llm_command = value.clone();
@@ -87,8 +94,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         report.skipped
     );
 
+    // The wrapper reads the prompt from stdin, so no {prompt} placeholder.
+    let client: Arc<dyn LlmClient> = Arc::new(CommandLlmClient::new(llm_command, Vec::new()));
+
     // Pick the recall strategy.
-    let factory: Box<dyn RecallFactory> = match recall.as_str() {
+    let mut factory: Box<dyn RecallFactory> = match recall.as_str() {
         "lexical" => Box::new(LexicalRecall),
         "vector" => {
             #[cfg(feature = "vector")]
@@ -112,6 +122,17 @@ signals = {signals})..."
         }
     };
 
+    // Query expansion (HyDE / multi-query) wraps the base recall with extra LLM calls.
+    if hyde || multi_query > 0 {
+        eprintln!("query expansion: hyde={hyde}, multi_query={multi_query}");
+        factory = Box::new(ExpandingRecall::new(
+            factory,
+            client.clone(),
+            hyde,
+            multi_query,
+        ));
+    }
+
     // The qualify-gate's min_score is recall-store-relative: keyword scores are match counts
     // (≥1), vector RRF scores are ~0.02, and a cross-encoder reranker emits logits that can be
     // negative. The backend (and reranker) already rank by relevance, so for vector recall the
@@ -127,10 +148,8 @@ signals = {signals})..."
         config.budget_tokens = budget;
     }
 
-    // The wrapper reads the prompt from stdin, so no {prompt} placeholder.
-    let client = CommandLlmClient::new(llm_command, Vec::new());
     let (summary, _outcomes) =
-        run_qa_eval(dataset, &cases, factory.as_ref(), &client, config).await;
+        run_qa_eval(dataset, &cases, factory.as_ref(), client.as_ref(), config).await;
 
     if json {
         println!("{}", serde_json::to_string_pretty(&summary)?);

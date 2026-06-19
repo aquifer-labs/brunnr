@@ -14,7 +14,10 @@ pub use bench::{
 pub use eval::VectorRecall;
 pub use eval::{load_locomo, load_longmemeval, LoadReport, QaCase};
 #[cfg(feature = "llm")]
-pub use eval::{run_case, run_qa_eval, CaseOutcome, EvalSummary, LexicalRecall, RecallFactory};
+pub use eval::{
+    run_case, run_qa_eval, CaseOutcome, EvalSummary, ExpandingRecall, ExpandingRecallStore,
+    LexicalRecall, RecallFactory,
+};
 
 use serde::{Deserialize, Serialize};
 

@@ -226,6 +226,175 @@ Question: {question}\nGold: {gold}\nPredicted: {predicted}\nCorrect (yes/no):"
         }
     }
 
+    /// RRF-fuse several per-query candidate lists into one, returning the top `limit`.
+    fn fuse_recall(lists: Vec<Vec<RecallItem>>, limit: usize) -> Vec<RecallItem> {
+        use std::collections::HashMap;
+        let k = 60.0f32;
+        let mut scored: HashMap<String, (f32, RecallItem)> = HashMap::new();
+        for list in lists {
+            for (rank, item) in list.into_iter().enumerate() {
+                let contribution = 1.0 / (k + rank as f32 + 1.0);
+                scored
+                    .entry(item.id.clone())
+                    .and_modify(|(score, _)| *score += contribution)
+                    .or_insert((contribution, item));
+            }
+        }
+        let mut fused: Vec<(f32, RecallItem)> = scored.into_values().collect();
+        fused.sort_by(|a, b| {
+            b.0.partial_cmp(&a.0)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.1.id.cmp(&b.1.id))
+        });
+        fused
+            .into_iter()
+            .take(limit)
+            .map(|(score, mut item)| {
+                item.score = score;
+                item
+            })
+            .collect()
+    }
+
+    /// Recall store that broadens each query with an LLM before retrieval — **HyDE** (a
+    /// hypothetical answer used as an extra query) and/or **multi-query** paraphrases — then
+    /// RRF-fuses the per-query candidate lists. Costs an extra LLM call or two per question; the
+    /// committed footprint is unchanged (fusion still returns `limit` items).
+    pub struct ExpandingRecallStore {
+        inner: Arc<dyn RecallStore>,
+        client: Arc<dyn LlmClient>,
+        hyde: bool,
+        multi_query: usize,
+    }
+
+    impl ExpandingRecallStore {
+        pub fn new(
+            inner: Arc<dyn RecallStore>,
+            client: Arc<dyn LlmClient>,
+            hyde: bool,
+            multi_query: usize,
+        ) -> Self {
+            Self {
+                inner,
+                client,
+                hyde,
+                multi_query,
+            }
+        }
+    }
+
+    impl RecallStore for ExpandingRecallStore {
+        fn recall(
+            &self,
+            query: &str,
+            limit: usize,
+        ) -> futures_util::future::BoxFuture<'_, headgate::HeadgateResult<Vec<RecallItem>>>
+        {
+            use futures_util::FutureExt;
+            let query = query.to_string();
+            async move {
+                let mut queries = vec![query.clone()];
+
+                if self.hyde {
+                    let prompt = format!(
+                        "Write a brief, plausible answer to the question as if you had read the \
+relevant conversation (1-2 factual sentences, no preamble).\n\nQuestion: {query}\nAnswer:"
+                    );
+                    if let Ok(text) = self
+                        .client
+                        .complete(LlmRequest::new(prompt).with_temperature(0.3).with_max_tokens(80))
+                        .await
+                    {
+                        let text = text.trim();
+                        if !text.is_empty() {
+                            queries.push(text.to_string());
+                        }
+                    }
+                }
+
+                if self.multi_query > 0 {
+                    let prompt = format!(
+                        "Rewrite the question in {n} different ways that could match how the answer \
+was phrased. One per line, no numbering, preserve meaning.\n\nQuestion: {query}",
+                        n = self.multi_query
+                    );
+                    if let Ok(text) = self
+                        .client
+                        .complete(
+                            LlmRequest::new(prompt)
+                                .with_temperature(0.5)
+                                .with_max_tokens(160),
+                        )
+                        .await
+                    {
+                        for line in text.lines() {
+                            let line = line
+                                .trim()
+                                .trim_start_matches(|c: char| {
+                                    c.is_ascii_digit() || matches!(c, '.' | ')' | '-' | ' ')
+                                })
+                                .trim();
+                            if !line.is_empty() && queries.len() < self.multi_query + 2 {
+                                queries.push(line.to_string());
+                            }
+                        }
+                    }
+                }
+
+                let mut lists = Vec::with_capacity(queries.len());
+                for candidate in &queries {
+                    lists.push(self.inner.recall(candidate, limit).await?);
+                }
+                Ok(fuse_recall(lists, limit))
+            }
+            .boxed()
+        }
+    }
+
+    /// Factory wrapper that applies query expansion over a base factory's recall store.
+    pub struct ExpandingRecall {
+        base: Box<dyn RecallFactory>,
+        client: Arc<dyn LlmClient>,
+        hyde: bool,
+        multi_query: usize,
+    }
+
+    impl ExpandingRecall {
+        pub fn new(
+            base: Box<dyn RecallFactory>,
+            client: Arc<dyn LlmClient>,
+            hyde: bool,
+            multi_query: usize,
+        ) -> Self {
+            Self {
+                base,
+                client,
+                hyde,
+                multi_query,
+            }
+        }
+    }
+
+    impl RecallFactory for ExpandingRecall {
+        fn build<'a>(
+            &'a self,
+            case: &'a QaCase,
+        ) -> futures_util::future::BoxFuture<'a, headgate::HeadgateResult<Arc<dyn RecallStore>>>
+        {
+            use futures_util::FutureExt;
+            async move {
+                let inner = self.base.build(case).await?;
+                Ok(Arc::new(ExpandingRecallStore::new(
+                    inner,
+                    self.client.clone(),
+                    self.hyde,
+                    self.multi_query,
+                )) as Arc<dyn RecallStore>)
+            }
+            .boxed()
+        }
+    }
+
     /// Vector recall: embeds each case's facts into a fresh sqlite-vec collection and recalls
     /// with the real `VectorMemoryBackend` retrieval (embedding + small-to-big + RRF). The
     /// embedder is loaded once and shared across cases.
@@ -382,13 +551,35 @@ Question: {question}\nGold: {gold}\nPredicted: {predicted}\nCorrect (yes/no):"
             assert!(summary.mean_committed_tokens > 0.0);
             assert_eq!(outcomes.len(), 2);
         }
+
+        #[tokio::test]
+        async fn expanding_recall_calls_llm_and_fuses() {
+            use headgate::StaticLlmClient;
+
+            // The inner store returns the same two items regardless of query; the LLM emits
+            // two paraphrases. Fusion should dedup back to the two items without error.
+            let inner: Arc<dyn RecallStore> = Arc::new(StaticRecallStore::new(vec![
+                RecallItem::new("a", "alpha fact", 1.0),
+                RecallItem::new("b", "beta fact", 0.9),
+            ]));
+            let client: Arc<dyn LlmClient> =
+                Arc::new(StaticLlmClient::new("rephrasing one\nrephrasing two"));
+            let store = ExpandingRecallStore::new(inner, client, true, 2);
+
+            let hits = store.recall("original question", 5).await.expect("recall");
+            assert_eq!(hits.len(), 2);
+            assert!(hits.iter().any(|hit| hit.id == "a"));
+        }
     }
 }
 
 #[cfg(all(feature = "llm", feature = "vector"))]
 pub use runner::VectorRecall;
 #[cfg(feature = "llm")]
-pub use runner::{run_case, run_qa_eval, CaseOutcome, EvalSummary, LexicalRecall, RecallFactory};
+pub use runner::{
+    run_case, run_qa_eval, CaseOutcome, EvalSummary, ExpandingRecall, ExpandingRecallStore,
+    LexicalRecall, RecallFactory,
+};
 
 use serde::{Deserialize, Serialize};
 
