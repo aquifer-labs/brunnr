@@ -73,11 +73,10 @@ Judge = `codex` gpt-5.5 (reasoning `xhigh`), Artesian **vector recall** (real
 | LoCoMo | 200 | **0.370** (74/200) | 534 | 0.039 |
 | LongMemEval (oracle) | 500 (full split) | **0.699** (348/498) | 1944 | 0.343 |
 
-**mem0** (arXiv:2504.19413, cited — not re-run here; no OpenAI API key available, and mem0's
-pipeline is not faithfully reproducible through the `codex` ChatGPT-OAuth CLI). The paper reports
-*relative* figures only: **+26 %** LLM-as-judge over OpenAI memory on LoCoMo, **91 %** lower p95
-latency, **> 90 %** token savings vs. a full-context baseline. A same-protocol head-to-head needs
-mem0 run with a real OpenAI key under this judge/budget.
+**mem0** (arXiv:2504.19413, cited — not re-run here). The paper reports *relative* figures only:
+**+26 %** LLM-as-judge over OpenAI memory on LoCoMo, **91 %** lower p95 latency, **> 90 %** token
+savings vs. a full-context baseline. A same-protocol head-to-head (running mem0 on these splits
+under this judge/budget) remains future work.
 
 ### Recall ablation (n = 30, shows the lexical→vector lift)
 
