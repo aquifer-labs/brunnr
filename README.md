@@ -2,186 +2,174 @@
 
 # Artesian
 
-**Memory control plane for agent loops.** Long-running agent loops fail not because the model is
-weak — they fail because the agent **forgets**. Artesian is the memory control plane that keeps the
-working context small, high-signal, and survivable across compaction and disconnects, so memory
-**guides the next action** (not just recalls a fact), **compounds** across runs, and is **owned by
-you** — portable across any model and any retrieval store.
-
-**Recall ≠ use.** Systems that saturate recall benchmarks still fail when memory must guide action:
-not *can you recall attempt 12*, but *given attempts 1–46, what do you do on 47?* (MemoryArena,
-arXiv:2602.16313). Artesian is the first OSS memory system that benchmarks both: recall quality
-(LoCoMo / LongMemEval) and memory-guides-action (agentic task eval — see
-[benchmarks](benchmarks/README.md)).
-
-**Own your learning loop.** Swap the model, keep the company veteran. Artesian keeps durable
-knowledge in portable [Open Knowledge Format](docs/backends.md) markdown you can read, edit, and
-`git` — white-box, yours. Not a cloud service you rent, not a black box you can't inspect. Run
-locally with zero infrastructure, no per-write LLM call, nothing leaving your machine.
-
-We are **not** "another memory store" — we are the control plane that sits over one. The
-[Agent Cognitive Compressor](docs/positioning.md) qualify-gate and bounded committed state are the
-trust boundary between raw recall and what the agent actually acts on. Architecture is
-**interface ≠ substrate**: human-readable OKF files as the interface, a transactional,
-semantically-indexed, multi-writer substrate underneath — in one Rust binary.
+**Memory control plane for agent loops.**
 
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
-&nbsp;status: bootstrap
+[![CI](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/aquifer-labs/artesian/actions)
+[![Rust](https://img.shields.io/badge/rust-stable-orange.svg)](https://www.rust-lang.org)
 
-[![System map](docs/diagrams/system-map.png)](docs/diagrams/system-map.mmd)
+Artesian keeps agent memory small, high-signal, and survivable across compaction — so the agent **acts on what it knows**, not re-reads everything it has ever stored.
 
-On our [retrieval benchmark](benchmarks/README.md), Artesian holds per-query context cost at
-**~1,000 tokens** while the memory grows past a million tokens — a realistic
-multi-session history is already 100k+ tokens of accumulated reasoning, tool output, and messages.
-Full-context replay grows with the history, so the saving rises from **93% to 99.9%** as memory
-scales (13k → 1M tokens). See the [chart, tables, and methodology](benchmarks/README.md).
+## What it does
 
-**What you get**
+- **Bounded committed context (ACC)** — a qualify-gate (drift / novelty / relevance) decides what enters; the controller evicts under saturation and compresses to fit; never silently loses critical state.
+- **Survives compaction** — deterministic session anchor + targeted recall; resumes correctly after any context reset, auto-compaction, or disconnect.
+- **Token-efficient retrieval** — ~1,000 tokens per query regardless of memory size (99.9% saving vs full-context replay at 1M tokens; see [Proof](#proof)).
+- **Private, zero-cost writes** — no per-write LLM call; local by default; LLM judge, consolidation, and compression are opt-in.
+- **Composable** — ACC over any vector store; Qdrant / pgvector / sqlite-vec / files / mem0; bring your own judge and compressor; any MCP agent.
 
-- **Memory you own** — durable knowledge stored as portable [Open Knowledge Format](docs/backends.md)
-  markdown: white-box, git-versionable, yours. Not a black box, not a service you rent.
-- **Free, private writes** — capture is explicit and local; no per-write LLM call and nothing leaves
-  your machine (LLM consolidation is opt-in). Run with zero infrastructure (Files / sqlite-vec) or a
-  shared server (Qdrant).
-- **Targeted recall, not replay** — ~1,000 tokens per query no matter how large the memory grows
-  (the saving above). Records are chunked on store, so recall returns the few relevant *chunks*
-  and stays bounded even when a single document is huge — the full source is one `node_id`
-  drill-down away.
-- **Plugs into anything** — MCP-first: run memory-only and add persistent context to *any* agent or
-  orchestrator (Claude Code, Codex, agent teams, your own loop) with no takeover and no lock-in.
-- **More than memory, when you want it** — optional master/worker/judge orchestration and
-  vendor-neutral [agent teams (Flotilla)](docs/teams.md), as composable components you opt into.
+## How it works (30s)
 
-**New here?** [docs/onboarding.md](docs/onboarding.md) has a human Quickstart **and** an idempotent
-AI-agent bring-up recipe (any agent — Codex, Claude Code, Gemini CLI, opencode — can deploy Artesian
-per your config and connect a project, non-destructively). Why Artesian vs other memory tools:
-[docs/positioning.md](docs/positioning.md).
+```
+recall candidates (from durable memory)
+        │
+        ▼  qualify-gate: drift / novelty / relevance
+┌───────────────────────────────────────┐
+│   Committed Context State (bounded)   │  ← what the agent sees
+│   ┌───────────────────────────────┐   │
+│   │ decision:  chose Rust+tokio   │   │
+│   │ plan:      shard the embedder │   │
+│   │ blocker:   GPU quota at limit │   │
+│   └───────────────────────────────┘   │
+└───────────────────────────────────────┘
+        │ evict / compress under saturation
+        ▼
+durable memory (sqlite-vec / Qdrant / pgvector / files)
+        ↑ anchor + targeted recall on any compaction
+```
 
-## Status
-
-The core `memory` mode is working end-to-end: Files and SqliteVec backends, optional Qdrant
-integration, an ACC control plane (qualify-gate, bounded CCS, council judge, local LLM providers),
-int8 scalar quantization (4× storage reduction), transactional multi-writer substrate, loop memory
-kit, self-repair after compaction, and an MCP server exposing the full memory API.
-
-## Install
-
-From crates source (installs the `artesian` CLI and the `artesiand` daemon):
+## Get started (60s)
 
 ```shell
 cargo install --git https://github.com/aquifer-labs/artesian artesian-cli
+artesian init --backend sqlite-vec        # zero infrastructure
+artesian memory store "chose Rust+tokio" --tag decision
+artesian memory find "which language"
+artesian perf                             # tokens saved + compaction-survival check
 ```
 
-Then:
+MCP drop-in (Claude Code, Codex, opencode — any MCP client):
 
-```shell
-artesian init                                   # detect agents, write config + MCP registration
-artesian memory store "Artesian keeps durable context" --tag bootstrap
-artesian memory find durable
+```jsonc
+// claude_desktop_config.json or mcp settings
+{ "artesian-memory": { "command": "artesian-mcp", "args": ["--config", "artesian.toml"] } }
 ```
 
-Signed release binaries, an `install.sh`, and a container image are planned for the first tagged
-release (see [Status](#status)).
+`artesian init` writes the config. `artesian perf` prints live proof that memory is working.
 
-## Quickstart (from source)
+## Proof
 
-```shell
-cargo build --workspace
-cargo run -p artesian-cli -- init
-cargo run -p artesian-cli -- memory store "Artesian keeps durable context" --tag bootstrap
-cargo run -p artesian-cli -- memory find durable
+### Context efficiency
+
+Artesian's per-query cost stays flat at ~1,000 tokens while full-context replay grows 81×.
+
+| Memory / history | Full-context replay | Artesian | Saving | Retrieved |
+|---|---:|---:|---:|---:|
+| ~13k tokens (180 docs) | 12,902 | 876 tokens | 93% | 100% |
+| ~119k tokens (1,600 docs) | 118,566 | 974 tokens | 99.2% | 100% |
+| ~478k tokens (6,400 docs) | 477,740 | 992 tokens | 99.8% | 100% |
+| ~1M tokens (14,000 docs) | 1,046,431 | 1,046 tokens | **99.9%** | 100% |
+
+```
+just bench-check   # reproduce all tiers; fails if committed results differ
 ```
 
-Initialize with the zero-infrastructure vector backend:
+→ Full methodology, charts, large-source retrieval: [benchmarks/README.md](benchmarks/README.md)
 
-```shell
-cargo run -p artesian-cli -- init --backend sqlite-vec
-```
+### Retrieval quality
 
-Run the MCP server over stdio using the generated config:
+| Benchmark | Score | Method |
+|---|---:|---|
+| LoCoMo | 0.475 | vector + BGE reranking (vector-only baseline: 0.37) |
+| LongMemEval (oracle) | 0.70 | vector retrieval |
 
-```shell
-cargo run -p artesian-mcp -- --config artesian.toml
-```
+### Agentic "use" (memory-guides-action)
 
-Backfill markdown or JSON memories idempotently:
+The `gauge` agentic eval harness ships in this repo: multi-session tasks where success = correct next action given accumulated memory, not just recall of a fact (MemoryArena framing, arXiv:2602.16313). Published scores vary by model and task set — run `just bench-agentic` to measure on your own setup.
 
-```shell
-cargo run -p artesian-cli -- backfill ./memory-export
-```
+→ Methodology: [benchmarks/comparison/README.md](benchmarks/comparison/README.md)
 
-Spawn a role-bound agent with the canonical role name (`master` / `worker` / `judge`):
+## Composability (LEGO)
 
-```shell
-cargo run -p artesian-cli -- spawn master claude-code
-cargo run -p artesian-cli -- spawn worker codex
-cargo run -p artesian-cli -- spawn judge gemini
-```
+Artesian is built like LEGO — take only the pieces you need, bring your own for the rest.
 
-## Workspace
-
-- `artesian-core`: role, queue, config, and agent adapter traits.
-- `aquifer`: memory trait, Files backend, generic vector memory backend, SqliteVec vector store (with int8 quantization), RRF seam, feature-gated Qdrant and pgvector backends, transactional multi-writer commit-log.
-- `headgate`: ACC control plane — qualify-gate, bounded CCS, commit-loop, LLM judge + compressor (local providers + council), headroom adapter.
-- `sandbox`: optional sandbox runtime seam.
-- `gauge`: evaluation harness — LoCoMo/LongMemEval recall benchmarks + agentic task scoring.
-- `artesian-mcp`: MCP server for memory tools.
-- `artesian-cli`: CLI entrypoint.
-- `artesian-test-support`: shared helpers for crate-level integration tests.
-
-## Modes
-
-- `memory`: memory backend plus MCP tools, with no orchestration requirement.
-- `orchestrate`: optional master, worker, judge role routing.
-- `full`: memory, orchestration, and sandboxing.
-- `advanced`: bring your own existing memory or context layout.
+→ **[docs/composability.md](docs/composability.md)**
 
 ## Composes with
 
-Artesian is the **control plane** for agent memory — it decides what enters bounded state, when to
-evict, and how to survive compaction. It is designed to compose with complementary layers rather than
-absorb them:
-
-| Layer | What it does | How it composes |
+| Store / layer | Role | How to use |
 |---|---|---|
-| **headroom** | Data-plane compression — shrinks artifact bytes before a fact is qualified | Enable the `headroom` feature in `headgate`; wrap any `Compressor` with `HeadroomCompressor`. headroom runs under the ACC gate; Artesian still controls admission. |
-| **Ollama / LM Studio / mlx_lm.server** | Local LLM inference — zero token cost, private | Named as `provider: "ollama"` / `"lm-studio"` / `"mlx"` in `AccLlmConfig`. Drop-in for the judge and compressor. |
-| **Any OpenAI-compatible endpoint** | Hosted or self-hosted LLM | `provider: "openai-compatible"` + `base_url`. |
-| **Any agent CLI** | Codex / Claude Code / Gemini / opencode | `provider: "command"` — shelled out via stdin/stdout. |
+| **sqlite-vec** | Local vector store — zero infrastructure | `backend = "sqlite-vec"` (default `init`) |
+| **Qdrant** | Shared vector store — multi-agent / multi-operator | `backend = "qdrant"` + `QDRANT_URL` |
+| **pgvector** | PostgreSQL-native vectors | `features = ["pgvector"]` |
+| **plain files** | Human-readable OKF markdown — no DB needed | `backend = "files"` |
+| **mem0** | Existing mem0 store | Implement `headgate::RecallStore` |
+| **headroom** | Data-plane compression — shrinks artifact bytes | `headroom` feature + `HeadroomCompressor` |
+| **Ollama / LM Studio / mlx** | Local LLM for judge or compressor | `provider: "ollama"` / `"lm-studio"` / `"mlx"` |
+| **Any OpenAI-compatible endpoint** | Cloud or self-hosted LLM | `provider: "openai-compatible"` + `base_url` |
+| **Any agent CLI** | Codex / Claude Code / Gemini / opencode | `provider: "command"` — shelled out via stdin/stdout |
 
-The principle: Artesian owns the *control plane* (what, when, why); you choose the *data plane*
-(how much to compress, which model scores, which store retrieves).
+## Compared to
+
+Qualitative only — architectures differ enough that cross-system benchmark numbers mislead.
+
+| | Artesian | mem0 | LangMem | plain markdown |
+|---|---|---|---|---|
+| **What it is** | ACC control plane + memory | Managed memory API | LangGraph memory layer | Files + prompting |
+| **Self-hosted, zero infra** | ✓ sqlite-vec or files | Cloud-first | Requires LangGraph runtime | ✓ |
+| **No per-write LLM call** | ✓ | ✗ | ✗ | ✓ |
+| **ACC qualify-gate** | ✓ drift/novelty/relevance | ✗ | ✗ | ✗ |
+| **Compaction survival** | ✓ anchor + recall | ✗ | ✗ | ✗ |
+| **Multi-writer, isolated** | ✓ optimistic CAS | partial | partial | ✗ |
+| **Agentic eval harness** | ✓ ships in repo | ✗ | ✗ | ✗ |
+
+## Docs
+
+| | |
+|---|---|
+| Architecture | [docs/architecture.md](docs/architecture.md) |
+| Memory internals | [docs/memory.md](docs/memory.md) |
+| Backends + quantization | [docs/backends.md](docs/backends.md) |
+| Self-repair after compaction | [docs/self-repair.md](docs/self-repair.md) |
+| Concurrency + multi-writer | [docs/concurrency.md](docs/concurrency.md) |
+| Composability | [docs/composability.md](docs/composability.md) |
+| Why Rust | [docs/why-rust.md](docs/why-rust.md) |
+| Positioning / prior art | [docs/positioning.md](docs/positioning.md) |
+| Onboarding | [docs/onboarding.md](docs/onboarding.md) |
+| Benchmarks | [benchmarks/README.md](benchmarks/README.md) |
+
+## Contributing
+
+All commits require a DCO `Signed-off-by:` line. All code in English. Apache-2.0 SPDX headers on new files. See [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) and [docs/development.md](docs/development.md).
+
+```shell
+cargo fmt --all --check
+cargo test --workspace
+cargo build --workspace
+```
+
+## Community
+
+Issues and discussions: [GitHub Issues](https://github.com/aquifer-labs/artesian/issues). Pull requests welcome.
 
 ## License
 
-Artesian is licensed under Apache-2.0. Contributions must include a DCO sign-off.
+Apache-2.0. See [LICENSE](LICENSE).
 
-## Development
-
-Artesian uses crate-level integration tests, shared test helpers, and repo-level tooling modeled on
-mature Rust workspaces. See [docs/development.md](docs/development.md).
-
-The public memory benchmark is in [benchmarks/README.md](benchmarks/README.md) and runs with
-`just bench`.
+---
 
 ## Acknowledgments
 
-Artesian stands on the shoulders of prior work and public ideas. Artesian reuses ideas and APIs where appropriate, not third-party source code.
+Artesian stands on the shoulders of prior work. Artesian reuses ideas and APIs where appropriate, not third-party source code.
 
-- **Andrej Karpathy — the "LLM wiki" pattern** — https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f (announced at https://x.com/karpathy/status/2039805659525644595) — the LLM-maintained markdown knowledge base (`index.md` catalog + `log.md` + entity/concept pages; ingest/query/lint) that directly informs Artesian's Files/OKF backend and its consolidation roadmap.
-- **Qdrant** — https://github.com/qdrant/qdrant (vector store; `QdrantBackend` via `QdrantVectorStore`).
-- **TencentDB Agent Memory** — https://github.com/TencentCloud/TencentDB-Agent-Memory (L0–L3 tiering, hybrid BM25+vector RRF, node_id drill-down, sqlite-vec local-first; `SqliteVecBackend` + `TencentDBBackend`).
-- **OpenAI — Codex Memories & Agent Loop** — https://developers.openai.com/codex/memories · https://openai.com/index/unrolling-the-codex-agent-loop/ (memory model + the agent loop).
-- **Anthropic — Claude Code Agent Memory & Agent Loop** — https://platform.claude.com/docs/en/managed-agents/memory · https://code.claude.com/docs/en/agent-sdk/agent-loop (memory + the agent loop).
-- **Open Knowledge Format (OKF)** — Google Cloud `knowledge-catalog` (Apache-2.0) — https://github.com/GoogleCloudPlatform/knowledge-catalog — the portable markdown+YAML knowledge-bundle format Artesian's `files` memory backend aligns with.
-- **ApX Machine Learning — Agentic LLM Systems & Memory Architectures** (course) — https://apxml.com/courses/agentic-llm-memory-architectures — an educational reference that helped frame our memory, retrieval, consolidation, planning, and multi-agent design. The underlying techniques are grounded in their **primary sources** (cited per-topic in `docs/`); ApX content is credited and linked, never reproduced.
+- **Andrej Karpathy — the "LLM wiki" pattern** — the LLM-maintained markdown knowledge base (`index.md` + `log.md` + entity pages; ingest/query/lint) that directly informs Artesian's Files/OKF backend and consolidation roadmap.
+- **TencentDB Agent Memory** — L0–L3 tiering, hybrid BM25+vector RRF, node_id drill-down, sqlite-vec local-first; informs `SqliteVecBackend`.
+- **Qdrant** — vector store; `QdrantBackend` via `QdrantVectorStore`.
+- **Open Knowledge Format (OKF)** — Google Cloud `knowledge-catalog` (Apache-2.0) — the portable markdown+YAML knowledge-bundle format Artesian's `files` backend aligns with.
+- **ACC model** — Bousetouane, *AI Agents Need Memory Control Over More Context*, arXiv:2601.11653 — the model `headgate` implements.
+- **MemoryArena** — arXiv:2602.16313 — the "recall ≠ use" framing and agentic eval methodology.
+- **OpenAI / Anthropic** — Codex Memories, Claude Code Agent Memory, and agent loop documentation — memory model and loop framing.
+- **ApX Machine Learning — Agentic LLM Systems & Memory Architectures** — educational reference; underlying techniques grounded in primary sources cited per-topic in `docs/`.
+- **h5i** — AI-aware Git sidecar; its typed agent-handoff messaging informs Artesian's orchestration handoff protocol.
 
-- **h5i** — https://github.com/h5i-dev/h5i — an AI-aware Git sidecar (per-commit agent context,
-  inter-agent messaging with union-merge, and progressive sandbox isolation). A complementary layer
-  to Artesian's semantic memory; its typed agent-handoff messaging informs Artesian's orchestration
-  handoff protocol, and its isolation tiers inform the `sandbox` sandbox direction.
-
-Prior art also includes OpenAI Symphony, Cursor scaling-agents, and the self-correcting /
-long-running coding-agent patterns (e.g. "Autonomous Long-Running Coding Agents"). All
-acknowledgments are references to public ideas/APIs and link to the sources; no third-party
-content is reproduced.
+Prior art also includes Cursor scaling-agents, OpenAI Symphony, and self-correcting long-running agent patterns. All acknowledgments are references to public ideas/APIs; no third-party content is reproduced.
