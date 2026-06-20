@@ -73,8 +73,8 @@ pub use upgrade::{
 #[cfg(feature = "vector")]
 pub use vector::{
     Distance, Filter, FilterCondition, FilterValue, PayloadIndex, RangeFilter, VectorCollection,
-    VectorPoint, VectorSearch, VectorSearchHit, VectorSearchSource, VectorStore,
-    VectorStoreCapabilities,
+    VectorPoint, VectorQuantization, VectorSearch, VectorSearchHit, VectorSearchSource,
+    VectorStore, VectorStoreCapabilities,
 };
 #[cfg(feature = "vector")]
 pub use vector_memory::{

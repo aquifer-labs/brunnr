@@ -81,6 +81,11 @@ pub struct VectorMemoryConfig {
     pub dimensions: usize,
     pub distance: Distance,
 
+    /// Embedding quantization for this collection (`float32` or `int8`). Defaults to `float32`.
+    /// `int8` gives ~4× storage reduction with a modest recall cost — measure before enabling.
+    #[serde(default)]
+    pub quantization: crate::VectorQuantization,
+
     /// D1: Add deterministic entity-overlap as a third RRF channel alongside BM25 and vector.
     /// Built from record tags, camelCase/PascalCase identifiers, backtick-quoted terms, and
     /// ALL-CAPS acronyms. No LLM required. Default off — enable after measuring recall gain.
@@ -168,6 +173,7 @@ impl VectorMemoryConfig {
             embedding_model: PINNED_FASTEMBED_MODEL.to_string(),
             dimensions: PINNED_FASTEMBED_DIMENSIONS,
             distance: Distance::Cosine,
+            quantization: crate::VectorQuantization::Float32,
             entity_linking: false,
             temporal_decay_lambda: 0.0,
             knowledge_update_supersession: false,
@@ -292,6 +298,7 @@ impl<V: VectorStore> VectorMemoryBackend<V> {
                 name: self.config.collection.clone(),
                 dimensions: self.config.dimensions,
                 distance: self.config.distance,
+                quantization: self.config.quantization,
             })
             .await?;
         for field in [

@@ -91,9 +91,21 @@ impl VectorStore for SqliteVecVectorStore {
         async move {
             let tables = Tables::new(&collection.name)?;
             let connection = self.lock()?;
+            let embedding_type = match collection.quantization {
+                crate::VectorQuantization::Float32 => {
+                    format!("float[{}]", collection.dimensions)
+                }
+                crate::VectorQuantization::Int8 => {
+                    format!("int8[{}]", collection.dimensions)
+                }
+            };
             connection
                 .execute_batch(&format!(
-                    "CREATE TABLE IF NOT EXISTS {records} (
+                    "CREATE TABLE IF NOT EXISTS _artesian_collection_meta (
+                         name TEXT PRIMARY KEY,
+                         quantization TEXT NOT NULL DEFAULT 'float32'
+                     );
+                     CREATE TABLE IF NOT EXISTS {records} (
                          id TEXT PRIMARY KEY,
                          node_id TEXT NOT NULL,
                          payload TEXT NOT NULL
@@ -101,13 +113,23 @@ impl VectorStore for SqliteVecVectorStore {
                      CREATE VIRTUAL TABLE IF NOT EXISTS {fts}
                          USING fts5(id UNINDEXED, content);
                      CREATE VIRTUAL TABLE IF NOT EXISTS {vectors}
-                         USING vec0(id TEXT PRIMARY KEY, embedding float[{dimensions}] distance_metric={distance});",
+                         USING vec0(id TEXT PRIMARY KEY, embedding {embedding_type} distance_metric={distance});",
                     records = tables.records,
                     fts = tables.fts,
                     vectors = tables.vectors,
-                    dimensions = collection.dimensions,
+                    embedding_type = embedding_type,
                     distance = sqlite_distance(collection.distance),
                 ))
+                .map_err(sqlite_error)?;
+            let quant_str = match collection.quantization {
+                crate::VectorQuantization::Float32 => "float32",
+                crate::VectorQuantization::Int8 => "int8",
+            };
+            connection
+                .execute(
+                    "INSERT OR REPLACE INTO _artesian_collection_meta(name, quantization) VALUES (?1, ?2)",
+                    params![collection.name, quant_str],
+                )
                 .map_err(sqlite_error)?;
             Ok(())
         }
@@ -170,6 +192,10 @@ impl VectorStore for SqliteVecVectorStore {
         async move {
             let tables = Tables::new(&collection)?;
             let mut connection = self.lock()?;
+            // Read quantization mode before starting the write transaction so the
+            // explicit transaction doesn't need to mix reads of its own writes with
+            // metadata reads (avoids WAL snapshot edge cases on some SQLite builds).
+            let quant = collection_quantization(&connection, &collection);
             let transaction = connection.transaction().map_err(sqlite_error)?;
             for point in points {
                 let point_id = point.id;
@@ -215,15 +241,10 @@ impl VectorStore for SqliteVecVectorStore {
                         params![&point_id, content],
                     )
                     .map_err(sqlite_error)?;
+                let (vec_sql, vec_val) =
+                    vector_insert_sql_and_value(quant, &tables.vectors, &point.vector);
                 transaction
-                    .execute(
-                        &format!(
-                            "INSERT OR REPLACE INTO {vectors}(id, embedding)
-                             VALUES (?1, ?2)",
-                            vectors = tables.vectors,
-                        ),
-                        params![&point_id, vector_to_blob(&point.vector)],
-                    )
+                    .execute(&vec_sql, params![&point_id, vec_val])
                     .map_err(sqlite_error)?;
             }
             transaction.commit().map_err(sqlite_error)?;
@@ -247,6 +268,7 @@ impl VectorStore for SqliteVecVectorStore {
                 {
                     vector_search(
                         &connection,
+                        &collection,
                         &tables,
                         search.vector.as_deref().expect("vector checked above"),
                         &search.filter,
@@ -386,25 +408,19 @@ impl Tables {
 
 fn vector_search(
     connection: &Connection,
+    collection: &str,
     tables: &Tables,
     vector: &[f32],
     filter: &Filter,
     limit: usize,
 ) -> MemoryResult<Vec<VectorSearchHit>> {
     let limit = limit.max(1);
-    let mut statement = connection
-        .prepare(&format!(
-            "SELECT records.id, records.payload, vec.distance
-             FROM {vectors} AS vec
-             JOIN {records} AS records ON records.id = vec.id
-             WHERE vec.embedding MATCH ?1 AND k = ?2
-             ORDER BY vec.distance",
-            vectors = tables.vectors,
-            records = tables.records,
-        ))
-        .map_err(sqlite_error)?;
+    let quant = collection_quantization(connection, collection);
+    let (query_sql, query_val) =
+        vector_match_sql_and_value(quant, &tables.vectors, &tables.records, vector);
+    let mut statement = connection.prepare(&query_sql).map_err(sqlite_error)?;
     let rows = statement
-        .query_map(params![vector_to_blob(vector), limit as i64], |row| {
+        .query_map(params![query_val, limit as i64], |row| {
             let point = row_to_point(row)?;
             let distance = row.get::<_, Option<f64>>(2)?.unwrap_or(f64::INFINITY);
             Ok((point, distance))
@@ -597,6 +613,95 @@ fn vector_to_blob(vector: &[f32]) -> Vec<u8> {
     output
 }
 
+/// Symmetrically quantize float32 to a JSON int8 array (`"[127, -64, ...]"`).
+///
+/// Scale is `max_abs / 127.0`; the zero vector maps to all-zero values.
+/// The JSON format is what sqlite-vec's `vec_int8()` SQL function expects — it sets the
+/// internal `SQLITE_VEC_ELEMENT_TYPE_INT8` subtype so the vtab knows the element type.
+fn quantize_f32_to_i8_json(vector: &[f32]) -> String {
+    let max_abs = vector.iter().copied().map(f32::abs).fold(0.0f32, f32::max);
+    let scale = if max_abs > 0.0 { max_abs / 127.0 } else { 1.0 };
+    let ints: Vec<i64> = vector
+        .iter()
+        .map(|v| (v / scale).round().clamp(-127.0, 127.0) as i64)
+        .collect();
+    serde_json::to_string(&ints).unwrap_or_else(|_| "[0]".to_string())
+}
+
+/// Return the collection's quantization mode from `_artesian_collection_meta`, defaulting
+/// to `float32` when the table or row does not exist (e.g. collections created before
+/// this feature was added).
+fn collection_quantization(
+    connection: &rusqlite::Connection,
+    collection: &str,
+) -> crate::VectorQuantization {
+    let Ok(quant_str) = connection.query_row(
+        "SELECT quantization FROM _artesian_collection_meta WHERE name = ?1",
+        params![collection],
+        |row| row.get::<_, String>(0),
+    ) else {
+        return crate::VectorQuantization::Float32;
+    };
+    match quant_str.as_str() {
+        "int8" => crate::VectorQuantization::Int8,
+        _ => crate::VectorQuantization::Float32,
+    }
+}
+
+/// The SQL fragment for the vector column in an INSERT and the bound value.
+///
+/// For Float32 we bind a raw blob; sqlite-vec reads the bytes as float32.
+/// For Int8 we wrap with `vec_int8(?2)` which sets the INT8 subtype sqlite-vec requires.
+fn vector_insert_sql_and_value(
+    quant: crate::VectorQuantization,
+    vectors_table: &str,
+    vector: &[f32],
+) -> (String, rusqlite::types::Value) {
+    match quant {
+        crate::VectorQuantization::Float32 => (
+            format!("INSERT OR REPLACE INTO {vectors_table}(id, embedding) VALUES (?1, ?2)"),
+            rusqlite::types::Value::Blob(vector_to_blob(vector)),
+        ),
+        crate::VectorQuantization::Int8 => (
+            format!(
+                "INSERT OR REPLACE INTO {vectors_table}(id, embedding) VALUES (?1, vec_int8(?2))"
+            ),
+            rusqlite::types::Value::Text(quantize_f32_to_i8_json(vector)),
+        ),
+    }
+}
+
+/// The SQL fragment for vector MATCH and the bound query value.
+fn vector_match_sql_and_value(
+    quant: crate::VectorQuantization,
+    vectors_table: &str,
+    records_table: &str,
+    vector: &[f32],
+) -> (String, rusqlite::types::Value) {
+    match quant {
+        crate::VectorQuantization::Float32 => (
+            format!(
+                "SELECT records.id, records.payload, vec.distance
+                 FROM {vectors_table} AS vec
+                 JOIN {records_table} AS records ON records.id = vec.id
+                 WHERE vec.embedding MATCH ?1 AND k = ?2
+                 ORDER BY vec.distance"
+            ),
+            rusqlite::types::Value::Blob(vector_to_blob(vector)),
+        ),
+        crate::VectorQuantization::Int8 => (
+            format!(
+                "SELECT records.id, records.payload, vec.distance
+                 FROM {vectors_table} AS vec
+                 JOIN {records_table} AS records ON records.id = vec.id
+                 WHERE vec.embedding MATCH vec_int8(?1) AND k = ?2
+                 ORDER BY vec.distance"
+            ),
+            rusqlite::types::Value::Text(quantize_f32_to_i8_json(vector)),
+        ),
+    }
+}
+
 fn distance_to_score(distance: f64) -> f32 {
     (1.0 / (1.0 + distance.max(0.0))) as f32
 }
@@ -637,4 +742,71 @@ fn register_sqlite_vec() {
 
 fn sqlite_error(error: rusqlite::Error) -> MemoryError {
     MemoryError::Database(error.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Distance, VectorQuantization, VectorSearchSource};
+
+    #[tokio::test]
+    async fn int8_meta_is_written_and_read_back() {
+        let store = SqliteVecVectorStore::in_memory().expect("in-memory store");
+        store
+            .ensure_collection(crate::VectorCollection {
+                name: "test_int8".to_string(),
+                dimensions: 4,
+                distance: Distance::Cosine,
+                quantization: VectorQuantization::Int8,
+            })
+            .await
+            .expect("ensure_collection");
+
+        // Verify meta table has the int8 row.
+        let quant = {
+            let conn = store.lock().expect("lock");
+            collection_quantization(&conn, "test_int8")
+        };
+        assert_eq!(quant, VectorQuantization::Int8, "meta should show int8");
+
+        // Verify upsert with int8 works.
+        store
+            .upsert(
+                "test_int8",
+                vec![VectorPoint {
+                    id: "p1".to_string(),
+                    vector: vec![1.0, 0.0, 0.0, 0.0],
+                    payload: serde_json::json!({"content": "test", "node_id": "p1"}),
+                }],
+            )
+            .await
+            .expect("upsert int8 vector");
+
+        // Verify search works.
+        let hits = store
+            .search(
+                "test_int8",
+                VectorSearch {
+                    vector: Some(vec![1.0, 0.0, 0.0, 0.0]),
+                    text: None,
+                    filter: Default::default(),
+                    limit: 1,
+                    source: VectorSearchSource::Vector,
+                },
+            )
+            .await
+            .expect("search int8");
+        assert_eq!(hits.len(), 1, "int8 search should return 1 hit");
+    }
+
+    #[test]
+    fn quantize_f32_to_i8_json_is_valid_json_array() {
+        let v = vec![0.5f32, -0.5, 1.0, -1.0, 0.0, 0.25, -0.25, 0.75];
+        let json = quantize_f32_to_i8_json(&v);
+        let parsed: Vec<i64> = serde_json::from_str(&json).expect("valid JSON array");
+        assert_eq!(parsed.len(), v.len(), "int8 JSON: one int per dimension");
+        for val in &parsed {
+            assert!(*val >= -127 && *val <= 127, "int8 values in range: {val}");
+        }
+    }
 }

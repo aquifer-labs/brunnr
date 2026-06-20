@@ -295,6 +295,46 @@ pub fn llm_client_from_config(
             }
             Ok(std::sync::Arc::new(client))
         }
+        // Local OpenAI-compatible servers — zero token cost, private, no cloud dependency.
+        // Default ports: Ollama :11434, LM Studio :1234, mlx_lm.server :8080.
+        "ollama" => {
+            let base_url = config
+                .base_url
+                .clone()
+                .unwrap_or_else(|| "http://localhost:11434/v1".to_string());
+            let model = config
+                .model
+                .clone()
+                .ok_or_else(|| HeadgateError::Llm("ollama provider requires model".to_string()))?;
+            Ok(std::sync::Arc::new(OpenAiCompatibleClient::new(
+                base_url, model,
+            )))
+        }
+        "lm-studio" => {
+            let base_url = config
+                .base_url
+                .clone()
+                .unwrap_or_else(|| "http://localhost:1234/v1".to_string());
+            let model = config.model.clone().ok_or_else(|| {
+                HeadgateError::Llm("lm-studio provider requires model".to_string())
+            })?;
+            Ok(std::sync::Arc::new(OpenAiCompatibleClient::new(
+                base_url, model,
+            )))
+        }
+        "mlx" => {
+            let base_url = config
+                .base_url
+                .clone()
+                .unwrap_or_else(|| "http://localhost:8080/v1".to_string());
+            let model = config
+                .model
+                .clone()
+                .unwrap_or_else(|| "default".to_string());
+            Ok(std::sync::Arc::new(OpenAiCompatibleClient::new(
+                base_url, model,
+            )))
+        }
         "command" => {
             let command = config.command.clone().ok_or_else(|| {
                 HeadgateError::Llm("command provider requires command".to_string())

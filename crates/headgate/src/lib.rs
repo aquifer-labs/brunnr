@@ -33,6 +33,8 @@
 mod ccs;
 mod compressor;
 mod controller;
+#[cfg(feature = "llm")]
+mod council;
 mod gate;
 #[cfg(feature = "llm")]
 mod judge;
@@ -50,6 +52,8 @@ pub use recall::{MemoryRecallStore, RecallItem, RecallStore, StaticRecallStore};
 
 #[cfg(feature = "llm")]
 pub use compressor::LlmCompressor;
+#[cfg(feature = "llm")]
+pub use council::CouncilJudge;
 #[cfg(feature = "llm")]
 pub use judge::{JudgeQualifyGate, JudgeVerdict};
 #[cfg(feature = "llm")]

@@ -104,11 +104,30 @@ pub(crate) fn is_safe_field_path(field: &str) -> bool {
             .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.')
 }
 
+/// Storage format for embedding vectors.
+///
+/// `Int8` stores each dimension as a signed 8-bit integer (symmetric scalar quantization to
+/// the range `[−127, 127]`). This cuts the per-vector storage footprint by 4× vs `Float32`
+/// with a modest, measurable recall cost — inspired by the LEANN computable-embedding approach
+/// (arXiv: LEANN, SIGMOD 2024). The actual savings are honest: 4× per vector stored, not the
+/// 97% LEANN claims (which comes from graph-based recomputation we do not implement here).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum VectorQuantization {
+    /// Standard 32-bit float (4 bytes/dim). The default.
+    #[default]
+    Float32,
+    /// Signed 8-bit integer (1 byte/dim). 4× storage reduction; slight recall cost.
+    Int8,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VectorCollection {
     pub name: String,
     pub dimensions: usize,
     pub distance: Distance,
+    /// Embedding quantization for this collection. Defaults to `Float32`.
+    pub quantization: VectorQuantization,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

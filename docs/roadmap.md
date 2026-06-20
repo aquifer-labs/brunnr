@@ -149,7 +149,7 @@ the moat. Optional steps (6–7) are in scope. Step 8 is the final documentation
   update the kit over the model context protocol; `docs/modes.md` documents the kit with CLI + MCP
   examples. All 100% workspace tests green; fmt clean.
 
-### Step 6 — Rust storage moat + local/council compressor (optional, in scope)
+### Step 6 — Rust storage moat + local/council compressor (optional, in scope) ✓ DONE
 
 - **Goal:** (a) LEANN-style *computable* embeddings (pruned-graph recompute, ~97% less storage) as a
   `VectorStore` option; (b) pluggable **local** compressor/judge via LM Studio / `mlx_lm.server` /
@@ -158,6 +158,19 @@ the moat. Optional steps (6–7) are in scope. Step 8 is the final documentation
 - **Where:** `aquifer` (computable-embeddings store), `headgate` (compressor/judge providers).
 - **Acceptance:** storage-savings benchmark vs the standard vector store at equal recall; a local
   compressor runs the ACC loop with no API token spend.
+- **Status:**
+  - **(a) Scalar quantization (int8):** `VectorQuantization` enum added to `aquifer::vector`;
+    `VectorCollection` and `VectorMemoryConfig` gain a `quantization` field (default `Float32`).
+    `SqliteVecVectorStore` uses `vec_int8()` SQL function for int8 collections; metadata table
+    `_artesian_collection_meta` tracks per-collection mode. **Honest numbers:** 4× storage reduction
+    (1 byte/dim vs 4 bytes/dim); LEANN's 97% requires pruned-graph recomputation we do not implement.
+    4 quantization tests green.
+  - **(b) Local compressors:** `llm_client_from_config` accepts `"ollama"` (default port 11434),
+    `"lm-studio"` (default port 1234), and `"mlx"` (default port 8080) as named providers on top of
+    the existing `"openai-compatible"` transport. Zero-configuration for common local setups.
+  - **(c) Council judge:** `headgate::CouncilJudge` — N panel judges run concurrently; arbiter
+    synthesizes; falls back to majority vote if arbiter fails; fails closed below quorum. 4 council
+    tests green with `--features llm`. All workspace tests green; fmt clean.
 
 ### Step 7 — headroom as an optional compressor (complementarity, optional, in scope)
 

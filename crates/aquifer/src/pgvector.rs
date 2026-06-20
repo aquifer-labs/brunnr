@@ -469,6 +469,7 @@ mod tests {
                 name: collection.to_string(),
                 dimensions: 3,
                 distance: Distance::Cosine,
+                quantization: Default::default(),
             })
             .await
             .expect("ensure_collection");

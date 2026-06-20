@@ -115,6 +115,7 @@ async fn insert_legacy_oversized(
             name: COLLECTION.to_string(),
             dimensions: TEST_DIMENSIONS,
             distance: Distance::Cosine,
+            quantization: Default::default(),
         })
         .await
         .expect("ensure_collection");

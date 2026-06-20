@@ -150,6 +150,12 @@ impl QualifyGate for JudgeQualifyGate {
 
 /// Extract a [`JudgeVerdict`] from a model reply, tolerating surrounding prose or code fences
 /// by parsing the first balanced `{...}` object.
+///
+/// Re-exported as `parse_verdict_pub` for use by [`crate::council`].
+pub(crate) fn parse_verdict_pub(raw: &str) -> Option<JudgeVerdict> {
+    parse_verdict(raw)
+}
+
 fn parse_verdict(raw: &str) -> Option<JudgeVerdict> {
     let start = raw.find('{')?;
     let mut depth = 0usize;
