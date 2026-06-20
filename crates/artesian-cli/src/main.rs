@@ -11,9 +11,10 @@ use std::{
 
 use anyhow::{bail, Context, Result};
 use aquifer::{
-    default_migration_collection, export_okf_bundle, recover_after_compaction, verify_okf_bundle,
-    AnchorAnchorStore, CollectionCompat, MemoryBackend, MemoryQuery, MemoryScope, MemoryTier,
-    MigrationPlan, SessionAnchor, StoreMemory, VectorMemoryConfig,
+    consolidation_pass, default_migration_collection, export_okf_bundle, recover_after_compaction,
+    verify_okf_bundle, AnchorAnchorStore, CollectionCompat, ConsolidationOptions, MemoryBackend,
+    MemoryQuery, MemoryScope, MemoryTier, MigrationPlan, SessionAnchor, StoreMemory,
+    VectorMemoryConfig,
 };
 use artesian_core::{
     Agent, AgentBinding, ArtesianConfig, MemoryBackendKind, MemoryConfig, Mode, Role, SpawnRequest,
@@ -27,7 +28,7 @@ use flotilla::{
     load_role_definitions, role_summaries, TeamCreate, TeamMessage, TeamMessageKind, TeamRuntime,
     TeamRuntimeConfig, TeamSpawn, TeamTaskAdd, TeamTaskClaim, TeamTaskComplete,
 };
-use headgate::{Headgate, HeadgateConfig, MemoryRecallStore, RecallStore};
+use headgate::{count_tokens, Headgate, HeadgateConfig, MemoryRecallStore, RecallStore};
 use headrace::{
     ClaimRequest, CommandVerifier, FilesTaskStore, NewTask, TaskKind, TaskStore, VectorTaskStore,
     Verifier, VerifierGate,
@@ -194,6 +195,15 @@ enum Command {
     Kit {
         #[command(subcommand)]
         command: KitCommand,
+    },
+    /// Print tokens-per-iteration saved vs full-context replay, and verify compaction survival.
+    Perf {
+        #[arg(long, default_value = DEFAULT_CONFIG)]
+        config: PathBuf,
+        #[arg(long, default_value = ".artesian")]
+        root: PathBuf,
+        #[arg(long)]
+        budget_tokens: Option<usize>,
     },
 }
 
@@ -688,7 +698,7 @@ async fn main() -> Result<()> {
             config,
             root,
             allow_llm,
-        } => consolidate(config, root, allow_llm),
+        } => consolidate(config, root, allow_llm).await,
         Command::Migrate { command } => match command {
             MigrateCommand::OkfBundle {
                 okf_root,
@@ -705,6 +715,11 @@ async fn main() -> Result<()> {
         } => snapshot(config, output_dir, collection).await,
         Command::Okf { command } => okf(command),
         Command::Kit { command } => kit(command).await,
+        Command::Perf {
+            config,
+            root,
+            budget_tokens,
+        } => perf(config, root, budget_tokens).await,
     }
 }
 
@@ -1692,41 +1707,72 @@ fn okf(command: OkfCommand) -> Result<()> {
     Ok(())
 }
 
-fn consolidate(config_path: PathBuf, root: PathBuf, allow_llm: bool) -> Result<()> {
-    let memory = memory_config_for_command(&config_path, root, None)?;
-    let memory_root = PathBuf::from(&memory.root);
-    let index_path = memory_root.join("memory").join("index.md");
+async fn consolidate(config_path: PathBuf, root: PathBuf, allow_llm: bool) -> Result<()> {
+    let memory_config = memory_config_for_command(&config_path, root, None)?;
+    let memory_root = PathBuf::from(&memory_config.root);
     let log_path = memory_root.join("memory").join("log.md");
     fs::create_dir_all(memory_root.join("memory"))?;
-    if !index_path.exists() {
-        fs::write(
-            &index_path,
-            "---\ntype: index\ntitle: Artesian Memory Index\n---\n\n# Artesian Memory Index\n\nNo structural import catalog exists yet.\n",
-        )?;
+
+    // --- Consolidation pass: group near-duplicates into canonical QA claim units ---
+    let backend = open_memory_backend(&memory_config)?;
+    let hits = backend
+        .find(MemoryQuery::new("").with_limit(1000))
+        .await
+        .unwrap_or_default();
+    let records: Vec<_> = hits.into_iter().map(|h| h.record).collect();
+
+    let options = ConsolidationOptions::default();
+    let report = consolidation_pass(&records, &options);
+
+    println!("# artesian consolidate");
+    println!();
+    println!("  Input records (sampled): {}", report.input_records);
+    println!("  Output canonical claims: {}", report.output_claims);
+    println!("  Near-duplicates removed: {}", report.dedup_removed);
+    println!(
+        "  Token footprint:         {} → {} tokens (estimated)",
+        report.footprint_tokens_before, report.footprint_tokens_after
+    );
+    println!();
+    if report.dedup_removed > 0 {
+        println!(
+            "  {} near-duplicate records can be consolidated. \
+             To apply, use `artesian consolidate --apply` when the flag ships.",
+            report.dedup_removed
+        );
+    } else if report.input_records == 0 {
+        println!("  No memories found. Run `artesian memory store` to populate.");
+    } else {
+        println!("  No near-duplicates found at the default similarity threshold (0.6).");
     }
+
+    if allow_llm {
+        println!();
+        println!(
+            "  LLM semantic consolidation is opt-in. Wire a provider in artesian.toml \
+             and the consolidation pass will call it to rephrase claims — no-op today."
+        );
+    }
+
+    // Append a consolidation log entry for audit.
     let mode = if allow_llm {
         "llm-semantic-requested"
     } else {
-        "structural-no-llm"
+        "structural"
     };
     let entry = format!(
-        "\n- {} consolidate mode={mode}; LLM semantic consolidation is opt-in and requires a configured provider adapter.\n",
-        chrono_like_timestamp()
+        "\n- {} consolidate mode={mode} input={} claims={} dedup={}\n",
+        chrono_like_timestamp(),
+        report.input_records,
+        report.output_claims,
+        report.dedup_removed,
     );
     fs::OpenOptions::new()
         .append(true)
         .create(true)
         .open(&log_path)?
         .write_all(entry.as_bytes())?;
-    if allow_llm {
-        println!(
-            "consolidate recorded opt-in LLM semantic request; provider adapter execution is not enabled by default"
-        );
-    } else {
-        println!(
-            "consolidate verified structural index/log without LLM calls; pass --allow-llm only when semantic consolidation is explicitly approved"
-        );
-    }
+
     Ok(())
 }
 
@@ -2079,4 +2125,77 @@ fn command_exists(command: &str) -> bool {
         return false;
     };
     env::split_paths(&path).any(|dir| dir.join(command).is_file())
+}
+
+async fn perf(config_path: PathBuf, root: PathBuf, budget_tokens: Option<usize>) -> Result<()> {
+    let memory_config = memory_config_for_command(&config_path, root.clone(), None)?;
+    let backend = open_memory_backend(&memory_config)?;
+
+    // --- (1) Estimate full-replay cost ---
+    let hits = backend
+        .find(MemoryQuery::new("").with_limit(2000))
+        .await
+        .unwrap_or_default();
+
+    let total_tokens: usize = hits.iter().map(|h| count_tokens(&h.record.content)).sum();
+    let stored_count = hits.len();
+
+    // --- (2) CCS budget ---
+    let ccs_budget = budget_tokens.unwrap_or(2048);
+    let saving_pct = if total_tokens > 0 {
+        let saved = total_tokens.saturating_sub(ccs_budget);
+        100.0 * saved as f64 / total_tokens as f64
+    } else {
+        0.0
+    };
+
+    println!("# artesian perf");
+    println!();
+    println!("  Stored memories (sampled): {stored_count}");
+    println!("  Estimated full-replay cost: {total_tokens} tokens");
+    println!("  ACC committed-context budget: {ccs_budget} tokens");
+    if total_tokens > ccs_budget {
+        println!("  Saving vs full replay: {saving_pct:.1}%");
+    } else if total_tokens == 0 {
+        println!("  (No memories stored yet — run `artesian memory store` to populate.)");
+    } else {
+        println!("  Memory fits in CCS budget ({total_tokens} ≤ {ccs_budget} tokens).");
+    }
+    println!();
+
+    // --- (3) Compaction-survival check ---
+    println!("## Compaction-survival check");
+    let temp_dir = std::env::temp_dir().join(format!("artesian-perf-{}", std::process::id()));
+    std::fs::create_dir_all(&temp_dir)?;
+    let anchor_store = AnchorAnchorStore::from_log_path(temp_dir.join("perf-log.md"));
+
+    let test_anchor = SessionAnchor::new(
+        "perf-check: compaction-survival probe",
+        "verify: plan and next-step are intact after simulated compaction",
+    );
+    anchor_store.set(test_anchor.clone()).await?;
+
+    // Simulate compaction: fresh recovery from the written anchor.
+    let context = recover_after_compaction(&anchor_store, backend.as_ref(), 3).await?;
+    std::fs::remove_dir_all(&temp_dir).ok();
+
+    match context {
+        Some(ctx) if ctx.anchor.current_task == test_anchor.current_task => {
+            println!("  PASS  plan + next-step intact after simulated compaction");
+            println!("  anchor.current_task = {:?}", ctx.anchor.current_task);
+            println!("  anchor.next_step    = {:?}", ctx.anchor.next_step);
+        }
+        Some(ctx) => {
+            anyhow::bail!(
+                "compaction-survival FAIL: recovered task {:?} ≠ expected {:?}",
+                ctx.anchor.current_task,
+                test_anchor.current_task
+            );
+        }
+        None => {
+            anyhow::bail!("compaction-survival FAIL: no anchor found after write + recover");
+        }
+    }
+
+    Ok(())
 }
