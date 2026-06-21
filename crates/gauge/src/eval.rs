@@ -431,6 +431,36 @@ was phrased. One per line, no numbering, preserve meaning.\n\nQuestion: {query}"
         }
     }
 
+    /// A `RecallStore` that owns the throwaway directory its backing store was built
+    /// in and removes it on drop, so the per-case sqlite-vec store used by the
+    /// benchmark does not leak a temp directory for every QA case.
+    #[cfg(feature = "vector")]
+    struct ScopedRecall {
+        inner: Arc<dyn RecallStore>,
+        dir: std::path::PathBuf,
+    }
+
+    #[cfg(feature = "vector")]
+    impl RecallStore for ScopedRecall {
+        fn recall(
+            &self,
+            query: &str,
+            limit: usize,
+        ) -> futures_util::future::BoxFuture<'_, headgate::HeadgateResult<Vec<RecallItem>>>
+        {
+            self.inner.recall(query, limit)
+        }
+    }
+
+    #[cfg(feature = "vector")]
+    impl Drop for ScopedRecall {
+        fn drop(&mut self) {
+            // Best-effort: the backing store is idle by drop time; on Unix an
+            // unlinked-but-open sqlite file finishes cleanly, so this is safe.
+            let _ = std::fs::remove_dir_all(&self.dir);
+        }
+    }
+
     #[cfg(feature = "vector")]
     impl RecallFactory for VectorRecall {
         fn build<'a>(
@@ -475,7 +505,8 @@ was phrased. One per line, no numbering, preserve meaning.\n\nQuestion: {query}"
                         .store(aquifer::StoreMemory::atom(fact.clone()))
                         .await?;
                 }
-                Ok(Arc::new(MemoryRecallStore::new(backend)) as Arc<dyn RecallStore>)
+                let inner: Arc<dyn RecallStore> = Arc::new(MemoryRecallStore::new(backend));
+                Ok(Arc::new(ScopedRecall { inner, dir }) as Arc<dyn RecallStore>)
             }
             .boxed()
         }
@@ -517,6 +548,39 @@ was phrased. One per line, no numbering, preserve meaning.\n\nQuestion: {query}"
 
         async fn lexical_store(case: &QaCase) -> Arc<dyn RecallStore> {
             LexicalRecall.build(case).await.expect("recall builds")
+        }
+
+        #[cfg(feature = "vector")]
+        #[tokio::test]
+        async fn scoped_recall_removes_its_dir_on_drop() {
+            struct EmptyRecall;
+            impl RecallStore for EmptyRecall {
+                fn recall(
+                    &self,
+                    _query: &str,
+                    _limit: usize,
+                ) -> BoxFuture<'_, HeadgateResult<Vec<RecallItem>>> {
+                    async { Ok(Vec::new()) }.boxed()
+                }
+            }
+            let dir = std::env::temp_dir().join(format!(
+                "gauge-eval-droptest-{}-{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_nanos())
+                    .unwrap_or(0)
+            ));
+            std::fs::create_dir_all(&dir).unwrap();
+            assert!(dir.exists());
+            {
+                let scoped = ScopedRecall {
+                    inner: Arc::new(EmptyRecall),
+                    dir: dir.clone(),
+                };
+                assert!(scoped.recall("q", 1).await.unwrap().is_empty());
+            }
+            assert!(!dir.exists(), "ScopedRecall must remove its dir on drop");
         }
 
         #[tokio::test]

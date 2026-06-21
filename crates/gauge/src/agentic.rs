@@ -143,7 +143,7 @@ Context:\n{committed}\n\nQuestion: {query}\n\nChoices:\n{joined}\n\nYour choice 
     }
 
     /// Deterministic pseudo-shuffle to avoid always putting correct_action first.
-    fn shuffle_choices(choices: &mut Vec<String>, seed: &str) {
+    fn shuffle_choices(choices: &mut [String], seed: &str) {
         let h = seed.bytes().fold(5381u64, |acc, b| {
             acc.wrapping_mul(33).wrapping_add(b as u64)
         });

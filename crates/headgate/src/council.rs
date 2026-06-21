@@ -183,7 +183,7 @@ impl QualifyGate for CouncilJudge {
                 .collect();
 
             // Fail closed if fewer than half the panel responded.
-            let quorum = (self.panel.len() + 1) / 2;
+            let quorum = self.panel.len().div_ceil(2);
             if verdicts.len() < quorum {
                 return QualifyDecision::reject(
                     format!(
