@@ -7,6 +7,7 @@
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![CI](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/aquifer-labs/artesian/actions)
 [![Rust](https://img.shields.io/badge/rust-stable-orange.svg)](https://www.rust-lang.org)
+[![Docs](https://img.shields.io/badge/docs-aquifer--labs.github.io-1f6feb.svg)](https://aquifer-labs.github.io/artesian/)
 
 Artesian keeps agent memory small, high-signal, and survivable across compaction — so the agent **acts on what it knows**, not re-reads everything it has ever stored.
 
@@ -124,6 +125,8 @@ Qualitative only — architectures differ enough that cross-system benchmark num
 | **Agentic eval harness** | ✓ ships in repo | ✗ | ✗ | ✗ |
 
 ## Docs
+
+📖 **Full documentation site: <https://aquifer-labs.github.io/artesian/>** (rendered from `docs/`).
 
 | | |
 |---|---|
