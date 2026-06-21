@@ -47,8 +47,8 @@ pub use lane_lock::{SessionLaneGuard, SessionLaneLock};
 pub use pgvector::{PgVectorBackend, PgVectorStore};
 #[cfg(feature = "qdrant")]
 pub use qdrant::{
-    preflight_qdrant, QdrantBackend, QdrantEndpoints, QdrantPreflightReport, QdrantVectorStore,
-    QdrantVectorStoreConfig,
+    preflight_qdrant, replicate_collection, QdrantBackend, QdrantEndpoints, QdrantPreflightReport,
+    QdrantVectorStore, QdrantVectorStoreConfig,
 };
 #[cfg(feature = "vector")]
 pub use retrieval::FastembedReranker;

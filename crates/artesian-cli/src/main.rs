@@ -227,6 +227,32 @@ enum Command {
         #[arg(long, default_value = ".artesian")]
         root: PathBuf,
     },
+    /// Replicate a Qdrant collection between two endpoints (e.g. a LAN instance and a local Docker
+    /// instance) — scroll + upsert, merging by point id. Pass your own URLs/keys; the endpoints
+    /// live in your local config, never in the repo.
+    Replicate {
+        /// Source Qdrant URL.
+        #[arg(long)]
+        from_url: String,
+        /// Target Qdrant URL.
+        #[arg(long)]
+        to_url: String,
+        #[arg(long)]
+        from_key: Option<String>,
+        #[arg(long)]
+        to_key: Option<String>,
+        /// Collection name to replicate (read from the source).
+        #[arg(long)]
+        collection: String,
+        /// Target collection name (defaults to --collection).
+        #[arg(long)]
+        to_collection: Option<String>,
+        /// Only check that both endpoints are reachable; do not copy.
+        #[arg(long)]
+        status: bool,
+        #[arg(long, default_value_t = 256)]
+        batch: u32,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -780,6 +806,28 @@ async fn main() -> Result<()> {
             poll,
             root,
         } => run_loop(goal, worker_cmd, max_turns, poll, root).await,
+        Command::Replicate {
+            from_url,
+            to_url,
+            from_key,
+            to_key,
+            collection,
+            to_collection,
+            status,
+            batch,
+        } => {
+            run_replicate(
+                from_url,
+                to_url,
+                from_key,
+                to_key,
+                collection,
+                to_collection,
+                status,
+                batch,
+            )
+            .await
+        }
     }
 }
 
@@ -833,6 +881,66 @@ async fn run_loop(
         println!("  goal not met after turn {turn}");
     }
     bail!("loop reached max-turns ({max_turns}) without the goal holding");
+}
+
+/// Replicate a Qdrant collection from one endpoint to another (scroll + upsert; merges by id).
+#[cfg(feature = "qdrant")]
+#[allow(clippy::too_many_arguments)]
+async fn run_replicate(
+    from_url: String,
+    to_url: String,
+    from_key: Option<String>,
+    to_key: Option<String>,
+    collection: String,
+    to_collection: Option<String>,
+    status: bool,
+    batch: u32,
+) -> Result<()> {
+    use aquifer::{replicate_collection, QdrantVectorStore, QdrantVectorStoreConfig};
+    let target_collection = to_collection.unwrap_or_else(|| collection.clone());
+    let mut from_cfg = QdrantVectorStoreConfig::new(from_url);
+    from_cfg.api_key = from_key;
+    let mut to_cfg = QdrantVectorStoreConfig::new(to_url);
+    to_cfg.api_key = to_key;
+    let source =
+        QdrantVectorStore::connect(from_cfg).map_err(|error| anyhow::anyhow!("source: {error}"))?;
+    let target =
+        QdrantVectorStore::connect(to_cfg).map_err(|error| anyhow::anyhow!("target: {error}"))?;
+    source
+        .client()
+        .health_check()
+        .await
+        .map_err(|error| anyhow::anyhow!("source unreachable: {error}"))?;
+    target
+        .client()
+        .health_check()
+        .await
+        .map_err(|error| anyhow::anyhow!("target unreachable: {error}"))?;
+    if status {
+        println!("✓ both Qdrant endpoints reachable; collection = {collection}");
+        return Ok(());
+    }
+    let copied = replicate_collection(&source, &target, &collection, &target_collection, batch)
+        .await
+        .map_err(|error| anyhow::anyhow!("replicate: {error}"))?;
+    println!("✓ replicated {copied} points: {collection} -> {target_collection}");
+    Ok(())
+}
+
+/// Replicate is unavailable without the Qdrant backend compiled in.
+#[cfg(not(feature = "qdrant"))]
+#[allow(clippy::too_many_arguments)]
+async fn run_replicate(
+    _from_url: String,
+    _to_url: String,
+    _from_key: Option<String>,
+    _to_key: Option<String>,
+    _collection: String,
+    _to_collection: Option<String>,
+    _status: bool,
+    _batch: u32,
+) -> Result<()> {
+    bail!("`replicate` requires the `qdrant` feature; rebuild with --features qdrant")
 }
 
 async fn task(command: TaskCommand) -> Result<()> {

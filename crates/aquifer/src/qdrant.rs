@@ -7,8 +7,8 @@ use futures_util::{future::BoxFuture, FutureExt};
 use qdrant_client::{
     qdrant::{
         Condition, CreateCollectionBuilder, CreateFieldIndexCollectionBuilder, FieldType, Filter,
-        GetPointsBuilder, PointStruct, QueryPointsBuilder, RetrievedPoint, ScoredPoint,
-        ScrollPointsBuilder, UpsertPointsBuilder, Value, VectorParamsBuilder,
+        GetPointsBuilder, PointId, PointStruct, QueryPointsBuilder, RetrievedPoint, ScoredPoint,
+        ScrollPointsBuilder, UpsertPointsBuilder, Value, VectorParamsBuilder, VectorsOutput,
     },
     Payload, Qdrant,
 };
@@ -18,8 +18,9 @@ use sha2::{Digest, Sha256};
 use crate::{
     vector::payload_matches_filter, Distance, Filter as MemoryFilter, FilterCondition, FilterValue,
     MemoryError, MemoryResult, PayloadIndex, RangeFilter, SnapshotReport, VectorCollection,
-    VectorCollectionAdmin, VectorMemoryBackend, VectorMemoryConfig, VectorPoint, VectorSearch,
-    VectorSearchHit, VectorSearchSource, VectorStore, VectorStoreCapabilities,
+    VectorCollectionAdmin, VectorMemoryBackend, VectorMemoryConfig, VectorPoint,
+    VectorQuantization, VectorSearch, VectorSearchHit, VectorSearchSource, VectorStore,
+    VectorStoreCapabilities,
 };
 
 pub type QdrantBackend = VectorMemoryBackend<QdrantVectorStore>;
@@ -369,6 +370,95 @@ impl VectorStore for QdrantVectorStore {
             supports_server_side_hybrid: false,
             supports_sparse: false,
         }
+    }
+}
+
+/// Copy every point of `collection` from `source` into `target` (scroll + upsert, batched). The
+/// target collection is created if missing (dimensions inferred from the first point, cosine
+/// distance). Upsert is keyed by point id, so this MERGES rather than clobbers. Returns the number
+/// of points copied — the primitive behind `artesian replicate` for local <-> LAN Qdrant sync.
+pub async fn replicate_collection(
+    source: &QdrantVectorStore,
+    target: &QdrantVectorStore,
+    source_collection: &str,
+    target_collection: &str,
+    batch: u32,
+) -> MemoryResult<usize> {
+    let mut offset: Option<PointId> = None;
+    let mut ensured = false;
+    let mut total = 0usize;
+    loop {
+        let mut builder = ScrollPointsBuilder::new(source_collection)
+            .limit(batch.max(1))
+            .with_payload(true)
+            .with_vectors(true);
+        if let Some(off) = offset.clone() {
+            builder = builder.offset(off);
+        }
+        let response = source.client.scroll(builder).await.map_err(qdrant_error)?;
+        let next = response.next_page_offset.clone();
+        let retrieved = response.result;
+        if retrieved.is_empty() {
+            break;
+        }
+        if !ensured {
+            let dimensions = extract_vector(&retrieved[0].vectors)
+                .ok_or_else(|| {
+                    MemoryError::BackendUnavailable(
+                        "source points carry no single unnamed vector to replicate".to_string(),
+                    )
+                })?
+                .len();
+            target
+                .ensure_collection(VectorCollection {
+                    name: target_collection.to_string(),
+                    dimensions,
+                    distance: Distance::Cosine,
+                    quantization: VectorQuantization::default(),
+                })
+                .await?;
+            ensured = true;
+        }
+        total += retrieved.len();
+        // Preserve the original id, vector, and payload (a raw point copy, not a re-embed).
+        let points: Vec<PointStruct> = retrieved
+            .into_iter()
+            .filter_map(|point| {
+                let id = point.id?;
+                let vector = extract_vector(&point.vectors)?;
+                Some(PointStruct::new(id, vector, Payload::from(point.payload)))
+            })
+            .collect();
+        target
+            .client
+            .upsert_points(UpsertPointsBuilder::new(target_collection, points).wait(true))
+            .await
+            .map_err(qdrant_error)?;
+        match next {
+            Some(next_offset) => offset = Some(next_offset),
+            None => break,
+        }
+    }
+    Ok(total)
+}
+
+/// Extract a point's single unnamed dense vector, if present (handles both the legacy `data`
+/// field and the newer nested dense oneof).
+// Modern Qdrant servers (1.10+) return the unnamed dense vector through the
+// `vector_output::Vector::Dense` oneof; older servers populate the now-deprecated
+// flat `VectorOutput::data` field. Support both so replication works across versions.
+#[allow(deprecated)]
+fn extract_vector(vectors: &Option<VectorsOutput>) -> Option<Vec<f32>> {
+    use qdrant_client::qdrant::vector_output::Vector as VectorKind;
+    use qdrant_client::qdrant::vectors_output::VectorsOptions;
+    match vectors.as_ref()?.vectors_options.as_ref()? {
+        VectorsOptions::Vector(vector) => match vector.vector.as_ref() {
+            Some(VectorKind::Dense(dense)) => Some(dense.data.clone()),
+            Some(_) => None,
+            None if !vector.data.is_empty() => Some(vector.data.clone()),
+            None => None,
+        },
+        VectorsOptions::Vectors(_) => None,
     }
 }
 
