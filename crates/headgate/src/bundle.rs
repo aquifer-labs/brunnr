@@ -390,6 +390,45 @@ impl WorkingContextBundle {
     }
 }
 
+impl WorkingContextBundle {
+    /// Entries whose slot is not declared in the schema — an intra-bundle consistency check.
+    pub fn schema_issues(&self) -> Vec<String> {
+        self.snapshot
+            .entries
+            .iter()
+            .filter(|entry| !self.snapshot.schema.iter().any(|slot| slot == &entry.slot))
+            .map(|entry| {
+                format!(
+                    "entry {:?} uses slot {:?} not declared in the schema",
+                    entry.id, entry.slot
+                )
+            })
+            .collect()
+    }
+
+    /// Reasons this bundle's schema is incompatible with a target's slots/budget — the pre-import
+    /// compatibility check the OCF spec describes. An empty list means compatible.
+    pub fn compatibility_issues(
+        &self,
+        target_schema: &[String],
+        target_budget: usize,
+    ) -> Vec<String> {
+        let mut issues = Vec::new();
+        for slot in &self.snapshot.schema {
+            if !target_schema.iter().any(|candidate| candidate == slot) {
+                issues.push(format!("slot {slot:?} is not in the target schema"));
+            }
+        }
+        if self.snapshot.budget_tokens > target_budget {
+            issues.push(format!(
+                "budget {} exceeds the target budget {}",
+                self.snapshot.budget_tokens, target_budget
+            ));
+        }
+        issues
+    }
+}
+
 // ---- OCF (Open Cognitive Format) ---------------------------------------------------------------
 //
 // OCF (github.com/aquifer-labs/ocf) is a sibling on-disk layout of the same committed working
@@ -722,5 +761,24 @@ mod tests {
         assert_eq!(read.snapshot, bundle.snapshot);
         assert_eq!(read.manifest.unit_source, "inline");
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn schema_and_compatibility_checks() {
+        let bundle = WorkingContextBundle::new(sample_snapshot(), Vec::new());
+        // sample entries use slots that are all declared → no intra-bundle issues
+        assert!(bundle.schema_issues().is_empty());
+        // compatible target: schema superset, equal budget
+        let target = vec![
+            "decision".to_string(),
+            "constraint".to_string(),
+            "task-state".to_string(),
+        ];
+        assert!(bundle.compatibility_issues(&target, 4096).is_empty());
+        // incompatible: a missing slot and a smaller budget
+        let narrow = vec!["decision".to_string()];
+        let issues = bundle.compatibility_issues(&narrow, 8);
+        assert!(issues.iter().any(|issue| issue.contains("task-state")));
+        assert!(issues.iter().any(|issue| issue.contains("budget")));
     }
 }

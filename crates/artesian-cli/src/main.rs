@@ -576,6 +576,15 @@ enum KitCommand {
         #[arg(long, default_value = ".artesian")]
         root: PathBuf,
     },
+    /// Validate a bundle (OCF or native); with `--against <other>`, check schema compatibility for
+    /// a resume — the pre-import check the OCF spec describes.
+    Validate {
+        /// Bundle directory to validate.
+        input: PathBuf,
+        /// Another bundle whose schema/budget this one must be compatible with to resume into.
+        #[arg(long)]
+        against: Option<PathBuf>,
+    },
 }
 
 /// Output shape for `kit export`.
@@ -1602,13 +1611,7 @@ This kit works identically in Codex and Claude Code: the MCP tools (`memory.anch
             }
         },
         KitCommand::Import { input, root: _root } => {
-            let wc_bundle = if input.join("schema.json").exists() {
-                WorkingContextBundle::read_ocf_dir(&input)
-                    .with_context(|| format!("read/validate OCF bundle at {}", input.display()))?
-            } else {
-                WorkingContextBundle::read_dir(&input)
-                    .with_context(|| format!("read/validate bundle at {}", input.display()))?
-            };
+            let wc_bundle = read_kit_bundle(&input)?;
             println!(
                 "=== bundle: {} v{} (units: {}) ===",
                 wc_bundle.manifest.format,
@@ -1624,8 +1627,55 @@ This kit works identically in Codex and Claude Code: the MCP tools (`memory.anch
             );
             println!("{}", wc_bundle.snapshot.render_markdown());
         }
+        KitCommand::Validate { input, against } => {
+            let wc_bundle = read_kit_bundle(&input)?;
+            let mut problems = wc_bundle.schema_issues();
+            if let Some(other) = &against {
+                let target = read_kit_bundle(other)?;
+                problems.extend(
+                    wc_bundle.compatibility_issues(
+                        &target.snapshot.schema,
+                        target.snapshot.budget_tokens,
+                    ),
+                );
+            }
+            if problems.is_empty() {
+                println!(
+                    "OK: {} v{} — {} entries, {} / {} tokens, schema {:?}{}",
+                    wc_bundle.manifest.format,
+                    wc_bundle.manifest.version,
+                    wc_bundle.snapshot.entries.len(),
+                    wc_bundle.snapshot.token_count,
+                    wc_bundle.snapshot.budget_tokens,
+                    wc_bundle.snapshot.schema,
+                    if against.is_some() {
+                        " — compatible with target"
+                    } else {
+                        ""
+                    }
+                );
+            } else {
+                eprintln!("INCOMPATIBLE ({} issue(s)):", problems.len());
+                for problem in &problems {
+                    eprintln!("  - {problem}");
+                }
+                bail!("bundle validation failed");
+            }
+        }
     }
     Ok(())
+}
+
+/// Read a kit bundle from a directory, auto-detecting the OCF four-file layout (`schema.json`
+/// present) versus the native working-context bundle layout.
+fn read_kit_bundle(dir: &Path) -> Result<WorkingContextBundle> {
+    if dir.join("schema.json").exists() {
+        WorkingContextBundle::read_ocf_dir(dir)
+            .with_context(|| format!("read/validate OCF bundle at {}", dir.display()))
+    } else {
+        WorkingContextBundle::read_dir(dir)
+            .with_context(|| format!("read/validate bundle at {}", dir.display()))
+    }
 }
 
 /// Build a portable working-context bundle from the on-disk kit (anchors + last session anchor).
