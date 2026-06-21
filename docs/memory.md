@@ -289,6 +289,21 @@ history — also where the self-repair anchor log lives, see §6). `FilesBackend
 YAML `---` OKF files and keeps a backward-compatible reader for legacy TOML `+++` records.
 Ref: OKF v0.1 spec (Apache-2.0).
 
+#### The OKF files are the source of truth; the index is a rebuildable projection
+
+The durable, human-readable OKF markdown is the **append-only source of truth**; the vector/search
+index is a **derived projection** you can throw away and rebuild from those files at any time — the
+same event-sourcing discipline as a CQRS read model. So memory stays auditable (`cat` the files,
+`git diff` the history) and is never trapped in a database. Two operations make this concrete:
+
+- **`artesian memory rebuild [--from <okf-dir>]`** re-indexes every OKF file into the configured
+  backend transactionally (idempotent, content-hash dedup) — the Artesian equivalent of dropping
+  and rebuilding a read model. Run it after bulk-editing files, after switching/upgrading a vector
+  engine, or to recover an index from the files alone.
+- For the bounded committed-state layer, the [OCF](https://github.com/aquifer-labs/ocf) bundle pairs
+  a `snapshot.json` with a **`qualify.jsonl` governance log** — the append-only admit/reject trail
+  behind what is in force — so *why* each entry was committed is replayable too.
+
 ### 4.2 Structured / graph memory [planned, future]
 
 Vector search finds *similar* text; some questions need *exact* relations ("which tasks block

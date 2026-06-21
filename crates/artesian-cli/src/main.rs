@@ -577,6 +577,20 @@ enum MemoryCommand {
         #[arg(long, value_enum)]
         backend: Option<BackendArg>,
     },
+    /// Rebuild the searchable projection from the OKF source of truth: re-index every OKF markdown
+    /// file under `--from` into the backend (transactional, idempotent). The durable md files are
+    /// the append-only source; the vector store is a derived projection you can rebuild any time.
+    Rebuild {
+        /// OKF source directory to re-index (defaults to the configured memory root).
+        #[arg(long)]
+        from: Option<PathBuf>,
+        #[arg(long, default_value = DEFAULT_CONFIG)]
+        config: PathBuf,
+        #[arg(long, default_value = ".artesian")]
+        root: PathBuf,
+        #[arg(long, value_enum)]
+        backend: Option<BackendArg>,
+    },
     /// Run one ACC commit-loop cycle: recall, qualify-gate, and admit into the bounded
     /// committed context state; print the committed context and the cycle metrics. Defaults
     /// come from the `[acc]` block of artesian.toml; flags override per invocation.
@@ -1961,6 +1975,24 @@ async fn memory(command: MemoryCommand) -> Result<()> {
             root,
             backend,
         } => distill(text, file, reference_date, store, config, root, backend).await?,
+        MemoryCommand::Rebuild {
+            from,
+            config,
+            root,
+            backend,
+        } => {
+            let memory_config = memory_config_for_command(&config, root, backend)?;
+            let source = from.unwrap_or_else(|| PathBuf::from(&memory_config.root));
+            let backend = open_memory_backend(&memory_config)?;
+            let report = aquifer::sync_okf_directory(&source, backend.as_ref()).await?;
+            println!(
+                "rebuilt projection from {}: files_scanned={} records_indexed={} parse_failures={}",
+                source.display(),
+                report.files_scanned,
+                report.records_indexed,
+                report.parse_failures
+            );
+        }
         MemoryCommand::Commit {
             query,
             budget_tokens,
