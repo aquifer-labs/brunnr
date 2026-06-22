@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Artesian-native agent teams (Wellfield).
+//! Artesian-native agent teams (Flume).
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -27,7 +27,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 #[derive(Debug, thiserror::Error)]
-pub enum WellfieldError {
+pub enum FlumeError {
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
     #[error("failed to decode agent definition: {0}")]
@@ -50,13 +50,13 @@ pub enum WellfieldError {
     Task(#[from] headrace::TaskError),
 }
 
-impl From<AgentError> for WellfieldError {
+impl From<AgentError> for FlumeError {
     fn from(value: AgentError) -> Self {
         Self::Agent(value.to_string())
     }
 }
 
-pub type WellfieldResult<T> = Result<T, WellfieldError>;
+pub type FlumeResult<T> = Result<T, FlumeError>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -137,7 +137,7 @@ impl ToolList {
     }
 }
 
-pub fn load_role_definitions(repo_root: impl AsRef<Path>) -> WellfieldResult<Vec<RoleDefinition>> {
+pub fn load_role_definitions(repo_root: impl AsRef<Path>) -> FlumeResult<Vec<RoleDefinition>> {
     let repo_root = repo_root.as_ref();
     let mut definitions = Vec::new();
     definitions.extend(load_definition_dir(
@@ -162,7 +162,7 @@ pub fn role_summaries(definitions: &[RoleDefinition]) -> Vec<AgentRoleDefinition
 fn load_definition_dir(
     directory: PathBuf,
     source: RoleDefinitionSource,
-) -> WellfieldResult<Vec<RoleDefinition>> {
+) -> FlumeResult<Vec<RoleDefinition>> {
     let mut definitions = Vec::new();
     let read_dir = match fs::read_dir(&directory) {
         Ok(read_dir) => read_dir,
@@ -188,7 +188,7 @@ pub fn parse_role_definition(
     path: impl AsRef<Path>,
     text: &str,
     source: RoleDefinitionSource,
-) -> WellfieldResult<RoleDefinition> {
+) -> FlumeResult<RoleDefinition> {
     let path = path.as_ref();
     let (header, body) = split_frontmatter(text)?;
     let header: DefinitionFrontmatter = serde_yaml::from_str(header)?;
@@ -224,18 +224,18 @@ pub fn parse_role_definition(
     })
 }
 
-fn split_frontmatter(text: &str) -> WellfieldResult<(&str, &str)> {
+fn split_frontmatter(text: &str) -> FlumeResult<(&str, &str)> {
     let rest = text
         .strip_prefix("---\n")
-        .ok_or_else(|| WellfieldError::InvalidDefinition("missing YAML frontmatter".to_string()))?;
+        .ok_or_else(|| FlumeError::InvalidDefinition("missing YAML frontmatter".to_string()))?;
     rest.split_once("\n---\n").ok_or_else(|| {
-        WellfieldError::InvalidDefinition("unterminated YAML frontmatter".to_string())
+        FlumeError::InvalidDefinition("unterminated YAML frontmatter".to_string())
     })
 }
 
-fn required_header(value: Option<String>, name: &str, path: &Path) -> WellfieldResult<String> {
+fn required_header(value: Option<String>, name: &str, path: &Path) -> FlumeResult<String> {
     let Some(value) = value.and_then(empty_to_none) else {
-        return Err(WellfieldError::InvalidDefinition(format!(
+        return Err(FlumeError::InvalidDefinition(format!(
             "{} missing required `{name}`",
             path.display()
         )));
@@ -248,8 +248,8 @@ fn empty_to_none(value: String) -> Option<String> {
     (!value.is_empty()).then_some(value)
 }
 
-fn parse_kind(input: &str) -> WellfieldResult<Role> {
-    Role::from_str(input).map_err(|error| WellfieldError::InvalidDefinition(error.to_string()))
+fn parse_kind(input: &str) -> FlumeResult<Role> {
+    Role::from_str(input).map_err(|error| FlumeError::InvalidDefinition(error.to_string()))
 }
 
 fn infer_kind(name: &str) -> Role {
@@ -455,7 +455,7 @@ impl TeamRuntime {
         record
     }
 
-    pub async fn spawn_teammate(&mut self, request: TeamSpawn) -> WellfieldResult<TeammateRecord> {
+    pub async fn spawn_teammate(&mut self, request: TeamSpawn) -> FlumeResult<TeammateRecord> {
         // Opportunistically reclaim orphaned spawns from a prior crashed owner so
         // the registry never accumulates abandoned workers. Best-effort: the
         // current owner's live spawns are never touched, so a failure here must
@@ -503,7 +503,7 @@ impl TeamRuntime {
         Ok(record)
     }
 
-    pub async fn add_task(&mut self, request: TeamTaskAdd) -> WellfieldResult<Task> {
+    pub async fn add_task(&mut self, request: TeamTaskAdd) -> FlumeResult<Task> {
         let definition_name = match request.definition {
             Some(name) => Some(name),
             None => self.default_worker_definition_name(),
@@ -526,10 +526,10 @@ impl TeamRuntime {
         Ok(task)
     }
 
-    pub async fn claim_task(&mut self, request: TeamTaskClaim) -> WellfieldResult<Option<Task>> {
+    pub async fn claim_task(&mut self, request: TeamTaskClaim) -> FlumeResult<Option<Task>> {
         let requires_approval = self.requires_plan_approval(&request.team_id, &request)?;
         if let (true, Some(task_id)) = (requires_approval, request.task_id.as_ref()) {
-            return Err(WellfieldError::PlanApprovalRequired(task_id.clone()));
+            return Err(FlumeError::PlanApprovalRequired(task_id.clone()));
         }
         let task_store = FilesTaskStore::new(&self.config.task_root);
         let claimed = task_store
@@ -555,12 +555,12 @@ impl TeamRuntime {
         Ok(claimed)
     }
 
-    pub async fn complete_task(&mut self, request: TeamTaskComplete) -> WellfieldResult<Task> {
+    pub async fn complete_task(&mut self, request: TeamTaskComplete) -> FlumeResult<Task> {
         let reviewer_role = self
             .teammate_role(&request.team_id, &request.reviewer)
             .unwrap_or(Role::Master);
         if !matches!(reviewer_role, Role::Judge | Role::Master) {
-            return Err(WellfieldError::InvalidDefinition(
+            return Err(FlumeError::InvalidDefinition(
                 "only judge or master teammates may complete a task".to_string(),
             ));
         }
@@ -600,7 +600,7 @@ impl TeamRuntime {
         Ok(task)
     }
 
-    pub async fn message(&mut self, request: TeamMessage) -> WellfieldResult<TeamMessageOutcome> {
+    pub async fn message(&mut self, request: TeamMessage) -> FlumeResult<TeamMessageOutcome> {
         let correlation_id = request
             .task_id
             .clone()
@@ -631,7 +631,7 @@ impl TeamRuntime {
         }
         let response = if request.execute {
             let Some(to) = request.to.as_ref() else {
-                return Err(WellfieldError::TeammateNotFound(
+                return Err(FlumeError::TeammateNotFound(
                     "execute requires a target teammate".to_string(),
                 ));
             };
@@ -645,17 +645,17 @@ impl TeamRuntime {
         Ok(TeamMessageOutcome { event, response })
     }
 
-    pub fn status(&self, team_id: &str) -> WellfieldResult<TeamRecord> {
+    pub fn status(&self, team_id: &str) -> FlumeResult<TeamRecord> {
         self.team(team_id).map(TeamState::record)
     }
 
-    pub fn cleanup(&mut self, team_id: &str) -> WellfieldResult<TeamRecord> {
+    pub fn cleanup(&mut self, team_id: &str) -> FlumeResult<TeamRecord> {
         let supervisor = ProcessSupervisor::new(&self.config.registry_dir)
             .with_termination_grace(self.config.termination_grace)
             .with_max_concurrent_spawns(self.config.max_concurrent_spawns);
         supervisor
             .terminate_current_owner()
-            .map_err(|error| WellfieldError::Agent(error.to_string()))?;
+            .map_err(|error| FlumeError::Agent(error.to_string()))?;
         let team = self.team_mut(team_id)?;
         for teammate in team.teammates.values_mut() {
             teammate.status = TeammateStatus::Complete;
@@ -669,13 +669,13 @@ impl TeamRuntime {
     /// one team: reclaim orphaned process groups (dead owner), spawns past the
     /// TTL, and heartbeat-stale (hung) spawns. Safe to call on a timer so a
     /// crashed or abandoned worker never lingers and clogs the host.
-    pub fn gc(&self, options: GcOptions) -> WellfieldResult<ReapReport> {
+    pub fn gc(&self, options: GcOptions) -> FlumeResult<ReapReport> {
         let supervisor = ProcessSupervisor::new(&self.config.registry_dir)
             .with_termination_grace(self.config.termination_grace)
             .with_max_concurrent_spawns(self.config.max_concurrent_spawns);
         supervisor
             .gc(options)
-            .map_err(|error| WellfieldError::Agent(error.to_string()))
+            .map_err(|error| FlumeError::Agent(error.to_string()))
     }
 
     async fn execute_teammate(
@@ -683,14 +683,14 @@ impl TeamRuntime {
         team_id: &str,
         teammate_name: &str,
         content: &str,
-    ) -> WellfieldResult<String> {
+    ) -> FlumeResult<String> {
         let team = self.team(team_id)?;
         let teammate = team
             .teammates
             .get(teammate_name)
-            .ok_or_else(|| WellfieldError::TeammateNotFound(teammate_name.to_string()))?;
+            .ok_or_else(|| FlumeError::TeammateNotFound(teammate_name.to_string()))?;
         if teammate.status == TeammateStatus::Paused {
-            return Err(WellfieldError::AdmissionPaused {
+            return Err(FlumeError::AdmissionPaused {
                 name: teammate_name.to_string(),
                 reason: teammate
                     .paused_reason
@@ -718,7 +718,7 @@ impl TeamRuntime {
         &self,
         team_id: &str,
         request: &TeamTaskClaim,
-    ) -> WellfieldResult<bool> {
+    ) -> FlumeResult<bool> {
         let team = self.team(team_id)?;
         let Some(task_id) = request.task_id.as_ref() else {
             return Ok(false);
@@ -733,7 +733,7 @@ impl TeamRuntime {
         Ok(team.plan_approval_required || role_requires)
     }
 
-    fn binding_for_definition(&self, definition: &RoleDefinition) -> WellfieldResult<AgentBinding> {
+    fn binding_for_definition(&self, definition: &RoleDefinition) -> FlumeResult<AgentBinding> {
         let base = definition
             .agent
             .as_ref()
@@ -754,7 +754,7 @@ impl TeamRuntime {
             .clone()
             .or_else(|| base.map(|binding| binding.agent.clone()))
         else {
-            return Err(WellfieldError::InvalidDefinition(format!(
+            return Err(FlumeError::InvalidDefinition(format!(
                 "definition '{}' has no agent and no {} binding is configured",
                 definition.name,
                 definition.kind.canonical_alias()
@@ -767,7 +767,7 @@ impl TeamRuntime {
             .iter()
             .any(|entry| entry.agent == agent && entry.reachable)
         {
-            return Err(WellfieldError::Agent(format!(
+            return Err(FlumeError::Agent(format!(
                 "agent '{agent}' is not reachable in the catalog; run `artesian agents refresh`"
             )));
         }
@@ -821,26 +821,26 @@ impl TeamRuntime {
         )
     }
 
-    fn definition(&self, name: &str) -> WellfieldResult<&RoleDefinition> {
+    fn definition(&self, name: &str) -> FlumeResult<&RoleDefinition> {
         self.config
             .definitions
             .iter()
             .find(|definition| definition.name == name)
             .ok_or_else(|| {
-                WellfieldError::InvalidDefinition(format!("unknown role definition: {name}"))
+                FlumeError::InvalidDefinition(format!("unknown role definition: {name}"))
             })
     }
 
-    fn team(&self, team_id: &str) -> WellfieldResult<&TeamState> {
+    fn team(&self, team_id: &str) -> FlumeResult<&TeamState> {
         self.teams
             .get(team_id)
-            .ok_or_else(|| WellfieldError::TeamNotFound(team_id.to_string()))
+            .ok_or_else(|| FlumeError::TeamNotFound(team_id.to_string()))
     }
 
-    fn team_mut(&mut self, team_id: &str) -> WellfieldResult<&mut TeamState> {
+    fn team_mut(&mut self, team_id: &str) -> FlumeResult<&mut TeamState> {
         self.teams
             .get_mut(team_id)
-            .ok_or_else(|| WellfieldError::TeamNotFound(team_id.to_string()))
+            .ok_or_else(|| FlumeError::TeamNotFound(team_id.to_string()))
     }
 
     fn teammate_role(&self, team_id: &str, teammate_name: &str) -> Option<Role> {
@@ -866,7 +866,7 @@ impl TeamRuntime {
         agent_id: &str,
         event_type: EventType,
         payload: serde_json::Value,
-    ) -> WellfieldResult<EventEnvelope> {
+    ) -> FlumeResult<EventEnvelope> {
         self.event_counter += 1;
         let event = EventEnvelope::new(
             format!("team-evt-{}", self.event_counter),
@@ -1210,7 +1210,7 @@ mod tests {
             })
             .await
             .expect_err("plan approval should block claim");
-        assert!(matches!(blocked, WellfieldError::PlanApprovalRequired(_)));
+        assert!(matches!(blocked, FlumeError::PlanApprovalRequired(_)));
 
         runtime
             .message(TeamMessage {

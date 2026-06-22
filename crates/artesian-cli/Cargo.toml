@@ -13,7 +13,7 @@ artesian-core = { path = "../artesian-core" }
 chrono.workspace = true
 artesian-process-agent = { path = "../artesian-process-agent" }
 clap.workspace = true
-wellfield.workspace = true
+flume.workspace = true
 sandbox = { path = "../sandbox" }
 aquifer = { path = "../aquifer" }
 artesian-mcp = { path = "../artesian-mcp" }

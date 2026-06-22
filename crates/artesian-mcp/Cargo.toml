@@ -12,7 +12,7 @@ anyhow.workspace = true
 artesian-core = { path = "../artesian-core" }
 artesian-process-agent = { path = "../artesian-process-agent" }
 clap.workspace = true
-wellfield.workspace = true
+flume.workspace = true
 aquifer = { path = "../aquifer" }
 axum = { workspace = true, optional = true }
 rmcp = { workspace = true, features = ["transport-io"] }

@@ -1,30 +1,30 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 
-# Agent Teams — Wellfield
+# Agent Teams — Flume
 
-A **Wellfield** (a cluster of wells drawing from one shared aquifer) is a vendor-neutral agent team: a **lead** plus
+A **Flume** (a cluster of wells drawing from one shared aquifer) is a vendor-neutral agent team: a **lead** plus
 **teammates** (and an optional **judge**) that coordinate over a shared task board and a shared
 message pool, all reading and writing **one shared persistent memory**. Teammates can be backed by
 any agent and model — Claude, Codex, opencode, Gemini, a local model — and every teammate runs
 **supervised**, so a team never leaks or orphans processes.
 
-Wellfield is not a separate product or a rewrite. It composes primitives Artesian already has: the headrace
+Flume is not a separate product or a rewrite. It composes primitives Artesian already has: the headrace
 task board, the EventEnvelope message pool, the Basin role loop, supervised process spawning,
 and Aquifer memory.
 
-![Wellfield team architecture](diagrams/wellfield-team.png)
+![Flume team architecture](diagrams/flume-team.png)
 
 ## Where it fits: a topology, not a new mode
 
-Teams are a **topology of `orchestrate` / `full`**, not a fifth [mode](modes.md). A Wellfield is simply
+Teams are a **topology of `orchestrate` / `full`**, not a fifth [mode](modes.md). A Flume is simply
 `orchestrate` scaled from a single worker to several coordinating teammates — you opt in exactly as
 you opt into orchestration, and `memory` mode is unaffected.
 
 | Mode | Memory | Orchestration | Team topology |
 |---|---|---|---|
 | `memory` | yes | — | — |
-| `orchestrate` | yes | master / worker / judge | single worker **or** a Wellfield |
-| `full` | yes | + sandbox | single worker **or** a Wellfield |
+| `orchestrate` | yes | master / worker / judge | single worker **or** a Flume |
+| `full` | yes | + sandbox | single worker **or** a Flume |
 | `advanced` | your store | bring-your-own | Artesian coordinates your agents |
 
 ## Roles: three archetypes, your own names
@@ -111,7 +111,7 @@ teammate just the slice it needs, which is where the token saving comes from
    orchestrator, LangGraph — with no orchestration takeover.
 2. **Coordination (`advanced`):** keep your own agents; use Artesian's shared task board and message
    pool as the coordination substrate.
-3. **Full Wellfield:** Artesian runs the team end to end — vendor-neutral, verifier-gated, supervised.
+3. **Full Flume:** Artesian runs the team end to end — vendor-neutral, verifier-gated, supervised.
 
 Interop rule — **do not double-orchestrate.** When a native team system (e.g. Claude Code agent
 teams) is driving the loop, run Artesian in `memory` / `advanced`, not `orchestrate`. Artesian's
@@ -127,7 +127,7 @@ orchestration tools are off outside `orchestrate` / `full`, so this is the defau
 
 ## Prior art and naming
 
-Wellfield builds on established multi-agent patterns — MetaGPT's role-based publish-subscribe message
+Flume builds on established multi-agent patterns — MetaGPT's role-based publish-subscribe message
 pool, OpenAI Symphony's single-authority dispatch, agent-teams-ai, and Claude Code's agent teams and
 sub-agents. Artesian reuses ideas and credits them; it does not reproduce their code, specifications,
 or marks. The `.agent/agents/*.md` schema and the hydro naming are Artesian's own.

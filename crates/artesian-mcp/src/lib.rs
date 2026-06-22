@@ -40,7 +40,7 @@ use rmcp::{
 };
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex as AsyncMutex;
-use wellfield::{
+use flume::{
     load_role_definitions, role_summaries, TeamCreate, TeamGcOptions, TeamMessage, TeamMessageKind,
     TeamRuntime, TeamRuntimeConfig, TeamSpawn, TeamTaskAdd, TeamTaskClaim, TeamTaskComplete,
 };
@@ -50,7 +50,7 @@ use aquifer::{QdrantVectorStore, QdrantVectorStoreConfig};
 
 const TOOL_INSTRUCTIONS: &str =
     "ALWAYS search the project memory before non-trivial work; store durable, reusable learnings.";
-const MASTER_ROLE_SKILL: &str = "In orchestrate/full mode, first call agents.list to inspect reachable agents, models, and role definitions. Use memory.context for compact project recall, create Wellfield teams with team.create/team.spawn when several teammates are useful, delegate bounded subtasks through team.task.* or orchestrate.delegate(worker), and gate accepted outcomes through the judge/master path before marking work done.";
+const MASTER_ROLE_SKILL: &str = "In orchestrate/full mode, first call agents.list to inspect reachable agents, models, and role definitions. Use memory.context for compact project recall, create Flume teams with team.create/team.spawn when several teammates are useful, delegate bounded subtasks through team.task.* or orchestrate.delegate(worker), and gate accepted outcomes through the judge/master path before marking work done.";
 const ORCHESTRATION_TOOLS: &[&str] = &[
     "agents.list",
     "orchestrate.bind",
@@ -330,7 +330,7 @@ impl MemoryServer {
         &self,
         bindings: Vec<AgentBinding>,
         catalog: AgentCatalog,
-        definitions: Vec<wellfield::RoleDefinition>,
+        definitions: Vec<flume::RoleDefinition>,
     ) -> TeamRuntime {
         TeamRuntime::new(TeamRuntimeConfig {
             repo_root: self.repo_root.clone(),
@@ -1349,7 +1349,7 @@ Call when the project vision or current phase changes."
 
     #[tool(
         name = "team.create",
-        description = "Create an opt-in Wellfield team topology for orchestrate/full mode."
+        description = "Create an opt-in Flume team topology for orchestrate/full mode."
     )]
     pub async fn team_create(
         &self,
@@ -1395,7 +1395,7 @@ Call when the project vision or current phase changes."
 
     #[tool(
         name = "team.task.add",
-        description = "Add a task to the shared headrace task board for a Wellfield team."
+        description = "Add a task to the shared headrace task board for a Flume team."
     )]
     pub async fn team_task_add(
         &self,
@@ -1476,7 +1476,7 @@ Call when the project vision or current phase changes."
 
     #[tool(
         name = "team.message",
-        description = "Post a typed Wellfield message (ASK/RESULT/REVIEW/DONE); direct addressing rides the shared EventEnvelope pool."
+        description = "Post a typed Flume message (ASK/RESULT/REVIEW/DONE); direct addressing rides the shared EventEnvelope pool."
     )]
     pub async fn team_message(
         &self,
@@ -1506,7 +1506,7 @@ Call when the project vision or current phase changes."
 
     #[tool(
         name = "team.status",
-        description = "Return Wellfield team lifecycle, teammates, and redacted EventEnvelope pool."
+        description = "Return Flume team lifecycle, teammates, and redacted EventEnvelope pool."
     )]
     pub async fn team_status(
         &self,
@@ -1525,7 +1525,7 @@ Call when the project vision or current phase changes."
 
     #[tool(
         name = "team.cleanup",
-        description = "Terminate tracked teammate process groups for the current owner and mark the Wellfield team cleaned up."
+        description = "Terminate tracked teammate process groups for the current owner and mark the Flume team cleaned up."
     )]
     pub async fn team_cleanup(
         &self,
@@ -1786,7 +1786,7 @@ fn tool_registry() -> &'static [RegisteredTool] {
         },
         RegisteredTool {
             name: "team.create",
-            description: "Create a Wellfield agent team topology in orchestrate or full mode.",
+            description: "Create a Flume agent team topology in orchestrate or full mode.",
         },
         RegisteredTool {
             name: "team.spawn",

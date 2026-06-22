@@ -40,7 +40,7 @@ A multi-agent loop is built from three decisions (after **Skill-MAS**, arXiv:260
 1. **Task decomposition** (*the what*) — break the goal into evaluable sub-tasks with success
    criteria. Lands on the [headrace](task-tracking.md) task board.
 2. **Agent engineering** (*the who*) — instantiate specialized teammates (lead / workers / judge),
-   each a role + tools, possibly different models. This is a [wellfield](teams.md).
+   each a role + tools, possibly different models. This is a [flume](teams.md).
 3. **Workflow orchestration** (*the how*) — choose a topology: **sequential**, **hierarchical**, or
    **loop**, with a verifier gate at each step.
 
@@ -77,7 +77,7 @@ The shape:
 
 1. **Bind roles to agents/models.** `artesian init` detects installed agent CLIs; map lead / worker
    / judge to any of Claude / Codex / Gemini / opencode / a local model. See [modes](modes.md).
-2. **Start a wellfield.** Over MCP: `agents.list` → `team.create` → `team.spawn` the teammates.
+2. **Start a flume.** Over MCP: `agents.list` → `team.create` → `team.spawn` the teammates.
 3. **Decompose + dispatch.** `team.task.add` the sub-tasks; workers `team.task.claim` and execute;
    coordinate via `team.message`.
 4. **Verify before done.** The judge reviews; only judge-accepted work is marked complete.
@@ -87,7 +87,7 @@ The shape:
    step; export/import the working state as an [OCF](https://github.com/aquifer-labs/ocf) bundle to
    move the loop to another runtime.
 
-For a single bounded subtask you do not need a wellfield — `orchestrate.delegate(worker)` runs one
+For a single bounded subtask you do not need a flume — `orchestrate.delegate(worker)` runs one
 worker under the judge gate.
 
 > **`artesian loop` (available now).** A convenience command drives this cycle directly — it repeats
@@ -145,5 +145,5 @@ writes something the next pass builds on. That memory layer is exactly what Arte
 - **ACC / Committed Context State** — [arXiv:2601.11653](https://arxiv.org/abs/2601.11653) (the
   bounded committed state the loop reads).
 
-Related Artesian docs: [modes](modes.md) · [teams (wellfield)](teams.md) · [self-repair](self-repair.md) ·
+Related Artesian docs: [modes](modes.md) · [teams (flume)](teams.md) · [self-repair](self-repair.md) ·
 [task-tracking (headrace)](task-tracking.md) · [orchestration (basin)](orchestration.md).
