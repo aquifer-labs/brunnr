@@ -160,3 +160,103 @@ without breaking anything**.
 - Do not `git push` or perform outward-facing actions without explicit operator approval.
 
 This recipe is the canonical bring-up; `AGENTS.md` points here so any agent picks it up.
+
+### Ready-to-paste setup prompt
+
+Hand this to an agent (Claude Code, Codex, …) on the target machine. The user fills only the
+`CONFIGURE` block — collection name, the note directories, and which backend (local by default, or a
+shared Qdrant). Everything else runs autonomously.
+
+```text
+You are an agent setting up this machine (macOS/Linux). Install and configure Artesian
+(https://github.com/aquifer-labs/artesian) as durable, cross-session memory for AI agents, import
+the user's existing Markdown notes, and wire agents to use it. Act autonomously through the steps
+below; the user fills only the CONFIGURE block.
+
+==================== CONFIGURE BEFORE RUNNING ====================
+# Collection / project name (your choice, lowercase):
+COLLECTION="personal"
+
+# Root directories with .md notes (one per line; nested subfolders are scanned RECURSIVELY, so
+# list only the roots):
+DIRS=(
+  "/absolute/path/to/notes"
+  "/absolute/path/to/another"
+)
+
+# Backend — pick ONE:
+#   Local (default; private, no server, works offline):
+BACKEND_ARGS=(--backend sqlite-vec)
+#   OR a shared Qdrant (several machines share one store): comment the line above, uncomment the
+#   three lines below, and fill the URL + API key.
+# QDRANT_URL="http://your-qdrant-host:6333"
+# QDRANT_API_KEY="your-qdrant-api-key"
+# BACKEND_ARGS=(--backend qdrant --qdrant-url "$QDRANT_URL" --qdrant-api-key-env QDRANT_API_KEY)
+=================================================================
+
+Rules:
+- Non-destructive: never delete or modify the user's .md files — only read/index them. onboard and
+  backfill are idempotent and recursive (re-runs add no duplicates).
+- Secrets only in the shell env / local config, never in git.
+- Do not change the pinned embedding model of an existing collection (run `artesian migrate` if it
+  ever mismatches).
+
+Steps:
+
+1) Install (if Homebrew is missing, install it first):
+   brew install aquifer-labs/tap/artesian
+   artesian --help
+
+2) Qdrant variant only — export the API key for this session and persist it:
+   export QDRANT_API_KEY="$QDRANT_API_KEY"
+   grep -q QDRANT_API_KEY ~/.zshrc 2>/dev/null || echo "export QDRANT_API_KEY=\"$QDRANT_API_KEY\"" >> ~/.zshrc
+   curl -fsS -H "api-key: $QDRANT_API_KEY" "$QDRANT_URL/healthz" && echo " qdrant ok"
+
+3) Set up + import the first directory (writes ~/artesian/artesian.toml, registers the
+   artesian-memory MCP server for Codex/Zed/Claude Code, and recursively imports the directory):
+   mkdir -p ~/artesian && cd ~/artesian
+   artesian onboard "$COLLECTION" "${DIRS[0]}" --collection "$COLLECTION" "${BACKEND_ARGS[@]}"
+
+4) Import the remaining directories (recursive, idempotent):
+   cd ~/artesian
+   for d in "${DIRS[@]:1}"; do artesian backfill "$d"; done
+
+5) Verify:
+   artesian memory find "a topic from the notes" --limit 5
+   artesian doctor
+
+6) Wire agents. The MCP server `artesian-memory` is now registered (tools: memory.find /
+   memory.context / memory.store / memory.anchor.*). Append this block to the project's AGENTS.md
+   and/or CLAUDE.md (append, do not overwrite):
+
+   ## Memory — Artesian
+   This project uses the `artesian-memory` MCP server for durable, cross-session memory.
+   - Before non-trivial work, recall the relevant slice with `memory.context` (or `memory.find`) —
+     do not re-read whole files.
+   - For a goal/task, call `memory.context` with the goal to get a bounded packet: the goal, the
+     invariants that must hold, the last failed check, and the most relevant memory.
+   - After a durable decision or learning, `memory.store` it (concise, reusable).
+   - Record project rules once with tag `invariant` — they are always injected into goal packets.
+
+   (Claude Code reads .mcp.json per project — copy it into each project root if needed; Codex and Zed
+   pick up the global registration automatically.)
+
+7) Report: what was installed, the collection, how many records were imported per directory, that
+   the MCP server is registered, and where to paste the memory block.
+```
+
+Run it once per project — change `COLLECTION` and `DIRS` (and the backend) each time.
+
+### Updating & health
+
+Artesian installs via Homebrew, so a binary update keeps your config, MCP registrations, and stored
+memory untouched:
+
+```shell
+artesian update    # convenience wrapper around `brew upgrade aquifer-labs/tap/artesian`
+artesian doctor    # verify binary, config, backend reachability, collection compat, MCP registrations
+```
+
+`artesian doctor` prints the exact fix for anything that drifted (e.g. `artesian memory rebuild` or
+`artesian migrate` if an embedding model ever changes) and exits non-zero on a critical problem, so
+it is safe to run in scripts after an upgrade.

@@ -258,6 +258,20 @@ enum Command {
         #[arg(long, default_value_t = 256)]
         batch: u32,
     },
+    /// Health check: verify the binary, config, backend reachability, collection compatibility,
+    /// and MCP registrations — and print the exact fix for anything that drifted (e.g. after an
+    /// upgrade). Exits non-zero if a critical problem is found.
+    Doctor {
+        #[arg(long, default_value = DEFAULT_CONFIG)]
+        config: PathBuf,
+        #[arg(long, default_value = ".artesian")]
+        root: PathBuf,
+        #[arg(long, value_enum)]
+        backend: Option<BackendArg>,
+    },
+    /// Update Artesian via its package manager (Homebrew), then suggest `artesian doctor`. A
+    /// convenience wrapper — your config, MCP registrations, and stored memory are untouched.
+    Update,
 }
 
 #[derive(Debug, Subcommand)]
@@ -908,6 +922,12 @@ async fn main() -> Result<()> {
             )
             .await
         }
+        Command::Doctor {
+            config,
+            root,
+            backend,
+        } => doctor(config, root, backend).await,
+        Command::Update => update(),
     }
 }
 
@@ -1328,6 +1348,155 @@ async fn run_replicate(
     _batch: u32,
 ) -> Result<()> {
     bail!("`replicate` requires the `qdrant` feature; rebuild with --features qdrant")
+}
+
+/// Whether `path` contains `needle` (a cheap "is this registered?" check for config files).
+fn file_mentions(path: &Path, needle: &str) -> bool {
+    fs::read_to_string(path)
+        .map(|text| text.contains(needle))
+        .unwrap_or(false)
+}
+
+/// Which agent surfaces have the `artesian-memory` MCP server registered.
+fn mcp_registration_status() -> Vec<(&'static str, bool)> {
+    let codex = home_dir()
+        .ok()
+        .map(|home| home.join(".codex").join("config.toml"));
+    let zed = zed_settings_path().ok();
+    vec![
+        (
+            "Claude Code (.mcp.json)",
+            file_mentions(Path::new(".mcp.json"), MCP_SERVER_NAME),
+        ),
+        (
+            "Codex",
+            codex.is_some_and(|path| file_mentions(&path, MCP_SERVER_NAME)),
+        ),
+        (
+            "Zed",
+            zed.is_some_and(|path| file_mentions(&path, MCP_SERVER_NAME)),
+        ),
+    ]
+}
+
+/// Health check: binary, config, backend reachability, collection compatibility, and MCP
+/// registrations — printing the exact fix for anything that drifted (e.g. after an upgrade).
+async fn doctor(config_path: PathBuf, root: PathBuf, backend: Option<BackendArg>) -> Result<()> {
+    let mut problems = 0usize;
+    println!("artesian doctor (v{})", env!("CARGO_PKG_VERSION"));
+
+    let memory_config = memory_config_for_command(&config_path, root, backend)?;
+    let source = if config_path.exists() {
+        config_path.display().to_string()
+    } else {
+        "defaults (no artesian.toml)".to_string()
+    };
+    println!(
+        "  config:  {source} — backend={:?}, root={}, collection={}",
+        memory_config.backend, memory_config.root, memory_config.collection
+    );
+
+    // Qdrant reachability gives a clearer message than the generic open error.
+    #[cfg(feature = "qdrant")]
+    if memory_config.backend == MemoryBackendKind::Qdrant {
+        match runtime::qdrant_config_from(&memory_config) {
+            Ok(qdrant_config) => {
+                match aquifer::preflight_qdrant(qdrant_config).await {
+                    Ok(report) => println!(
+                        "  qdrant:  reachable (gRPC {}, REST {})",
+                        report.grpc_url, report.rest_status
+                    ),
+                    Err(error) => {
+                        problems += 1;
+                        println!("  qdrant:  UNREACHABLE — {error}");
+                        println!("           fix: check the URL + API key env, and that the server is up");
+                    }
+                }
+            }
+            Err(error) => {
+                problems += 1;
+                println!("  qdrant:  misconfigured — {error}");
+            }
+        }
+    }
+
+    // Opening + probing the backend exercises the collection-compatibility check.
+    match open_memory_backend(&memory_config) {
+        Ok(backend) => match backend
+            .find(MemoryQuery::new("artesian doctor probe").with_limit(1))
+            .await
+        {
+            Ok(hits) => println!(
+                "  memory:  responsive ({})",
+                if hits.is_empty() {
+                    "reachable"
+                } else {
+                    "has entries"
+                }
+            ),
+            Err(error) => {
+                problems += 1;
+                println!("  memory:  ERROR — {error}");
+                println!(
+                    "           fix: `artesian memory rebuild` (or `artesian migrate` if the embedding model changed)"
+                );
+            }
+        },
+        Err(error) => {
+            problems += 1;
+            println!("  backend: ERROR opening — {error}");
+        }
+    }
+
+    let registrations = mcp_registration_status();
+    let registered: Vec<&str> = registrations
+        .iter()
+        .filter(|(_, ok)| *ok)
+        .map(|(name, _)| *name)
+        .collect();
+    if registered.is_empty() {
+        println!("  mcp:     not registered for any agent");
+        println!("           fix: `artesian init --register-mcp` (or `artesian onboard …`)");
+    } else {
+        println!("  mcp:     registered for {}", registered.join(", "));
+    }
+
+    println!();
+    if problems == 0 {
+        println!("✓ all checks passed");
+        Ok(())
+    } else {
+        bail!("{problems} problem(s) found — see the fixes above")
+    }
+}
+
+/// Update Artesian via Homebrew (if present), then point at `artesian doctor`. A convenience
+/// wrapper — the package manager owns the binary; config, MCP registrations, and stored memory are
+/// untouched.
+fn update() -> Result<()> {
+    let brew_available = std::process::Command::new("brew")
+        .arg("--version")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false);
+    if brew_available {
+        println!("Updating Artesian via Homebrew…");
+        if !run_shell("brew upgrade aquifer-labs/tap/artesian")? {
+            eprintln!("note: brew reported a non-zero exit (e.g. already up to date)");
+        }
+        println!("\nNext: run `artesian doctor` to verify the install and your setup survived the upgrade.");
+    } else {
+        println!(
+            "Homebrew not found — update with your install method, then run `artesian doctor`:"
+        );
+        println!("  brew upgrade aquifer-labs/tap/artesian");
+        println!(
+            "  or download the latest binary: https://github.com/aquifer-labs/artesian/releases"
+        );
+    }
+    Ok(())
 }
 
 async fn task(command: TaskCommand) -> Result<()> {
