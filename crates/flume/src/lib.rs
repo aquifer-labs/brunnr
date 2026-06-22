@@ -2,6 +2,8 @@
 
 //! Artesian-native agent teams (Flume).
 
+pub mod loop_core;
+
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs,
@@ -19,6 +21,98 @@ use artesian_process_agent::{
     ReapReport, WorkerEvent,
 };
 pub use artesian_process_agent::{GcOptions as TeamGcOptions, ReapReport as TeamReapReport};
+
+/// The three canonical Conductor-style knobs for delegating work to a worker.
+///
+/// Every spawn or delegate operation in Flume is ultimately described by a `Delegation`.
+/// Role-based spawns produce a default delegation from the definition + binding; callers that need
+/// fine-grained control (e.g. the MCP `orchestrate.loop` path or an outer orchestrator) can supply
+/// the knobs explicitly.
+///
+/// # Knobs
+///
+/// 1. **Agent selection** — which agent CLI and model to use, resolved from the pool or supplied
+///    directly as an [`AgentBinding`].
+/// 2. **Targeted instruction** — the per-worker system text (from the role definition's
+///    `prompt_addendum`) combined with the caller's task content, plus an optional *resume packet*
+///    that carries prior-session state into a fresh process.
+/// 3. **Context visibility** — which tools the worker is permitted to call, and an optional memory
+///    session slice (user / session / task identifiers) that gates the worker's shared memory view.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Delegation {
+    /// Knob 1 — agent selection: the resolved agent/model binding.
+    pub binding: AgentBinding,
+    /// Knob 2 — targeted instruction: the combined system + task prompt the worker receives.
+    pub instruction: String,
+    /// Knob 2 (cont.) — optional resume packet injected as process startup state.
+    pub resume_packet: Option<String>,
+    /// Knob 3 — context visibility: tools the worker may call (empty = unrestricted by this layer).
+    pub allowed_tools: Vec<String>,
+    /// Knob 3 (cont.) — optional memory session slice for shared-memory scoping.
+    pub session_context: Option<DelegationSessionContext>,
+}
+
+/// Memory session scope for a delegation (user / session / task tenancy keys).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DelegationSessionContext {
+    pub user_id: Option<String>,
+    pub session_id: Option<String>,
+    pub task_id: Option<String>,
+}
+
+impl Delegation {
+    /// Build a delegation from a resolved binding and a full composed prompt, with no session
+    /// scoping and tools inherited from the definition.
+    pub fn new(binding: AgentBinding, instruction: impl Into<String>) -> Self {
+        Self {
+            binding,
+            instruction: instruction.into(),
+            resume_packet: None,
+            allowed_tools: Vec::new(),
+            session_context: None,
+        }
+    }
+
+    /// Override the resume packet (Knob 2).
+    pub fn with_resume_packet(mut self, packet: impl Into<String>) -> Self {
+        self.resume_packet = Some(packet.into());
+        self
+    }
+
+    /// Override the allowed tools (Knob 3 — tool scoping).
+    pub fn with_allowed_tools(mut self, tools: Vec<String>) -> Self {
+        self.allowed_tools = tools;
+        self
+    }
+
+    /// Override the session context (Knob 3 — memory scoping).
+    pub fn with_session_context(mut self, context: DelegationSessionContext) -> Self {
+        self.session_context = Some(context);
+        self
+    }
+
+    /// Build a default delegation from a role definition (binding + prompt addendum) and caller
+    /// task content. Tool visibility comes from the definition; no session scoping is applied.
+    /// This is the path taken by `TeamRuntime::spawn_teammate` / role-based spawns.
+    pub fn from_definition(
+        definition: &RoleDefinition,
+        binding: AgentBinding,
+        task_content: &str,
+    ) -> Self {
+        let instruction = if definition.prompt_addendum.is_empty() {
+            task_content.to_string()
+        } else {
+            format!("{}\n\n{}", definition.prompt_addendum, task_content)
+        };
+        Self {
+            binding,
+            instruction,
+            resume_packet: None,
+            allowed_tools: definition.allow_tools.clone(),
+            session_context: None,
+        }
+    }
+}
 use chrono::Utc;
 use headrace::{
     ClaimRequest, FilesTaskStore, NewTask, Task, TaskStatus, TaskStore, TransitionTask,
@@ -734,21 +828,46 @@ impl TeamRuntime {
         }
         let definition = teammate.definition.clone();
         let binding = teammate.binding.clone();
-        let process = self.process_agent(&binding);
+        // Build a Delegation from the definition (all three knobs), allowing callers that supply a
+        // resume_packet override to set Knob 2 without duplicating prompt assembly logic.
+        let mut delegation = Delegation::from_definition(&definition, binding, content);
+        if let Some(packet) = resume_packet {
+            delegation = delegation.with_resume_packet(packet);
+        }
+        self.execute_delegation(delegation, team_id, teammate_name, event_sender)
+            .await
+    }
+
+    /// Execute a fully-specified [`Delegation`] (the canonical spawn + send path for all three
+    /// knobs). Callers such as `execute_teammate` build delegations from role definitions; external
+    /// callers (e.g. `orchestrate.loop`) can supply delegations directly.
+    ///
+    /// `team_id` and `teammate_name` are used purely for bookkeeping in [`TeamWorkerEvent`] payloads;
+    /// pass empty strings when the execution is not part of a team (e.g. the loop path).
+    pub async fn execute_delegation(
+        &self,
+        delegation: Delegation,
+        team_id: &str,
+        teammate_name: &str,
+        event_sender: Option<mpsc::UnboundedSender<TeamWorkerEvent>>,
+    ) -> FlumeResult<TeamExecution> {
+        let binding = &delegation.binding;
+        let process = self.process_agent(binding);
         let session = process
             .spawn(SpawnRequest {
-                role: definition.kind,
+                role: binding.role,
                 agent: binding.agent.clone(),
                 model: binding.model.clone(),
                 working_dir: Some(self.config.repo_root.display().to_string()),
-                resume_packet: resume_packet.map(str::to_string),
+                resume_packet: delegation.resume_packet.clone(),
             })
             .await?;
-        let prompt = format!("{}\n\n{}", definition.prompt_addendum, content);
         let (worker_sender, mut worker_receiver) = mpsc::unbounded_channel();
         let response = process.send_with_event_sender(
             &session,
-            AgentMessage { content: prompt },
+            AgentMessage {
+                content: delegation.instruction.clone(),
+            },
             Some(worker_sender),
         );
         tokio::pin!(response);
@@ -1010,9 +1129,9 @@ impl TeammateState {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct TeamExecution {
-    response: String,
-    events: Vec<TeamWorkerEvent>,
+pub struct TeamExecution {
+    pub response: String,
+    pub events: Vec<TeamWorkerEvent>,
 }
 
 fn push_worker_event(
@@ -1603,5 +1722,120 @@ mod tests {
             .stderr(std::process::Stdio::null())
             .status()
             .is_ok_and(|status| status.success())
+    }
+
+    // ── Delegation unit tests ──────────────────────────────────────────────────────────────────
+
+    /// A `Delegation` built from a role definition maps its three knobs to the values that the
+    /// spawn + send path will actually use: the binding is the agent/model selection (knob 1),
+    /// the instruction is the assembled prompt addendum + task content (knob 2), and allowed_tools
+    /// comes from the definition's `allow_tools` list (knob 3).
+    #[test]
+    fn delegation_from_definition_maps_three_knobs() {
+        let def = definition(
+            "security-reviewer",
+            Role::Worker,
+            Some("codex"),
+            Some("gpt-5"),
+        );
+        let binding = AgentBinding {
+            role: Role::Worker,
+            agent: "codex".to_string(),
+            model: Some("gpt-5".to_string()),
+            command: Some("codex".to_string()),
+            args: Vec::new(),
+            timeout_seconds: Some(60),
+        };
+        let task_content = "review auth.rs for injection risks";
+
+        let delegation = Delegation::from_definition(&def, binding.clone(), task_content);
+
+        // Knob 1 — agent selection: binding is passed through unchanged.
+        assert_eq!(delegation.binding.agent, "codex");
+        assert_eq!(delegation.binding.model.as_deref(), Some("gpt-5"));
+
+        // Knob 2 — targeted instruction: prompt_addendum prefixed before task content.
+        assert!(
+            delegation.instruction.contains(&def.prompt_addendum),
+            "instruction should include definition prompt addendum"
+        );
+        assert!(
+            delegation.instruction.contains(task_content),
+            "instruction should include task content"
+        );
+        // No resume packet by default.
+        assert!(delegation.resume_packet.is_none());
+
+        // Knob 3 — context visibility: allow_tools from the definition.
+        assert_eq!(delegation.allowed_tools, def.allow_tools);
+        // No session scoping by default.
+        assert!(delegation.session_context.is_none());
+    }
+
+    /// Builder overrides let callers replace individual knobs without touching the others.
+    #[test]
+    fn delegation_builder_overrides_individual_knobs() {
+        let def = definition("worker-a", Role::Worker, Some("echo"), None);
+        let binding = AgentBinding {
+            role: Role::Worker,
+            agent: "echo".to_string(),
+            model: None,
+            command: Some("echo".to_string()),
+            args: Vec::new(),
+            timeout_seconds: None,
+        };
+
+        let delegation = Delegation::from_definition(&def, binding, "task")
+            .with_resume_packet("prior-session-state")
+            .with_allowed_tools(vec!["memory.find".to_string()])
+            .with_session_context(DelegationSessionContext {
+                user_id: Some("user-1".to_string()),
+                session_id: Some("ses-1".to_string()),
+                task_id: Some("task-1".to_string()),
+            });
+
+        // Knob 2 — resume packet set.
+        assert_eq!(
+            delegation.resume_packet.as_deref(),
+            Some("prior-session-state")
+        );
+
+        // Knob 3 — tool override applied.
+        assert_eq!(delegation.allowed_tools, vec!["memory.find"]);
+
+        // Knob 3 — session context populated.
+        let ctx = delegation
+            .session_context
+            .as_ref()
+            .expect("session context should be set");
+        assert_eq!(ctx.user_id.as_deref(), Some("user-1"));
+        assert_eq!(ctx.session_id.as_deref(), Some("ses-1"));
+        assert_eq!(ctx.task_id.as_deref(), Some("task-1"));
+    }
+
+    /// When a definition has an empty `prompt_addendum`, the instruction equals the task content.
+    #[test]
+    fn delegation_empty_addendum_yields_plain_task_content() {
+        let def = RoleDefinition {
+            name: "simple".to_string(),
+            kind: Role::Worker,
+            description: "Simple worker.".to_string(),
+            agent: Some("echo".to_string()),
+            model: None,
+            allow_tools: Vec::new(),
+            prompt_addendum: String::new(),
+            source: RoleDefinitionSource::Artesian,
+            path: PathBuf::from("simple.md"),
+        };
+        let binding = AgentBinding {
+            role: Role::Worker,
+            agent: "echo".to_string(),
+            model: None,
+            command: Some("echo".to_string()),
+            args: Vec::new(),
+            timeout_seconds: None,
+        };
+        let delegation = Delegation::from_definition(&def, binding, "just the task");
+        assert_eq!(delegation.instruction, "just the task");
     }
 }

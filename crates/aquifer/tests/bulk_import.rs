@@ -28,7 +28,9 @@ impl TextEmbedder for ConstantEmbedder {
 fn test_vec(text: &str) -> Vec<f32> {
     let mut v = vec![0.0f32; TEST_DIMS];
     for token in text.split_whitespace() {
-        let idx = token.bytes().fold(0usize, |h, b| h.wrapping_mul(31).wrapping_add(b as usize))
+        let idx = token
+            .bytes()
+            .fold(0usize, |h, b| h.wrapping_mul(31).wrapping_add(b as usize))
             % TEST_DIMS;
         v[idx] += 1.0;
     }
@@ -97,7 +99,10 @@ async fn bulk_store_stores_all_memories_and_reports_correct_counts() {
 #[tokio::test]
 async fn bulk_store_is_idempotent_second_import_adds_zero_new_points() {
     let backend = make_backend("bulk-idempotent");
-    let memories = vec![atom("idempotent chunk alpha"), atom("idempotent chunk beta")];
+    let memories = vec![
+        atom("idempotent chunk alpha"),
+        atom("idempotent chunk beta"),
+    ];
 
     // First import.
     let r1 = backend.bulk_store(memories.clone(), 128).await;
@@ -106,7 +111,10 @@ async fn bulk_store_is_idempotent_second_import_adds_zero_new_points() {
 
     // Second import of identical content — upsert is idempotent (same IDs overwrite silently).
     let r2 = backend.bulk_store(memories, 128).await;
-    assert_eq!(r2.stored, 2, "upsert of same IDs is still accepted; count is 2");
+    assert_eq!(
+        r2.stored, 2,
+        "upsert of same IDs is still accepted; count is 2"
+    );
     assert!(r2.failures.is_empty(), "no failures on re-import");
 
     // The collection still has exactly the original 2 memories (no phantom duplicates).
@@ -135,7 +143,9 @@ async fn bulk_store_empty_slice_is_a_noop() {
 #[tokio::test]
 async fn bulk_store_batch_size_one_stores_all_chunks_correctly() {
     let backend = make_backend("bulk-batch1");
-    let memories: Vec<StoreMemory> = (0..10).map(|i| atom(&format!("chunk content {i}"))).collect();
+    let memories: Vec<StoreMemory> = (0..10)
+        .map(|i| atom(&format!("chunk content {i}")))
+        .collect();
     let report = backend.bulk_store(memories, 1).await;
     assert_eq!(report.stored, 10);
     assert!(report.failures.is_empty());
@@ -180,7 +190,10 @@ async fn incremental_logic_only_upserts_delta_points() {
     // Delta = the 2 memories that target is missing.
     let delta = all_memories[2..].to_vec();
     let report = target.bulk_store(delta, 128).await;
-    assert_eq!(report.stored, 2, "only the 2 new memories should be upserted");
+    assert_eq!(
+        report.stored, 2,
+        "only the 2 new memories should be upserted"
+    );
     assert!(report.failures.is_empty());
 }
 

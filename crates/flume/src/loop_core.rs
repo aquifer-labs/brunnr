@@ -1,0 +1,956 @@
+// SPDX-License-Identifier: Apache-2.0
+
+//! Autonomous memory-first agentic loop — the shared core used by both the CLI `loop` command
+//! and the MCP `orchestrate.loop` tool.
+//!
+//! The loop repeats a worker action until a goal verifier command exits 0 (or until a brake
+//! fires). After each turn it:
+//! 1. Recalls goal-relevant memory from the backend (MMR-diversified).
+//! 2. Assembles a bounded goal packet (goal + invariants + last-failed-check + recall).
+//! 3. Runs the worker action with the packet injected via `ARTESIAN_PACKET` / env vars.
+//! 4. Writes a resume anchor so the run survives compaction.
+//! 5. Verifies the goal; on success commits a verified skill + spec + auto-invariants.
+//!
+//! The actual command execution is injected through the [`LoopCommands`] trait, keeping the
+//! core free of shell / process specifics so the MCP path can supply its own worker executor.
+
+use std::{
+    fs,
+    io::Write,
+    path::{Path, PathBuf},
+    pin::Pin,
+    time::{Duration, Instant},
+};
+
+use aquifer::{
+    AnchorAnchorStore, MemoryBackend, MemoryQuery, MemoryScope, MemoryTier, SessionAnchor,
+    StoreMemory,
+};
+use serde_json::{json, Value};
+
+// ── Brakes / constants ─────────────────────────────────────────────────────────────────────────
+
+/// Per-turn recall limit injected into the worker — kept small to stay token-cheap.
+pub const LOOP_RECALL_LIMIT: usize = 5;
+/// Tag that marks a memory as a project invariant — always injected into the goal packet.
+pub const LOOP_INVARIANT_TAG: &str = "invariant";
+/// Cap on invariants injected into a goal packet (ranked by goal relevance).
+pub const LOOP_GOAL_INVARIANT_LIMIT: usize = 8;
+/// Tag that marks a memory as a verified skill — a previously goal-verified loop approach.
+pub const LOOP_SKILL_TAG: &str = "skill";
+/// Tag that marks a distilled, verifier-backed goal restatement.
+pub const LOOP_SPEC_TAG: &str = "spec";
+/// Cap on verified skills surfaced in a goal packet.
+pub const LOOP_GOAL_SKILL_LIMIT: usize = 2;
+/// Cap on the captured "last failed check" detail carried into the next turn.
+pub const LOOP_LAST_CHECK_CHARS: usize = 800;
+/// Cap on learned invariant snippets.
+pub const LOOP_AUTO_INVARIANT_CHARS: usize = 240;
+/// Environment variable name that holds the STOP sentinel file path.
+pub const ARTESIAN_STOP_FILE_ENV: &str = "ARTESIAN_STOP_FILE";
+/// Environment variable name that holds the run-log directory path.
+pub const ARTESIAN_RUNS_DIR_ENV: &str = "ARTESIAN_RUNS_DIR";
+/// Default sleep between poll turns.
+pub const DEFAULT_LOOP_SLEEP: Duration = Duration::from_millis(500);
+
+// ── Worker / verifier abstraction ─────────────────────────────────────────────────────────────
+
+pub type LoopCommandFuture<'a, T> =
+    Pin<Box<dyn std::future::Future<Output = anyhow::Result<T>> + Send + 'a>>;
+
+/// Worker and verifier execution — injected so the CLI and MCP paths can differ.
+///
+/// The CLI uses shell (`sh -c`) execution. The MCP path can supply an implementation that drives
+/// a `ProcessAgent` or any other executor without touching shell process semantics.
+///
+/// Implementations must be `Send` so they can be used inside async MCP tool handlers.
+pub trait LoopCommands: Send {
+    /// Run the per-turn worker action with the provided environment overrides.
+    /// Returns `Ok(true)` on exit 0, `Ok(false)` on non-zero exit.
+    fn run_worker<'a>(
+        &'a mut self,
+        cmd: &'a str,
+        env: Vec<(String, String)>,
+        timeout: Option<Duration>,
+    ) -> LoopCommandFuture<'a, bool>;
+
+    /// Run the verifier command. Returns `(passed, output_text)`.
+    fn verify_goal<'a>(
+        &'a mut self,
+        cmd: &'a str,
+        timeout: Option<Duration>,
+    ) -> LoopCommandFuture<'a, (bool, String)>;
+}
+
+// ── Run options and report ─────────────────────────────────────────────────────────────────────
+
+/// Runtime parameters for `run_loop_core`.
+pub struct LoopRunOptions {
+    /// Verifier command — exit 0 means the goal holds.
+    pub goal: String,
+    /// Per-turn worker command. `None` in poll mode.
+    pub worker_cmd: Option<String>,
+    /// Maximum turns before the loop gives up.
+    pub max_turns: u32,
+    /// Maximum wall-clock time before the loop aborts.
+    pub max_wall: Option<Duration>,
+    /// Poll mode: skip the worker, only re-check.
+    pub poll: bool,
+    /// Whether to store verified skill/spec/invariant on success.
+    pub learn: bool,
+    /// Stable run identifier written into the run-log file name and memory records.
+    pub run_id: String,
+    /// Directory where the JSONL run log is written.
+    pub run_log_dir: PathBuf,
+    /// Sentinel file path — loop stops if it exists at turn start.
+    pub stop_file: PathBuf,
+}
+
+/// Summary returned after `run_loop_core` completes (successfully or via a brake).
+#[derive(Debug, Clone)]
+pub struct LoopRunReport {
+    /// How many turns ran before the loop stopped.
+    pub turns: u32,
+    /// Outcome label: `"success"`, `"wall-cap"`, `"max-turns"`, `"stopped"`, `"error"`.
+    pub outcome: String,
+    /// Human-readable stop reason.
+    pub why_stopped: String,
+    /// Absolute path of the JSONL run log.
+    pub run_log_path: PathBuf,
+}
+
+// ── Run-log ───────────────────────────────────────────────────────────────────────────────────
+
+pub struct LoopRunLog {
+    path: PathBuf,
+    file: fs::File,
+}
+
+impl LoopRunLog {
+    pub fn create(dir: &Path, run_id: &str) -> anyhow::Result<Self> {
+        fs::create_dir_all(dir)
+            .map_err(|e| anyhow::anyhow!("create run-log dir {}: {e}", dir.display()))?;
+        let path = dir.join(format!("{run_id}.jsonl"));
+        let file = fs::OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(&path)
+            .map_err(|e| anyhow::anyhow!("open run-log {}: {e}", path.display()))?;
+        Ok(Self { path, file })
+    }
+
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
+    pub fn write_turn(
+        &mut self,
+        run_id: &str,
+        turn: u32,
+        action: &str,
+        goal_met: bool,
+        check_output: &str,
+        elapsed: Duration,
+    ) -> anyhow::Result<()> {
+        let verify_result = if goal_met { "passed" } else { "failed" };
+        self.write_value(json!({
+            "type": "turn",
+            "run_id": run_id,
+            "turn": turn,
+            "action": action,
+            "verify_result": verify_result,
+            "verify": {
+                "passed": goal_met,
+                "output": compact_inline(check_output, LOOP_LAST_CHECK_CHARS),
+            },
+            "elapsed_ms": duration_millis(elapsed),
+        }))
+    }
+
+    pub fn write_summary(
+        &mut self,
+        run_id: &str,
+        outcome: &str,
+        turns: u32,
+        elapsed: Duration,
+        why_stopped: &str,
+    ) -> anyhow::Result<()> {
+        self.write_value(json!({
+            "type": "summary",
+            "run_id": run_id,
+            "outcome": outcome,
+            "turns": turns,
+            "elapsed_ms": duration_millis(elapsed),
+            "why_stopped": why_stopped,
+        }))?;
+        self.file
+            .flush()
+            .map_err(|e| anyhow::anyhow!("flush run-log {}: {e}", self.path.display()))
+    }
+
+    fn write_value(&mut self, value: Value) -> anyhow::Result<()> {
+        serde_json::to_writer(&mut self.file, &value)
+            .map_err(|e| anyhow::anyhow!("write run-log {}: {e}", self.path.display()))?;
+        writeln!(self.file)
+            .map_err(|e| anyhow::anyhow!("write run-log {}: {e}", self.path.display()))
+    }
+}
+
+// ── Utilities ─────────────────────────────────────────────────────────────────────────────────
+
+/// Track a single verifier failure for later auto-invariant extraction.
+#[derive(Debug, Clone)]
+pub struct FailedCheck {
+    pub turn: u32,
+    pub output: String,
+}
+
+pub fn duration_millis(duration: Duration) -> u64 {
+    u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
+}
+
+pub fn compact_inline(text: &str, limit: usize) -> String {
+    text.split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .take(limit)
+        .collect()
+}
+
+pub fn stable_content_hash(text: &str) -> String {
+    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+    for byte in text.as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    format!("{hash:016x}")
+}
+
+/// Generate a stable, time-based run ID.
+pub fn loop_run_id() -> String {
+    format!(
+        "loop-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|elapsed| elapsed.as_millis())
+            .unwrap_or(0)
+    )
+}
+
+/// Resolve the run-log directory from env or home.
+pub fn loop_run_log_dir() -> anyhow::Result<PathBuf> {
+    if let Some(path) = std::env::var_os(ARTESIAN_RUNS_DIR_ENV) {
+        return Ok(PathBuf::from(path));
+    }
+    Ok(home_dir()?.join(".artesian").join("runs"))
+}
+
+/// Resolve the STOP sentinel file path from env or home.
+pub fn loop_stop_file() -> anyhow::Result<PathBuf> {
+    if let Some(path) = std::env::var_os(ARTESIAN_STOP_FILE_ENV) {
+        return Ok(PathBuf::from(path));
+    }
+    Ok(home_dir()?.join(".artesian").join("STOP"))
+}
+
+fn home_dir() -> anyhow::Result<PathBuf> {
+    #[allow(deprecated)]
+    std::env::home_dir().ok_or_else(|| anyhow::anyhow!("could not determine home directory"))
+}
+
+pub fn remaining_wall_budget(started_at: Instant, max_wall: Option<Duration>) -> Option<Duration> {
+    max_wall.map(|max_wall| max_wall.saturating_sub(started_at.elapsed()))
+}
+
+pub fn wall_cap_message(
+    started_at: Instant,
+    max_wall: Option<Duration>,
+    before: &str,
+) -> Option<String> {
+    let max_wall = max_wall?;
+    (started_at.elapsed() >= max_wall).then(|| {
+        format!(
+            "loop exceeded max-wall-secs ({}) before {before}",
+            max_wall.as_secs()
+        )
+    })
+}
+
+// ── Memory helpers ────────────────────────────────────────────────────────────────────────────
+
+/// Search the backend for memory relevant to the goal; MMR-diversify to avoid crowding from
+/// near-duplicate turn commits.
+pub async fn loop_recall(backend: &dyn MemoryBackend, goal: &str) -> String {
+    let Ok(hits) = backend
+        .find(MemoryQuery::new(goal).with_limit(LOOP_RECALL_LIMIT * 3))
+        .await
+    else {
+        return String::new();
+    };
+    let hits = aquifer::mmr_diversify(hits, LOOP_RECALL_LIMIT, aquifer::MMR_DEFAULT_LAMBDA);
+    let mut lines = Vec::new();
+    for hit in hits {
+        let content = hit.record.content.replace('\n', " ");
+        let trimmed: String = content.chars().take(280).collect();
+        lines.push(format!("- {trimmed}"));
+    }
+    lines.join("\n")
+}
+
+async fn packet_tag_section(
+    backend: &dyn MemoryBackend,
+    goal: &str,
+    tag: &str,
+    limit: usize,
+    title: &str,
+) -> Option<String> {
+    let mut query = MemoryQuery::new(goal).with_limit(limit);
+    query.tags = vec![tag.to_string()];
+    match backend.find(query).await {
+        Ok(hits) if !hits.is_empty() => {
+            let lines: Vec<String> = hits
+                .iter()
+                .map(|hit| format!("- {}", hit.record.content.replace('\n', " ")))
+                .collect();
+            Some(format!("# {title}\n{}", lines.join("\n")))
+        }
+        _ => None,
+    }
+}
+
+/// Assemble the bounded goal packet: goal + invariants + verified skills/specs + last failed
+/// check + recall — what the worker needs, not a flat dump.
+pub async fn assemble_goal_packet(
+    backend: Option<&dyn MemoryBackend>,
+    goal: &str,
+    last_check: Option<&str>,
+    recall: &str,
+) -> String {
+    let mut sections = vec![format!("# Goal\n{goal}")];
+
+    if let Some(backend) = backend {
+        if let Some(section) = packet_tag_section(
+            backend,
+            goal,
+            LOOP_INVARIANT_TAG,
+            LOOP_GOAL_INVARIANT_LIMIT,
+            "Invariants (must hold)",
+        )
+        .await
+        {
+            sections.push(section);
+        }
+        if let Some(section) = packet_tag_section(
+            backend,
+            goal,
+            LOOP_SKILL_TAG,
+            LOOP_GOAL_SKILL_LIMIT,
+            "Known approach (verified)",
+        )
+        .await
+        {
+            sections.push(section);
+        }
+        if let Some(section) = packet_tag_section(
+            backend,
+            goal,
+            LOOP_SPEC_TAG,
+            LOOP_GOAL_SKILL_LIMIT,
+            "Sharper specs (verified)",
+        )
+        .await
+        {
+            sections.push(section);
+        }
+    }
+
+    if let Some(last_check) = last_check.filter(|check| !check.is_empty()) {
+        let detail: String = last_check.chars().take(LOOP_LAST_CHECK_CHARS).collect();
+        sections.push(format!("# Last failed check\n{detail}"));
+    }
+
+    if !recall.is_empty() {
+        sections.push(format!("# Relevant memory\n{recall}"));
+    }
+
+    sections.join("\n\n")
+}
+
+/// Commit a concise, run-scoped atom for this turn's outcome (survives compaction via session
+/// scope + run_id tag).
+pub async fn loop_commit_turn(
+    backend: &dyn MemoryBackend,
+    run_id: &str,
+    turn: u32,
+    goal: &str,
+    worker_cmd: Option<&str>,
+    goal_met: bool,
+) {
+    let status = if goal_met { "goal met" } else { "goal not met" };
+    let action = worker_cmd.unwrap_or("(poll)");
+    let mut memory = StoreMemory::atom(format!(
+        "loop {run_id} turn {turn}: ran `{action}` to verify `{goal}` -> {status}"
+    ));
+    memory.tier = MemoryTier::L0Raw;
+    memory.tags = vec![
+        "loop".to_string(),
+        run_id.to_string(),
+        format!("turn-{turn}"),
+        if goal_met { "goal-met" } else { "goal-unmet" }.to_string(),
+    ];
+    memory.scope = Some(MemoryScope::Session);
+    memory.session_id = Some(run_id.to_string());
+    let _ = backend.store(memory).await;
+}
+
+/// Store the verified worker approach as a durable skill for future goal packets.
+pub async fn loop_store_skill(
+    backend: &dyn MemoryBackend,
+    goal: &str,
+    worker_cmd: &str,
+    turns: u32,
+) {
+    let mut memory = StoreMemory::atom(format!(
+        "verified approach for `{goal}`: run `{worker_cmd}` (passed in {turns} turn(s))"
+    ));
+    memory.tier = MemoryTier::L2Scenario;
+    memory.tags = vec![LOOP_SKILL_TAG.to_string(), "verified".to_string()];
+    let _ = backend.store(memory).await;
+}
+
+pub async fn loop_store_spec(
+    backend: &dyn MemoryBackend,
+    goal: &str,
+    worker_cmd: Option<&str>,
+    turns: u32,
+) {
+    let action = worker_cmd.unwrap_or("(poll)");
+    let mut memory = StoreMemory::atom(format!(
+        "sharper spec for future runs: make `{goal}` pass without weakening the check; \
+         preserve project invariants and use `{action}` as the previously verified action."
+    ));
+    memory.tier = MemoryTier::L2Scenario;
+    memory.tags = vec![LOOP_SPEC_TAG.to_string(), "verified".to_string()];
+    memory
+        .metadata
+        .insert("turns".to_string(), turns.to_string());
+    let _ = backend.store(memory).await;
+}
+
+pub async fn loop_store_auto_invariants(
+    backend: &dyn MemoryBackend,
+    goal: &str,
+    worker_cmd: Option<&str>,
+    failures: &[FailedCheck],
+) {
+    for failure in failures {
+        loop_store_auto_invariant(backend, goal, worker_cmd, failure).await;
+    }
+}
+
+async fn loop_store_auto_invariant(
+    backend: &dyn MemoryBackend,
+    goal: &str,
+    worker_cmd: Option<&str>,
+    failure: &FailedCheck,
+) {
+    let action = compact_inline(worker_cmd.unwrap_or("(poll)"), LOOP_AUTO_INVARIANT_CHARS);
+    let check = compact_inline(&failure.output, LOOP_AUTO_INVARIANT_CHARS);
+    let check = if check.is_empty() {
+        goal.to_string()
+    } else {
+        check
+    };
+    let canonical = format!("goal={goal}\naction={action}\ncheck={check}");
+    let content_hash = stable_content_hash(&canonical);
+    let node_id = format!("auto-invariant:{content_hash}");
+    if backend.get_node(&node_id).await.ok().flatten().is_some() {
+        return;
+    }
+    let mut query = MemoryQuery::new(&canonical).with_limit(LOOP_GOAL_INVARIANT_LIMIT * 3);
+    query.tags = vec![LOOP_INVARIANT_TAG.to_string()];
+    if let Ok(hits) = backend.find(query).await {
+        let already_stored = hits.iter().any(|hit| {
+            hit.record.metadata.get("content_hash") == Some(&content_hash)
+                || hit.record.node_id == node_id
+        });
+        if already_stored {
+            return;
+        }
+    }
+
+    let mut memory = StoreMemory::atom(format!(
+        "auto-invariant: do not treat `{action}` as complete until `{goal}` passes \
+         - it broke `{goal}` at turn {}: {check}",
+        failure.turn
+    ));
+    memory.tier = MemoryTier::L3Project;
+    memory.tags = vec![LOOP_INVARIANT_TAG.to_string(), "auto-invariant".to_string()];
+    memory.node_id = Some(node_id);
+    memory
+        .metadata
+        .insert("content_hash".to_string(), content_hash);
+    memory.source = Some("artesian-loop".to_string());
+    let _ = backend.store(memory).await;
+}
+
+// ── Core loop ─────────────────────────────────────────────────────────────────────────────────
+
+/// The autonomous memory-first loop: each turn recalls goal-relevant memory, runs the worker
+/// action (with that recall in env vars), writes a resume anchor, verifies the goal, and commits
+/// a run-scoped record. Bounded by max-turns, max-wall-secs, and a STOP sentinel file.
+///
+/// This is the single implementation shared by the CLI `loop` command and the MCP
+/// `orchestrate.loop` tool. Both sides supply their own [`LoopCommands`] implementation.
+pub async fn run_loop_core(
+    options: LoopRunOptions,
+    backend: Option<&dyn MemoryBackend>,
+    anchor_store: &AnchorAnchorStore,
+    commands: &mut dyn LoopCommands,
+) -> anyhow::Result<LoopRunReport> {
+    let mut log = LoopRunLog::create(&options.run_log_dir, &options.run_id)?;
+    let started_at = Instant::now();
+
+    if let Some(reason) = wall_cap_message(started_at, options.max_wall, "initial check") {
+        return finish_loop_early(
+            &mut log,
+            &options.run_id,
+            "wall-cap",
+            0,
+            started_at,
+            &reason,
+        );
+    }
+    let initial_result = commands
+        .verify_goal(
+            &options.goal,
+            remaining_wall_budget(started_at, options.max_wall),
+        )
+        .await;
+    let (initial_goal_met, _) = match initial_result {
+        Ok(result) => result,
+        Err(error) => {
+            let reason = error.to_string();
+            let outcome = if reason.contains("wall-clock budget") {
+                "wall-cap"
+            } else {
+                "error"
+            };
+            return finish_loop_early(&mut log, &options.run_id, outcome, 0, started_at, &reason);
+        }
+    };
+    if initial_goal_met {
+        log.write_summary(
+            &options.run_id,
+            "success",
+            0,
+            started_at.elapsed(),
+            "goal already held",
+        )?;
+        return Ok(LoopRunReport {
+            turns: 0,
+            outcome: "success".to_string(),
+            why_stopped: "goal already held".to_string(),
+            run_log_path: log.path().to_path_buf(),
+        });
+    }
+    let mut last_check: Option<String> = None;
+    let mut corrected_failures = Vec::new();
+    for turn in 1..=options.max_turns {
+        if let Some(reason) =
+            wall_cap_message(started_at, options.max_wall, &format!("turn {turn}"))
+        {
+            return finish_loop_early(
+                &mut log,
+                &options.run_id,
+                "wall-cap",
+                turn.saturating_sub(1),
+                started_at,
+                &reason,
+            );
+        }
+        if options.stop_file.exists() {
+            let reason = format!("loop stopped by sentinel {}", options.stop_file.display());
+            return finish_loop_early(
+                &mut log,
+                &options.run_id,
+                "stopped",
+                turn.saturating_sub(1),
+                started_at,
+                &reason,
+            );
+        }
+        let recall = match backend {
+            Some(backend) => loop_recall(backend, &options.goal).await,
+            None => String::new(),
+        };
+        let packet =
+            assemble_goal_packet(backend, &options.goal, last_check.as_deref(), &recall).await;
+        let action = options.worker_cmd.as_deref().unwrap_or("(poll)");
+        if options.poll {
+            let sleep_for = remaining_wall_budget(started_at, options.max_wall)
+                .map_or(DEFAULT_LOOP_SLEEP, |d| d.min(DEFAULT_LOOP_SLEEP));
+            tokio::time::sleep(sleep_for).await;
+        } else if let Some(cmd) = &options.worker_cmd {
+            let env = vec![
+                ("ARTESIAN_PACKET".to_string(), packet),
+                ("ARTESIAN_RECALL".to_string(), recall.clone()),
+                ("ARTESIAN_GOAL".to_string(), options.goal.clone()),
+                ("ARTESIAN_RUN_ID".to_string(), options.run_id.clone()),
+                ("ARTESIAN_TURN".to_string(), turn.to_string()),
+            ];
+            match commands
+                .run_worker(
+                    cmd,
+                    env,
+                    remaining_wall_budget(started_at, options.max_wall),
+                )
+                .await
+            {
+                Ok(true) => {}
+                Ok(false) => {}
+                Err(error) => {
+                    let reason = error.to_string();
+                    let outcome = if reason.contains("wall-clock budget") {
+                        "wall-cap"
+                    } else {
+                        "error"
+                    };
+                    return finish_loop_early(
+                        &mut log,
+                        &options.run_id,
+                        outcome,
+                        turn.saturating_sub(1),
+                        started_at,
+                        &reason,
+                    );
+                }
+            }
+        }
+        let _ = anchor_store
+            .set(SessionAnchor::new(
+                format!(
+                    "loop turn {turn}: {}",
+                    options.worker_cmd.as_deref().unwrap_or("(poll)")
+                ),
+                format!("verify goal: {}", options.goal),
+            ))
+            .await;
+        let verify_result = commands
+            .verify_goal(
+                &options.goal,
+                remaining_wall_budget(started_at, options.max_wall),
+            )
+            .await;
+        let (goal_met, check_output) = match verify_result {
+            Ok(result) => result,
+            Err(error) => {
+                let reason = error.to_string();
+                let outcome = if reason.contains("wall-clock budget") {
+                    "wall-cap"
+                } else {
+                    "error"
+                };
+                return finish_loop_early(
+                    &mut log,
+                    &options.run_id,
+                    outcome,
+                    turn.saturating_sub(1),
+                    started_at,
+                    &reason,
+                );
+            }
+        };
+        log.write_turn(
+            &options.run_id,
+            turn,
+            action,
+            goal_met,
+            &check_output,
+            started_at.elapsed(),
+        )?;
+        last_check = if goal_met {
+            None
+        } else {
+            corrected_failures.push(FailedCheck {
+                turn,
+                output: check_output.clone(),
+            });
+            Some(format!(
+                "turn {turn}: `{}` failed\n{check_output}",
+                options.goal
+            ))
+        };
+        if let Some(backend) = backend {
+            loop_commit_turn(
+                backend,
+                &options.run_id,
+                turn,
+                &options.goal,
+                options.worker_cmd.as_deref(),
+                goal_met,
+            )
+            .await;
+        }
+        if goal_met {
+            if options.learn {
+                if let Some(backend) = backend {
+                    if let Some(cmd) = &options.worker_cmd {
+                        loop_store_skill(backend, &options.goal, cmd, turn).await;
+                    }
+                    loop_store_spec(backend, &options.goal, options.worker_cmd.as_deref(), turn)
+                        .await;
+                    loop_store_auto_invariants(
+                        backend,
+                        &options.goal,
+                        options.worker_cmd.as_deref(),
+                        &corrected_failures,
+                    )
+                    .await;
+                }
+            }
+            log.write_summary(
+                &options.run_id,
+                "success",
+                turn,
+                started_at.elapsed(),
+                "goal held",
+            )?;
+            return Ok(LoopRunReport {
+                turns: turn,
+                outcome: "success".to_string(),
+                why_stopped: "goal held".to_string(),
+                run_log_path: log.path().to_path_buf(),
+            });
+        }
+    }
+    let reason = format!(
+        "loop reached max-turns ({}) without the goal holding",
+        options.max_turns
+    );
+    finish_loop_early(
+        &mut log,
+        &options.run_id,
+        "max-turns",
+        options.max_turns,
+        started_at,
+        &reason,
+    )
+}
+
+fn finish_loop_early(
+    log: &mut LoopRunLog,
+    run_id: &str,
+    outcome: &str,
+    turns: u32,
+    started_at: Instant,
+    reason: &str,
+) -> anyhow::Result<LoopRunReport> {
+    log.write_summary(run_id, outcome, turns, started_at.elapsed(), reason)?;
+    Ok(LoopRunReport {
+        turns,
+        outcome: outcome.to_string(),
+        why_stopped: reason.to_string(),
+        run_log_path: log.path().to_path_buf(),
+    })
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Mutex;
+
+    use aquifer::FilesBackend;
+    use artesian_test_support::TempDir;
+
+    use super::*;
+
+    // A deterministic mock: worker always succeeds; verifier passes on the Nth call.
+    struct MockLoopCommands {
+        // Which call index (0-based) to the verifier returns true.
+        pass_on_call: usize,
+        verify_calls: Mutex<usize>,
+        worker_env: Mutex<Vec<Vec<(String, String)>>>,
+    }
+
+    impl MockLoopCommands {
+        fn new(pass_on_call: usize) -> Self {
+            Self {
+                pass_on_call,
+                verify_calls: Mutex::new(0),
+                worker_env: Mutex::new(Vec::new()),
+            }
+        }
+    }
+
+    impl LoopCommands for MockLoopCommands {
+        fn run_worker<'a>(
+            &'a mut self,
+            _cmd: &'a str,
+            env: Vec<(String, String)>,
+            _timeout: Option<Duration>,
+        ) -> LoopCommandFuture<'a, bool> {
+            self.worker_env.lock().unwrap().push(env);
+            Box::pin(async move { Ok(true) })
+        }
+
+        fn verify_goal<'a>(
+            &'a mut self,
+            _cmd: &'a str,
+            _timeout: Option<Duration>,
+        ) -> LoopCommandFuture<'a, (bool, String)> {
+            let mut calls = self.verify_calls.lock().unwrap();
+            let call_index = *calls;
+            *calls += 1;
+            let pass = call_index == self.pass_on_call;
+            let output = if pass {
+                "ok".to_string()
+            } else {
+                format!("not ready at call {call_index}")
+            };
+            Box::pin(async move { Ok((pass, output)) })
+        }
+    }
+
+    #[tokio::test]
+    async fn loop_core_succeeds_when_goal_holds_on_first_check() {
+        let tempdir = TempDir::new("loop-core-immediate");
+        let backend = FilesBackend::new(tempdir.path());
+        let anchor = AnchorAnchorStore::new(tempdir.path());
+        let mut commands = MockLoopCommands::new(0); // passes on initial check (call 0)
+        let run_id = "test-run-immediate".to_string();
+        let run_log_dir = tempdir.join("runs");
+        let stop_file = tempdir.join("STOP");
+
+        let report = run_loop_core(
+            LoopRunOptions {
+                goal: "goal-cmd".to_string(),
+                worker_cmd: Some("worker-cmd".to_string()),
+                max_turns: 5,
+                max_wall: None,
+                poll: false,
+                learn: false,
+                run_id: run_id.clone(),
+                run_log_dir,
+                stop_file,
+            },
+            Some(&backend),
+            &anchor,
+            &mut commands,
+        )
+        .await
+        .expect("loop should succeed");
+
+        assert_eq!(report.turns, 0);
+        assert_eq!(report.outcome, "success");
+    }
+
+    #[tokio::test]
+    async fn loop_core_succeeds_after_one_worker_turn() {
+        let tempdir = TempDir::new("loop-core-one-turn");
+        let backend = FilesBackend::new(tempdir.path());
+        let anchor = AnchorAnchorStore::new(tempdir.path());
+        // Call 0 = initial check (fails), call 1 = after turn 1 (passes).
+        let mut commands = MockLoopCommands::new(1);
+        let run_log_dir = tempdir.join("runs");
+        let stop_file = tempdir.join("STOP");
+
+        let report = run_loop_core(
+            LoopRunOptions {
+                goal: "goal-cmd".to_string(),
+                worker_cmd: Some("worker-cmd".to_string()),
+                max_turns: 5,
+                max_wall: None,
+                poll: false,
+                learn: false,
+                run_id: "test-run-one-turn".to_string(),
+                run_log_dir,
+                stop_file,
+            },
+            Some(&backend),
+            &anchor,
+            &mut commands,
+        )
+        .await
+        .expect("loop should succeed");
+
+        assert_eq!(report.turns, 1);
+        assert_eq!(report.outcome, "success");
+        // Worker should have received ARTESIAN_GOAL in env.
+        let env_calls = commands.worker_env.lock().unwrap();
+        assert!(!env_calls.is_empty(), "worker should have been called once");
+        let had_goal = env_calls[0]
+            .iter()
+            .any(|(k, v)| k == "ARTESIAN_GOAL" && v == "goal-cmd");
+        assert!(had_goal, "worker env must contain ARTESIAN_GOAL");
+    }
+
+    #[tokio::test]
+    async fn loop_core_stops_at_max_turns() {
+        let tempdir = TempDir::new("loop-core-max-turns");
+        let backend = FilesBackend::new(tempdir.path());
+        let anchor = AnchorAnchorStore::new(tempdir.path());
+        // Never passes (pass_on_call = 999 > max_turns).
+        let mut commands = MockLoopCommands::new(999);
+        let run_log_dir = tempdir.join("runs");
+        let stop_file = tempdir.join("STOP");
+
+        let report = run_loop_core(
+            LoopRunOptions {
+                goal: "goal-cmd".to_string(),
+                worker_cmd: Some("worker-cmd".to_string()),
+                max_turns: 3,
+                max_wall: None,
+                poll: false,
+                learn: false,
+                run_id: "test-run-max".to_string(),
+                run_log_dir,
+                stop_file,
+            },
+            Some(&backend),
+            &anchor,
+            &mut commands,
+        )
+        .await
+        .expect("loop should return a report even on max-turns");
+
+        assert_eq!(report.turns, 3);
+        assert_eq!(report.outcome, "max-turns");
+    }
+
+    #[tokio::test]
+    async fn loop_core_respects_stop_sentinel() {
+        let tempdir = TempDir::new("loop-core-stop");
+        let backend = FilesBackend::new(tempdir.path());
+        let anchor = AnchorAnchorStore::new(tempdir.path());
+        let mut commands = MockLoopCommands::new(999);
+        let run_log_dir = tempdir.join("runs");
+        let stop_file = tempdir.join("STOP");
+        // Pre-create the sentinel before the first turn.
+        std::fs::write(&stop_file, "").unwrap();
+
+        let report = run_loop_core(
+            LoopRunOptions {
+                goal: "goal-cmd".to_string(),
+                worker_cmd: Some("worker-cmd".to_string()),
+                max_turns: 10,
+                max_wall: None,
+                poll: false,
+                learn: false,
+                run_id: "test-run-stop".to_string(),
+                run_log_dir,
+                stop_file,
+            },
+            Some(&backend),
+            &anchor,
+            &mut commands,
+        )
+        .await
+        .expect("loop should return a report on stop sentinel");
+
+        assert_eq!(report.outcome, "stopped");
+    }
+}

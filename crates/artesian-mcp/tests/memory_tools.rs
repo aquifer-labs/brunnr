@@ -13,8 +13,8 @@ use aquifer::{
 use artesian_core::{AgentBinding, AgentCatalog, AgentCatalogEntry, AgentModel, Mode, Role};
 use artesian_mcp::{
     AnchorSetRequest, AnswerRequest, BindRequest, CommitRequest, DelegateRequest, FindRequest,
-    MemoryServer, RelationRequest, SessionCheckpointRequest, SessionResumeRequest, StoreRequest,
-    TeamCreateRequest, TeamMessageKindRequest, TeamMessageRequest, TeamSpawnRequest,
+    MemoryServer, RelationRequest, SessionCheckpointRequest, SessionResumeRequest,
+    StoreRequest, TeamCreateRequest, TeamMessageKindRequest, TeamMessageRequest, TeamSpawnRequest,
     TeamStatusRequest, TeamTaskAddRequest, TeamTaskClaimRequest, TeamTaskCompleteRequest,
     ToolsFindRequest,
 };
@@ -1045,4 +1045,82 @@ fn pid_alive(pid: u32) -> bool {
         .stderr(Stdio::null())
         .status()
         .is_ok_and(|status| status.success())
+}
+
+/// `orchestrate.loop` is mode-gated (requires orchestrate or full) and, when goal holds
+/// immediately, returns outcome="success" with 0 turns without running the worker.
+#[tokio::test]
+async fn orchestrate_loop_is_mode_gated_and_succeeds_when_goal_holds_immediately() {
+    use artesian_mcp::LoopRequest;
+
+    let tempdir = TempDir::new("mcp-loop");
+
+    // Memory mode: tool must be refused.
+    let server_mem = MemoryServer::new(tempdir.path()).with_mode(artesian_core::Mode::Memory);
+    let result = server_mem
+        .orchestrate_loop(Parameters(LoopRequest {
+            goal: "true".to_string(),
+            worker: None,
+            max_turns: None,
+            max_wall_secs: None,
+            no_learn: Some(true),
+        }))
+        .await;
+    assert!(
+        result.is_err(),
+        "orchestrate.loop must be gated in memory mode"
+    );
+    let err = result.err().expect("expected error from mode gate");
+    assert!(
+        err.message.contains("orchestration") || err.message.contains("mode"),
+        "error should mention orchestration gate: {}",
+        err.message
+    );
+
+    // Orchestrate mode: `true` exits 0 immediately — goal already holds, 0 turns.
+    let server_orch = MemoryServer::new(tempdir.path()).with_mode(artesian_core::Mode::Orchestrate);
+    let response = server_orch
+        .orchestrate_loop(Parameters(LoopRequest {
+            goal: "true".to_string(),
+            worker: None,
+            max_turns: Some(5),
+            max_wall_secs: None,
+            no_learn: Some(true),
+        }))
+        .await
+        .expect("orchestrate.loop should succeed when goal holds immediately")
+        .0;
+    assert_eq!(response.outcome, "success");
+    assert_eq!(response.turns, 0);
+    assert!(!response.run_log_path.is_empty());
+}
+
+/// `orchestrate.loop` runs one worker turn when the goal does not hold on the initial check.
+/// We use `false` as the goal (never passes) so we exercise max-turns.
+#[tokio::test]
+async fn orchestrate_loop_reaches_max_turns_when_goal_never_holds() {
+    use artesian_mcp::LoopRequest;
+
+    let tempdir = TempDir::new("mcp-loop-max-turns");
+    let server = MemoryServer::new(tempdir.path()).with_mode(artesian_core::Mode::Orchestrate);
+
+    let response = server
+        .orchestrate_loop(Parameters(LoopRequest {
+            goal: "false".to_string(),
+            worker: Some("true".to_string()),
+            max_turns: Some(2),
+            max_wall_secs: None,
+            no_learn: Some(true),
+        }))
+        .await
+        .expect("orchestrate.loop should return a report even on max-turns")
+        .0;
+
+    assert_eq!(response.outcome, "max-turns");
+    assert_eq!(response.turns, 2);
+    assert!(
+        response.run_log_path.ends_with(".jsonl"),
+        "run_log_path should be a .jsonl file: {}",
+        response.run_log_path
+    );
 }

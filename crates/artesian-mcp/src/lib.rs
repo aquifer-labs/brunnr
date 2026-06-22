@@ -28,8 +28,9 @@ use artesian_process_agent::{
     ProcessAgentConfig,
 };
 use flume::{
-    load_role_definitions, role_summaries, TeamCreate, TeamGcOptions, TeamMessage, TeamMessageKind,
-    TeamRuntime, TeamRuntimeConfig, TeamSpawn, TeamTaskAdd, TeamTaskClaim, TeamTaskComplete,
+    load_role_definitions, loop_core, role_summaries, TeamCreate, TeamGcOptions, TeamMessage,
+    TeamMessageKind, TeamRuntime, TeamRuntimeConfig, TeamSpawn, TeamTaskAdd, TeamTaskClaim,
+    TeamTaskComplete,
 };
 use headgate::{
     count_tokens, Headgate, HeadgateConfig, LifecycleEntry, MemoryRecallStore, RecallStore,
@@ -61,6 +62,7 @@ const ORCHESTRATION_TOOLS: &[&str] = &[
     "agents.list",
     "orchestrate.bind",
     "orchestrate.delegate",
+    "orchestrate.loop",
     "orchestrate.status",
     "orchestrate.handoff",
     "team.create",
@@ -1181,6 +1183,94 @@ struct DelegateRecord {
     result: Option<String>,
 }
 
+// ── orchestrate.loop ──────────────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+pub struct LoopRequest {
+    /// Verifier command; exit 0 means the goal holds.
+    pub goal: String,
+    /// Per-iteration worker command (shell). Omit to poll-only.
+    pub worker: Option<String>,
+    /// Maximum turns before the loop gives up (default 10).
+    pub max_turns: Option<u32>,
+    /// Maximum wall-clock seconds before aborting (default unlimited).
+    pub max_wall_secs: Option<u64>,
+    /// Disable durable skill/spec/invariant learning for this run.
+    pub no_learn: Option<bool>,
+}
+
+#[derive(Debug, Serialize, schemars::JsonSchema)]
+pub struct LoopResponse {
+    /// Outcome label: `"success"`, `"max-turns"`, `"wall-cap"`, `"stopped"`, `"error"`.
+    pub outcome: String,
+    /// Human-readable explanation of why the loop stopped.
+    pub why_stopped: String,
+    /// Number of turns executed.
+    pub turns: u32,
+    /// Absolute path to the JSONL run log.
+    pub run_log_path: String,
+}
+
+/// Shell-backed [`LoopCommands`] for the MCP path — captures both stdout and stderr for the
+/// verifier so failures are surfaced as the next turn's "last failed check" context.
+struct McpShellLoopCommands;
+
+impl loop_core::LoopCommands for McpShellLoopCommands {
+    fn run_worker<'a>(
+        &'a mut self,
+        cmd: &'a str,
+        env: Vec<(String, String)>,
+        timeout: Option<Duration>,
+    ) -> loop_core::LoopCommandFuture<'a, bool> {
+        Box::pin(async move {
+            let (success, _) = mcp_run_shell_capture(cmd, env, timeout).await?;
+            Ok(success)
+        })
+    }
+
+    fn verify_goal<'a>(
+        &'a mut self,
+        cmd: &'a str,
+        timeout: Option<Duration>,
+    ) -> loop_core::LoopCommandFuture<'a, (bool, String)> {
+        Box::pin(async move { mcp_run_shell_capture(cmd, Vec::new(), timeout).await })
+    }
+}
+
+async fn mcp_run_shell_capture(
+    cmd: &str,
+    env: Vec<(String, String)>,
+    timeout: Option<Duration>,
+) -> anyhow::Result<(bool, String)> {
+    use std::process::Stdio;
+    use tokio::process::Command;
+    let mut command = Command::new("sh");
+    command
+        .arg("-c")
+        .arg(cmd)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+    for (key, value) in env {
+        command.env(key, value);
+    }
+    let output = match timeout {
+        Some(t) => tokio::time::timeout(t, command.output())
+            .await
+            .map_err(|_| {
+                anyhow::anyhow!("loop exceeded wall-clock budget while running command: {cmd}")
+            })?
+            .map_err(|e| anyhow::anyhow!("run command: {cmd}: {e}"))?,
+        None => command
+            .output()
+            .await
+            .map_err(|e| anyhow::anyhow!("run command: {cmd}: {e}"))?,
+    };
+    let mut text = String::from_utf8_lossy(&output.stdout).into_owned();
+    text.push_str(&String::from_utf8_lossy(&output.stderr));
+    Ok((output.status.success(), text.trim().to_string()))
+}
+
 #[tool_router]
 impl MemoryServer {
     #[tool(
@@ -1870,6 +1960,52 @@ Call when the project vision or current phase changes."
     }
 
     #[tool(
+        name = "orchestrate.loop",
+        description = "Run the Artesian autonomous memory-first agentic loop through the MCP server. \
+Repeats `worker` until `goal` exits 0 (or a brake fires). Each turn: recalls goal-relevant memory, \
+assembles a bounded goal packet, runs `worker` with ARTESIAN_PACKET/ARTESIAN_GOAL/ARTESIAN_RECALL/\
+ARTESIAN_TURN env vars, writes a resume anchor, verifies the goal, and (on success) commits a \
+verified skill + spec + auto-invariants to memory. Brakes: max_turns (default 10), max_wall_secs \
+(default unlimited), ~/.artesian/STOP sentinel. Same implementation as the CLI `artesian loop` command."
+    )]
+    pub async fn orchestrate_loop(
+        &self,
+        Parameters(request): Parameters<LoopRequest>,
+    ) -> Result<Json<LoopResponse>, ErrorData> {
+        self.ensure_orchestration_enabled()?;
+        let run_id = loop_core::loop_run_id();
+        let run_log_dir = loop_core::loop_run_log_dir()
+            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+        let stop_file = loop_core::loop_stop_file()
+            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+        let anchor_store = AnchorAnchorStore::new(&self.repo_root);
+        // Re-use the server's already-open memory backend for recall/commit.
+        let backend_ref: &dyn aquifer::MemoryBackend = self.backend.as_ref();
+        let options = loop_core::LoopRunOptions {
+            goal: request.goal,
+            worker_cmd: request.worker,
+            max_turns: request.max_turns.unwrap_or(10),
+            max_wall: request.max_wall_secs.map(Duration::from_secs),
+            poll: false,
+            learn: !request.no_learn.unwrap_or(false),
+            run_id,
+            run_log_dir,
+            stop_file,
+        };
+        let mut commands = McpShellLoopCommands;
+        let report =
+            loop_core::run_loop_core(options, Some(backend_ref), &anchor_store, &mut commands)
+                .await
+                .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+        Ok(Json(LoopResponse {
+            outcome: report.outcome,
+            why_stopped: report.why_stopped,
+            turns: report.turns,
+            run_log_path: report.run_log_path.display().to_string(),
+        }))
+    }
+
+    #[tool(
         name = "team.create",
         description = "Create an opt-in Flume team topology for orchestrate/full mode."
     )]
@@ -2340,6 +2476,10 @@ fn tool_registry() -> &'static [RegisteredTool] {
         RegisteredTool {
             name: "orchestrate.handoff",
             description: "Hand results to judge or master for orchestration follow-up.",
+        },
+        RegisteredTool {
+            name: "orchestrate.loop",
+            description: "Run the Artesian agentic loop: recall, act (worker), verify (goal), commit skill/spec/invariant.",
         },
         RegisteredTool {
             name: "team.create",

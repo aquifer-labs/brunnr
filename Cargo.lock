@@ -1017,10 +1017,13 @@ dependencies = [
 name = "flume"
 version = "0.2.0"
 dependencies = [
+ "anyhow",
+ "aquifer",
  "artesian-core",
  "artesian-process-agent",
  "artesian-test-support",
  "chrono",
+ "headgate",
  "headrace",
  "serde",
  "serde_json",

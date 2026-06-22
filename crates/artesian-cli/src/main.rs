@@ -2,14 +2,12 @@
 
 use std::{
     env, fs,
-    future::Future,
     io::{Read, Write},
     path::{Path, PathBuf},
-    pin::Pin,
     process::Stdio,
     str::FromStr,
     sync::Arc,
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use anyhow::{bail, Context, Result};
@@ -27,6 +25,10 @@ use artesian_process_agent::{
     ProcessSupervisor,
 };
 use clap::{Parser, Subcommand, ValueEnum};
+use flume::loop_core::{
+    assemble_goal_packet, loop_recall, loop_run_id, loop_run_log_dir, loop_stop_file,
+    run_loop_core, LoopCommandFuture, LoopCommands, LoopRunOptions,
+};
 use flume::{
     load_role_definitions, role_summaries, TeamCreate, TeamGcOptions, TeamMessage, TeamMessageKind,
     TeamRuntime, TeamRuntimeConfig, TeamSpawn, TeamTaskAdd, TeamTaskClaim, TeamTaskComplete,
@@ -1122,22 +1124,7 @@ fn run_shell(cmd: &str) -> Result<bool> {
     Ok(status.success())
 }
 
-type LoopCommandFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T>> + 'a>>;
-
-trait LoopCommands {
-    fn run_worker<'a>(
-        &'a mut self,
-        cmd: &'a str,
-        env: Vec<(String, String)>,
-        timeout: Option<Duration>,
-    ) -> LoopCommandFuture<'a, bool>;
-
-    fn verify_goal<'a>(
-        &'a mut self,
-        cmd: &'a str,
-        timeout: Option<Duration>,
-    ) -> LoopCommandFuture<'a, (bool, String)>;
-}
+// LoopCommands, LoopCommandFuture, LoopRunOptions are imported from flume::loop_core above.
 
 struct ShellLoopCommands;
 
@@ -1198,26 +1185,6 @@ async fn run_shell_capture_with_env(
     Ok((output.status.success(), text.trim().to_string()))
 }
 
-/// Per-turn recall limit injected into the worker (kept small to stay token-cheap).
-const LOOP_RECALL_LIMIT: usize = 5;
-/// Tag that marks a memory as a project invariant — always injected into the goal packet.
-const INVARIANT_TAG: &str = "invariant";
-/// Cap on invariants injected into a goal packet (ranked by goal relevance).
-const GOAL_INVARIANT_LIMIT: usize = 8;
-/// Tag that marks a memory as a verified skill — a previously goal-verified loop approach.
-const SKILL_TAG: &str = "skill";
-/// Tag that marks a distilled, verifier-backed goal restatement.
-const SPEC_TAG: &str = "spec";
-/// Cap on verified skills surfaced in a goal packet (the closest prior approaches).
-const GOAL_SKILL_LIMIT: usize = 2;
-/// Cap on the captured "last failed check" detail carried into the next turn.
-const LAST_CHECK_CHARS: usize = 800;
-/// Cap on learned invariant snippets; they must be short enough to inject into future packets.
-const AUTO_INVARIANT_CHARS: usize = 240;
-const ARTESIAN_STOP_FILE_ENV: &str = "ARTESIAN_STOP_FILE";
-const ARTESIAN_RUNS_DIR_ENV: &str = "ARTESIAN_RUNS_DIR";
-const DEFAULT_LOOP_SLEEP: Duration = Duration::from_millis(500);
-
 struct LoopCliOptions {
     goal: String,
     worker_cmd: Option<String>,
@@ -1227,384 +1194,6 @@ struct LoopCliOptions {
     learn: bool,
     root: PathBuf,
     config: PathBuf,
-}
-
-struct LoopRunOptions {
-    goal: String,
-    worker_cmd: Option<String>,
-    max_turns: u32,
-    max_wall: Option<Duration>,
-    poll: bool,
-    learn: bool,
-    run_id: String,
-    run_log_dir: PathBuf,
-    stop_file: PathBuf,
-}
-
-#[derive(Debug, Clone)]
-struct FailedCheck {
-    turn: u32,
-    output: String,
-}
-
-struct LoopRunReport {
-    turns: u32,
-    run_log_path: PathBuf,
-}
-
-struct LoopRunLog {
-    path: PathBuf,
-    file: fs::File,
-}
-
-impl LoopRunLog {
-    fn create(dir: &Path, run_id: &str) -> Result<Self> {
-        fs::create_dir_all(dir).with_context(|| format!("create run-log dir {}", dir.display()))?;
-        let path = dir.join(format!("{run_id}.jsonl"));
-        let file = fs::OpenOptions::new()
-            .create(true)
-            .truncate(true)
-            .write(true)
-            .open(&path)
-            .with_context(|| format!("open run-log {}", path.display()))?;
-        Ok(Self { path, file })
-    }
-
-    fn path(&self) -> &Path {
-        &self.path
-    }
-
-    fn write_turn(
-        &mut self,
-        run_id: &str,
-        turn: u32,
-        action: &str,
-        goal_met: bool,
-        check_output: &str,
-        elapsed: Duration,
-    ) -> Result<()> {
-        let verify_result = if goal_met { "passed" } else { "failed" };
-        self.write_value(json!({
-            "type": "turn",
-            "run_id": run_id,
-            "turn": turn,
-            "action": action,
-            "verify_result": verify_result,
-            "verify": {
-                "passed": goal_met,
-                "output": compact_inline(check_output, LAST_CHECK_CHARS),
-            },
-            "elapsed_ms": duration_millis(elapsed),
-        }))
-    }
-
-    fn write_summary(
-        &mut self,
-        run_id: &str,
-        outcome: &str,
-        turns: u32,
-        elapsed: Duration,
-        why_stopped: &str,
-    ) -> Result<()> {
-        self.write_value(json!({
-            "type": "summary",
-            "run_id": run_id,
-            "outcome": outcome,
-            "turns": turns,
-            "elapsed_ms": duration_millis(elapsed),
-            "why_stopped": why_stopped,
-        }))?;
-        self.file
-            .flush()
-            .with_context(|| format!("flush run-log {}", self.path.display()))
-    }
-
-    fn write_value(&mut self, value: Value) -> Result<()> {
-        serde_json::to_writer(&mut self.file, &value)
-            .with_context(|| format!("write run-log {}", self.path.display()))?;
-        writeln!(self.file).with_context(|| format!("write run-log {}", self.path.display()))
-    }
-}
-
-fn duration_millis(duration: Duration) -> u64 {
-    u64::try_from(duration.as_millis()).unwrap_or(u64::MAX)
-}
-
-fn compact_inline(text: &str, limit: usize) -> String {
-    text.split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .chars()
-        .take(limit)
-        .collect()
-}
-
-fn loop_run_id() -> String {
-    format!(
-        "loop-{}",
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|elapsed| elapsed.as_millis())
-            .unwrap_or(0)
-    )
-}
-
-fn loop_run_log_dir() -> Result<PathBuf> {
-    if let Some(path) = env::var_os(ARTESIAN_RUNS_DIR_ENV) {
-        return Ok(PathBuf::from(path));
-    }
-    Ok(home_dir()?.join(".artesian").join("runs"))
-}
-
-fn loop_stop_file() -> Result<PathBuf> {
-    if let Some(path) = env::var_os(ARTESIAN_STOP_FILE_ENV) {
-        return Ok(PathBuf::from(path));
-    }
-    Ok(home_dir()?.join(".artesian").join("STOP"))
-}
-
-fn remaining_wall_budget(started_at: Instant, max_wall: Option<Duration>) -> Option<Duration> {
-    max_wall.map(|max_wall| max_wall.saturating_sub(started_at.elapsed()))
-}
-
-fn wall_cap_message(
-    started_at: Instant,
-    max_wall: Option<Duration>,
-    before: &str,
-) -> Option<String> {
-    let max_wall = max_wall?;
-    (started_at.elapsed() >= max_wall).then(|| {
-        format!(
-            "loop exceeded max-wall-secs ({}) before {before}",
-            max_wall.as_secs()
-        )
-    })
-}
-
-fn stable_content_hash(text: &str) -> String {
-    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
-    for byte in text.as_bytes() {
-        hash ^= u64::from(*byte);
-        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
-    }
-    format!("{hash:016x}")
-}
-
-/// Render a goal packet section from the records carrying `tag`, ranked by goal relevance.
-async fn packet_tag_section(
-    backend: &dyn MemoryBackend,
-    goal: &str,
-    tag: &str,
-    limit: usize,
-    title: &str,
-) -> Option<String> {
-    let mut query = MemoryQuery::new(goal).with_limit(limit);
-    query.tags = vec![tag.to_string()];
-    match backend.find(query).await {
-        Ok(hits) if !hits.is_empty() => {
-            let lines: Vec<String> = hits
-                .iter()
-                .map(|hit| format!("- {}", hit.record.content.replace('\n', " ")))
-                .collect();
-            Some(format!("# {title}\n{}", lines.join("\n")))
-        }
-        _ => None,
-    }
-}
-
-/// Assemble a bounded, goal-scoped context packet — the goal, the invariants that must hold, any
-/// verified prior approach, the last failed verifier check, and the most relevant memory — rather
-/// than a flat recall dump. This is the "hand the agent just the goal, invariants, and last failed
-/// check" packet.
-async fn assemble_goal_packet(
-    backend: Option<&dyn MemoryBackend>,
-    goal: &str,
-    last_check: Option<&str>,
-    recall: &str,
-) -> String {
-    let mut sections = vec![format!("# Goal\n{goal}")];
-
-    if let Some(backend) = backend {
-        // Invariants are always injected (tag-filtered); the verified skill is the prior approach
-        // that already passed this goal's verifier — reuse it, the verifier still gates each turn.
-        if let Some(section) = packet_tag_section(
-            backend,
-            goal,
-            INVARIANT_TAG,
-            GOAL_INVARIANT_LIMIT,
-            "Invariants (must hold)",
-        )
-        .await
-        {
-            sections.push(section);
-        }
-        if let Some(section) = packet_tag_section(
-            backend,
-            goal,
-            SKILL_TAG,
-            GOAL_SKILL_LIMIT,
-            "Known approach (verified)",
-        )
-        .await
-        {
-            sections.push(section);
-        }
-        if let Some(section) = packet_tag_section(
-            backend,
-            goal,
-            SPEC_TAG,
-            GOAL_SKILL_LIMIT,
-            "Sharper specs (verified)",
-        )
-        .await
-        {
-            sections.push(section);
-        }
-    }
-
-    if let Some(last_check) = last_check.filter(|check| !check.is_empty()) {
-        let detail: String = last_check.chars().take(LAST_CHECK_CHARS).collect();
-        sections.push(format!("# Last failed check\n{detail}"));
-    }
-
-    if !recall.is_empty() {
-        sections.push(format!("# Relevant memory\n{recall}"));
-    }
-
-    sections.join("\n\n")
-}
-
-/// Search the backend for memory relevant to the goal and render a compact recall block.
-/// MMR-diversifies a larger pool down to the limit so near-duplicate turn commits do not crowd out
-/// distinct context.
-async fn loop_recall(backend: &dyn MemoryBackend, goal: &str) -> String {
-    let Ok(hits) = backend
-        .find(MemoryQuery::new(goal).with_limit(LOOP_RECALL_LIMIT * 3))
-        .await
-    else {
-        return String::new();
-    };
-    let hits = aquifer::mmr_diversify(hits, LOOP_RECALL_LIMIT, aquifer::MMR_DEFAULT_LAMBDA);
-    let mut lines = Vec::new();
-    for hit in hits {
-        let content = hit.record.content.replace('\n', " ");
-        let trimmed: String = content.chars().take(280).collect();
-        lines.push(format!("- {trimmed}"));
-    }
-    lines.join("\n")
-}
-
-/// Commit a concise, run-scoped atom recording this turn's outcome, so the loop's
-/// working state survives compaction and a later sweep can reclaim it by run id.
-async fn loop_commit_turn(
-    backend: &dyn MemoryBackend,
-    run_id: &str,
-    turn: u32,
-    goal: &str,
-    worker_cmd: Option<&str>,
-    goal_met: bool,
-) {
-    let status = if goal_met { "goal met" } else { "goal not met" };
-    let action = worker_cmd.unwrap_or("(poll)");
-    let mut memory = StoreMemory::atom(format!(
-        "loop {run_id} turn {turn}: ran `{action}` to verify `{goal}` -> {status}"
-    ));
-    memory.tier = MemoryTier::L0Raw;
-    memory.tags = vec![
-        "loop".to_string(),
-        run_id.to_string(),
-        format!("turn-{turn}"),
-        if goal_met { "goal-met" } else { "goal-unmet" }.to_string(),
-    ];
-    memory.scope = Some(MemoryScope::Session);
-    memory.session_id = Some(run_id.to_string());
-    let _ = backend.store(memory).await;
-}
-
-/// On a successful loop, store the worker approach as a verified skill — admitted only because the
-/// goal verifier passed (PreAct's verify-before-store, provided by the loop by construction).
-/// Durable (not run-scoped) and content-deduped, so future goal packets can reuse the approach.
-async fn loop_store_skill(backend: &dyn MemoryBackend, goal: &str, worker_cmd: &str, turns: u32) {
-    let mut memory = StoreMemory::atom(format!(
-        "verified approach for `{goal}`: run `{worker_cmd}` (passed in {turns} turn(s))"
-    ));
-    memory.tier = MemoryTier::L2Scenario;
-    memory.tags = vec![SKILL_TAG.to_string(), "verified".to_string()];
-    let _ = backend.store(memory).await;
-}
-
-async fn loop_store_spec(
-    backend: &dyn MemoryBackend,
-    goal: &str,
-    worker_cmd: Option<&str>,
-    turns: u32,
-) {
-    let action = worker_cmd.unwrap_or("(poll)");
-    let mut memory = StoreMemory::atom(format!(
-        "sharper spec for future runs: make `{goal}` pass without weakening the check; preserve project invariants and use `{action}` as the previously verified action."
-    ));
-    memory.tier = MemoryTier::L2Scenario;
-    memory.tags = vec![SPEC_TAG.to_string(), "verified".to_string()];
-    memory
-        .metadata
-        .insert("turns".to_string(), turns.to_string());
-    let _ = backend.store(memory).await;
-}
-
-async fn loop_store_auto_invariants(
-    backend: &dyn MemoryBackend,
-    goal: &str,
-    worker_cmd: Option<&str>,
-    failures: &[FailedCheck],
-) {
-    for failure in failures {
-        loop_store_auto_invariant(backend, goal, worker_cmd, failure).await;
-    }
-}
-
-async fn loop_store_auto_invariant(
-    backend: &dyn MemoryBackend,
-    goal: &str,
-    worker_cmd: Option<&str>,
-    failure: &FailedCheck,
-) {
-    let action = compact_inline(worker_cmd.unwrap_or("(poll)"), AUTO_INVARIANT_CHARS);
-    let check = compact_inline(&failure.output, AUTO_INVARIANT_CHARS);
-    let check = if check.is_empty() {
-        goal.to_string()
-    } else {
-        check
-    };
-    let canonical = format!("goal={goal}\naction={action}\ncheck={check}");
-    let content_hash = stable_content_hash(&canonical);
-    let node_id = format!("auto-invariant:{content_hash}");
-    if backend.get_node(&node_id).await.ok().flatten().is_some() {
-        return;
-    }
-    let mut query = MemoryQuery::new(&canonical).with_limit(GOAL_INVARIANT_LIMIT * 3);
-    query.tags = vec![INVARIANT_TAG.to_string()];
-    if let Ok(hits) = backend.find(query).await {
-        let already_stored = hits.iter().any(|hit| {
-            hit.record.metadata.get("content_hash") == Some(&content_hash)
-                || hit.record.node_id == node_id
-        });
-        if already_stored {
-            return;
-        }
-    }
-
-    let mut memory = StoreMemory::atom(format!(
-        "auto-invariant: do not treat `{action}` as complete until `{goal}` passes - it broke `{goal}` at turn {}: {check}",
-        failure.turn
-    ));
-    memory.tier = MemoryTier::L3Project;
-    memory.tags = vec![INVARIANT_TAG.to_string(), "auto-invariant".to_string()];
-    memory.node_id = Some(node_id);
-    memory
-        .metadata
-        .insert("content_hash".to_string(), content_hash);
-    memory.source = Some("artesian-loop".to_string());
-    let _ = backend.store(memory).await;
 }
 
 async fn run_loop(options: LoopCliOptions) -> Result<()> {
@@ -1644,281 +1233,10 @@ async fn run_loop(options: LoopCliOptions) -> Result<()> {
         &mut commands,
     )
     .await?;
-    let _turns = report.turns;
-    let _run_log_path = report.run_log_path;
+    if report.outcome != "success" {
+        bail!("{}", report.why_stopped);
+    }
     Ok(())
-}
-
-/// An autonomous memory-first loop: each turn recalls goal-relevant memory, runs the worker
-/// action (with that recall in `ARTESIAN_RECALL`), writes a resume anchor, verifies the goal,
-/// and commits a run-scoped record of the turn. Bounded by max-turns, max-wall-secs, and STOP.
-async fn run_loop_core(
-    options: LoopRunOptions,
-    backend: Option<&dyn MemoryBackend>,
-    anchor_store: &AnchorAnchorStore,
-    commands: &mut dyn LoopCommands,
-) -> Result<LoopRunReport> {
-    let mut log = LoopRunLog::create(&options.run_log_dir, &options.run_id)?;
-    let started_at = Instant::now();
-    println!(
-        "loop: goal = {:?}, max-turns = {}, run = {}",
-        options.goal, options.max_turns, options.run_id
-    );
-    if let Some(max_wall) = options.max_wall {
-        println!("loop: max-wall-secs = {}", max_wall.as_secs());
-    }
-
-    if let Some(reason) = wall_cap_message(started_at, options.max_wall, "initial check") {
-        finish_loop_with_error(
-            &mut log,
-            &options.run_id,
-            "wall-cap",
-            0,
-            started_at,
-            &reason,
-        )?;
-    }
-    let initial_result = commands
-        .verify_goal(
-            &options.goal,
-            remaining_wall_budget(started_at, options.max_wall),
-        )
-        .await;
-    let (initial_goal_met, _) = match initial_result {
-        Ok(result) => result,
-        Err(error) => {
-            let reason = error.to_string();
-            let outcome = if reason.contains("wall-clock budget") {
-                "wall-cap"
-            } else {
-                "error"
-            };
-            finish_loop_with_error(&mut log, &options.run_id, outcome, 0, started_at, &reason)?;
-            unreachable!("finish_loop_with_error always returns an error");
-        }
-    };
-    if initial_goal_met {
-        log.write_summary(
-            &options.run_id,
-            "success",
-            0,
-            started_at.elapsed(),
-            "goal already held",
-        )?;
-        println!("✓ goal already holds (0 turns)");
-        println!("run-log: {}", log.path().display());
-        return Ok(LoopRunReport {
-            turns: 0,
-            run_log_path: log.path().to_path_buf(),
-        });
-    }
-    let mut last_check: Option<String> = None;
-    let mut corrected_failures = Vec::new();
-    for turn in 1..=options.max_turns {
-        if let Some(reason) =
-            wall_cap_message(started_at, options.max_wall, &format!("turn {turn}"))
-        {
-            finish_loop_with_error(
-                &mut log,
-                &options.run_id,
-                "wall-cap",
-                turn.saturating_sub(1),
-                started_at,
-                &reason,
-            )?;
-        }
-        if options.stop_file.exists() {
-            let reason = format!("loop stopped by sentinel {}", options.stop_file.display());
-            finish_loop_with_error(
-                &mut log,
-                &options.run_id,
-                "stopped",
-                turn.saturating_sub(1),
-                started_at,
-                &reason,
-            )?;
-        }
-        let recall = match backend {
-            Some(backend) => loop_recall(backend, &options.goal).await,
-            None => String::new(),
-        };
-        // Goal-scoped packet: goal + invariants + last failed check + relevant memory — what the
-        // worker actually needs, not a flat recall dump.
-        let packet =
-            assemble_goal_packet(backend, &options.goal, last_check.as_deref(), &recall).await;
-        if !recall.is_empty() {
-            println!("  recall ({} relevant)", recall.lines().count());
-        }
-        let action = options.worker_cmd.as_deref().unwrap_or("(poll)");
-        if options.poll {
-            let sleep_for = remaining_wall_budget(started_at, options.max_wall)
-                .map_or(DEFAULT_LOOP_SLEEP, |d| d.min(DEFAULT_LOOP_SLEEP));
-            tokio::time::sleep(sleep_for).await;
-        } else if let Some(cmd) = &options.worker_cmd {
-            println!("── turn {turn}/{}: worker ─ {cmd}", options.max_turns);
-            let env = vec![
-                ("ARTESIAN_PACKET".to_string(), packet),
-                ("ARTESIAN_RECALL".to_string(), recall.clone()),
-                ("ARTESIAN_GOAL".to_string(), options.goal.clone()),
-                ("ARTESIAN_RUN_ID".to_string(), options.run_id.clone()),
-                ("ARTESIAN_TURN".to_string(), turn.to_string()),
-            ];
-            match commands
-                .run_worker(
-                    cmd,
-                    env,
-                    remaining_wall_budget(started_at, options.max_wall),
-                )
-                .await
-            {
-                Ok(true) => {}
-                Ok(false) => eprintln!("  worker exited non-zero on turn {turn}"),
-                Err(error) => {
-                    let reason = error.to_string();
-                    let outcome = if reason.contains("wall-clock budget") {
-                        "wall-cap"
-                    } else {
-                        "error"
-                    };
-                    finish_loop_with_error(
-                        &mut log,
-                        &options.run_id,
-                        outcome,
-                        turn.saturating_sub(1),
-                        started_at,
-                        &reason,
-                    )?;
-                }
-            }
-        }
-        let _ = anchor_store
-            .set(SessionAnchor::new(
-                format!(
-                    "loop turn {turn}: {}",
-                    options.worker_cmd.as_deref().unwrap_or("(poll)")
-                ),
-                format!("verify goal: {}", options.goal),
-            ))
-            .await;
-        let verify_result = commands
-            .verify_goal(
-                &options.goal,
-                remaining_wall_budget(started_at, options.max_wall),
-            )
-            .await;
-        let (goal_met, check_output) = match verify_result {
-            Ok(result) => result,
-            Err(error) => {
-                let reason = error.to_string();
-                let outcome = if reason.contains("wall-clock budget") {
-                    "wall-cap"
-                } else {
-                    "error"
-                };
-                finish_loop_with_error(
-                    &mut log,
-                    &options.run_id,
-                    outcome,
-                    turn.saturating_sub(1),
-                    started_at,
-                    &reason,
-                )?;
-                unreachable!("finish_loop_with_error always returns an error");
-            }
-        };
-        log.write_turn(
-            &options.run_id,
-            turn,
-            action,
-            goal_met,
-            &check_output,
-            started_at.elapsed(),
-        )?;
-        // Carry the verifier's failure detail into the next turn's packet (cleared on success).
-        last_check = if goal_met {
-            None
-        } else {
-            corrected_failures.push(FailedCheck {
-                turn,
-                output: check_output.clone(),
-            });
-            Some(format!(
-                "turn {turn}: `{}` failed\n{check_output}",
-                options.goal
-            ))
-        };
-        if let Some(backend) = backend {
-            loop_commit_turn(
-                backend,
-                &options.run_id,
-                turn,
-                &options.goal,
-                options.worker_cmd.as_deref(),
-                goal_met,
-            )
-            .await;
-        }
-        if goal_met {
-            // Verified-skill memory: the goal verifier just passed, so the worker approach is
-            // verified by construction — store it (durable) for reuse in future goal packets.
-            if options.learn {
-                if let Some(backend) = backend {
-                    if let Some(cmd) = &options.worker_cmd {
-                        loop_store_skill(backend, &options.goal, cmd, turn).await;
-                    }
-                    loop_store_spec(backend, &options.goal, options.worker_cmd.as_deref(), turn)
-                        .await;
-                    loop_store_auto_invariants(
-                        backend,
-                        &options.goal,
-                        options.worker_cmd.as_deref(),
-                        &corrected_failures,
-                    )
-                    .await;
-                }
-            }
-            log.write_summary(
-                &options.run_id,
-                "success",
-                turn,
-                started_at.elapsed(),
-                "goal held",
-            )?;
-            println!("✓ goal holds after {turn} turn(s)");
-            println!("run-log: {}", log.path().display());
-            return Ok(LoopRunReport {
-                turns: turn,
-                run_log_path: log.path().to_path_buf(),
-            });
-        }
-        println!("  goal not met after turn {turn}");
-    }
-    let reason = format!(
-        "loop reached max-turns ({}) without the goal holding",
-        options.max_turns
-    );
-    finish_loop_with_error(
-        &mut log,
-        &options.run_id,
-        "max-turns",
-        options.max_turns,
-        started_at,
-        &reason,
-    )?;
-    unreachable!("finish_loop_with_error always returns an error");
-}
-
-fn finish_loop_with_error(
-    log: &mut LoopRunLog,
-    run_id: &str,
-    outcome: &str,
-    turns: u32,
-    started_at: Instant,
-    reason: &str,
-) -> Result<()> {
-    log.write_summary(run_id, outcome, turns, started_at.elapsed(), reason)?;
-    eprintln!("run-log: {}", log.path().display());
-    bail!("{reason}")
 }
 
 /// Distill raw text into self-contained atomic facts via an LLM, optionally storing each as an atom.
@@ -4552,6 +3870,9 @@ async fn perf(config_path: PathBuf, root: PathBuf, budget_tokens: Option<usize>)
 #[cfg(test)]
 mod tests {
     use super::*;
+    use flume::loop_core::{
+        LOOP_INVARIANT_TAG as INVARIANT_TAG, LOOP_SKILL_TAG as SKILL_TAG, LOOP_SPEC_TAG as SPEC_TAG,
+    };
     use std::collections::VecDeque;
 
     struct ScriptedLoopCommands {
@@ -4627,7 +3948,7 @@ mod tests {
         backend: Option<&dyn MemoryBackend>,
         commands: &mut ScriptedLoopCommands,
         mut options: LoopRunOptions,
-    ) -> Result<LoopRunReport> {
+    ) -> anyhow::Result<flume::loop_core::LoopRunReport> {
         options.run_id = run_id.to_string();
         options.run_log_dir = tmp.join("runs");
         options.stop_file = tmp.join("STOP");
@@ -4646,8 +3967,10 @@ mod tests {
         options.max_turns = 1;
         options.learn = false;
 
-        let result = run_scripted_loop(&tmp, "run-log", None, &mut commands, options).await;
-        assert!(result.is_err(), "loop should stop at max-turns");
+        let result = run_scripted_loop(&tmp, "run-log", None, &mut commands, options)
+            .await
+            .expect("run_scripted_loop should not error");
+        assert_eq!(result.outcome, "max-turns", "loop should stop at max-turns");
         let log_path = tmp.join("runs").join("run-log.jsonl");
         let lines: Vec<String> = fs::read_to_string(&log_path)
             .expect("run-log should exist")

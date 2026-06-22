@@ -125,6 +125,95 @@ orchestration tools are off outside `orchestrate` / `full`, so this is the defau
 - **Lead role-skill:** a short instruction `artesian init` writes so an in-session lead drives the team
   natively (read the catalog, recall via `memory.context`, delegate, gate via the judge).
 
+## Driving teams and the agentic loop through MCP
+
+An agent (e.g. Claude in an MCP session) can drive **both** multi-agent spawn/management **and** the
+full agentic loop entirely through the Artesian MCP server, without a separate CLI invocation.
+
+### Full MCP tool catalog (orchestrate / full mode)
+
+| Tool | Purpose |
+|---|---|
+| `agents.list` | List reachable agent CLIs and available models, plus role-definition summaries |
+| `orchestrate.bind` | Bind a role to an agent/model for this MCP session |
+| `orchestrate.delegate` | Dispatch one bounded task to the supervised role agent (single-shot) |
+| `orchestrate.loop` | Run the full agentic loop: recall → worker → verify → commit (see below) |
+| `orchestrate.status` | Check status and result of a delegated task |
+| `orchestrate.handoff` | Record a handoff to judge or master |
+| `team.create` | Create a Flume multi-agent team topology |
+| `team.spawn` | Admit and spawn a teammate from a `.agent/agents` or `.claude/agents` definition |
+| `team.task.add` | Add a task to the shared headrace task board |
+| `team.task.claim` | Atomically claim an eligible task, respecting plan approval gates |
+| `team.task.complete` | Complete or block a task through the judge/master gate |
+| `team.message` | Post typed messages (ASK / RESULT / REVIEW / DONE) to the EventEnvelope pool |
+| `team.status` | Inspect team lifecycle, teammates, and redacted message pool |
+| `team.cleanup` | Terminate tracked teammate process groups and mark the team cleaned up |
+| `team.gc` | Garbage-collect orphaned, expired, or hung teammate process groups |
+
+### `orchestrate.loop` — agentic loop over MCP
+
+`orchestrate.loop` runs the same implementation as the CLI `artesian loop` command: each turn the
+loop recalls goal-relevant memory, assembles a bounded goal packet (goal + invariants + last-failed
+check + MMR-diversified recall), runs the worker with that packet injected via `ARTESIAN_PACKET` /
+`ARTESIAN_GOAL` / `ARTESIAN_RECALL` / `ARTESIAN_TURN` env vars, writes a resume anchor, verifies the
+goal, and on success stores a verified skill + spec + auto-invariants into memory. The same brakes
+apply: `max_turns` (default 10), `max_wall_secs`, and the `~/.artesian/STOP` sentinel file.
+
+Parameters: `goal` (verifier command), `worker` (per-turn action), `max_turns?`, `max_wall_secs?`,
+`no_learn?` (disable skill/spec/invariant storage). Returns: `outcome`, `why_stopped`, `turns`,
+`run_log_path`.
+
+#### Example: MCP-driven agentic loop
+
+```json
+{
+  "tool": "orchestrate.loop",
+  "params": {
+    "goal": "cargo test --workspace 2>&1 | tail -1 | grep -q 'test result: ok'",
+    "worker": "claude -p \"$ARTESIAN_PACKET\" --permission-mode acceptEdits",
+    "max_turns": 8,
+    "max_wall_secs": 600
+  }
+}
+```
+
+The outcome report:
+
+```json
+{
+  "outcome": "success",
+  "why_stopped": "goal held",
+  "turns": 3,
+  "run_log_path": "/Users/you/.artesian/runs/loop-1750000000000.jsonl"
+}
+```
+
+#### Example: MCP-driven Flume team
+
+```json
+// 1. Create team
+{ "tool": "team.create", "params": { "name": "patch-team", "plan_approval_required": true } }
+
+// 2. Spawn teammates from definitions
+{ "tool": "team.spawn", "params": { "team_id": "patch-team", "definition": "security-reviewer" } }
+{ "tool": "team.spawn", "params": { "team_id": "patch-team", "definition": "judge-a" } }
+
+// 3. Add a task
+{ "tool": "team.task.add", "params": { "team_id": "patch-team", "title": "Review auth.rs", "definition": "security-reviewer" } }
+
+// 4. Judge approves plan
+{ "tool": "team.message", "params": { "team_id": "patch-team", "from": "judge-a", "to": "security-reviewer", "kind": "review", "content": "Plan approved", "task_id": "<id>", "approved": true, "execute": false } }
+
+// 5. Worker claims and executes
+{ "tool": "team.task.claim", "params": { "team_id": "patch-team", "task_id": "<id>", "teammate": "security-reviewer" } }
+{ "tool": "team.message", "params": { "team_id": "patch-team", "from": "security-reviewer", "to": "security-reviewer", "kind": "ask", "content": "Review auth.rs for injection risks", "execute": true } }
+```
+
+**Interop rule — do not double-orchestrate.** When a native team system (e.g. Claude Code's own
+agent-teams) is driving the loop, keep Artesian in `memory` or `advanced` mode so its orchestration
+tools stay off. The `team.*` and `orchestrate.*` tools are disabled outside `orchestrate` / `full`
+mode by design.
+
 ## Prior art and naming
 
 Flume builds on established multi-agent patterns — MetaGPT's role-based publish-subscribe message
