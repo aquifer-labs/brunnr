@@ -111,6 +111,8 @@ pub struct SpawnRequest {
     pub agent: String,
     pub model: Option<String>,
     pub working_dir: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resume_packet: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

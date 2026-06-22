@@ -664,6 +664,7 @@ async fn team_lifecycle_uses_definitions_plan_gate_and_cleanup() {
             task_id: Some(task.task_id.clone()),
             approved: Some(true),
             execute: Some(false),
+            resume_packet: None,
         }))
         .await
         .expect("review should approve plan");
@@ -687,6 +688,7 @@ async fn team_lifecycle_uses_definitions_plan_gate_and_cleanup() {
             task_id: Some(task.task_id.clone()),
             approved: None,
             execute: Some(true),
+            resume_packet: None,
         }))
         .await
         .expect("worker message should execute")
@@ -765,6 +767,7 @@ async fn team_message_redacts_success_output_and_event_log() {
             task_id: None,
             approved: None,
             execute: Some(true),
+            resume_packet: None,
         }))
         .await
         .expect("message should execute")

@@ -204,6 +204,7 @@ impl Agent for ProcessAgent {
                     .working_dir
                     .map(PathBuf::from)
                     .or_else(|| self.config.working_dir.clone()),
+                resume_packet: request.resume_packet,
             };
             self.sessions
                 .lock()
@@ -669,6 +670,7 @@ struct SessionContext {
     agent: String,
     model: Option<String>,
     working_dir: Option<PathBuf>,
+    resume_packet: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1160,12 +1162,17 @@ fn build_invocation(
     context: &SessionContext,
     prompt: &str,
 ) -> ProcessInvocation {
-    match AgentKind::from_config(config) {
+    let agent_kind = AgentKind::from_config(config);
+    let prompt = match agent_kind {
+        AgentKind::Codex => prompt_with_resume_packet(context.resume_packet.as_deref(), prompt),
+        _ => prompt.to_string(),
+    };
+    match agent_kind {
         AgentKind::Claude => native_invocation(
             config,
             vec![
                 "-p".to_string(),
-                prompt.to_string(),
+                prompt.clone(),
                 "--output-format".to_string(),
                 "stream-json".to_string(),
                 "--verbose".to_string(),
@@ -1198,12 +1205,12 @@ fn build_invocation(
             if let Some(model) = &context.model {
                 args.extend(["-m".to_string(), model.clone()]);
             }
-            args.push(prompt.to_string());
+            args.push(prompt);
             native_invocation(config, args, Vec::new(), EventFormat::Jsonl)
         }
         AgentKind::Gemini => native_invocation(
             config,
-            vec!["-p".to_string(), prompt.to_string(), "--yolo".to_string()],
+            vec!["-p".to_string(), prompt.clone(), "--yolo".to_string()],
             context
                 .model
                 .as_ref()
@@ -1213,7 +1220,7 @@ fn build_invocation(
         ),
         AgentKind::Opencode => native_invocation(
             config,
-            vec!["run".to_string(), prompt.to_string()],
+            vec!["run".to_string(), prompt.clone()],
             context
                 .model
                 .as_ref()
@@ -1221,8 +1228,15 @@ fn build_invocation(
                 .unwrap_or_default(),
             EventFormat::Text,
         ),
-        AgentKind::Generic => generic_invocation(config, context, prompt),
+        AgentKind::Generic => generic_invocation(config, context, &prompt),
     }
+}
+
+fn prompt_with_resume_packet(packet: Option<&str>, prompt: &str) -> String {
+    let Some(packet) = packet.map(str::trim).filter(|packet| !packet.is_empty()) else {
+        return prompt.to_string();
+    };
+    format!("[ARTESIAN:RESUME_PACKET]\n{packet}\n[/ARTESIAN:RESUME_PACKET]\n\n{prompt}")
 }
 
 fn native_invocation(
@@ -1744,6 +1758,7 @@ mod tests {
                 agent: "echo".to_string(),
                 model: None,
                 working_dir: None,
+                resume_packet: None,
             })
             .await
             .expect("spawn should register session");
@@ -1778,6 +1793,7 @@ mod tests {
                 agent: "claude".to_string(),
                 model: Some("claude-opus".to_string()),
                 working_dir: None,
+                resume_packet: None,
             })
             .await
             .expect("master model should be available");
@@ -1787,6 +1803,7 @@ mod tests {
                 agent: "claude".to_string(),
                 model: Some("claude-sonnet".to_string()),
                 working_dir: None,
+                resume_packet: None,
             })
             .await
             .expect("worker model should be available");
@@ -1842,6 +1859,7 @@ mod tests {
                 agent: "claude".to_string(),
                 model: None,
                 working_dir: None,
+                resume_packet: None,
             })
             .await
             .expect("master default model should be available");
@@ -1851,6 +1869,7 @@ mod tests {
                 agent: "claude".to_string(),
                 model: None,
                 working_dir: None,
+                resume_packet: None,
             })
             .await
             .expect("worker default model should be available");
@@ -1958,6 +1977,29 @@ mod tests {
     }
 
     #[test]
+    fn codex_invocation_prepends_resume_packet_when_present() {
+        let prompt = "Do bounded work.";
+        let mut context = test_context("codex", Some("gpt-5"), Some("/repo"));
+        let absent = build_invocation(
+            &ProcessAgentConfig::new("codex").with_agent_id("codex"),
+            &context,
+            prompt,
+        );
+        assert_eq!(absent.args.last().map(String::as_str), Some(prompt));
+
+        context.resume_packet = Some("{\"restored_working_state\":\"state\"}".to_string());
+        let present = build_invocation(
+            &ProcessAgentConfig::new("codex").with_agent_id("codex"),
+            &context,
+            prompt,
+        );
+        let rendered = present.args.last().expect("codex prompt should be an arg");
+        assert!(rendered.starts_with("[ARTESIAN:RESUME_PACKET]\n"));
+        assert!(rendered.contains("\"restored_working_state\":\"state\""));
+        assert!(rendered.ends_with(prompt));
+    }
+
+    #[test]
     fn jsonl_stdout_lines_normalize_worker_events() {
         let event = parse_stdout_event(
             EventFormat::Jsonl,
@@ -2002,6 +2044,7 @@ mod tests {
                 agent: "codex".to_string(),
                 model: Some("missing-model".to_string()),
                 working_dir: None,
+                resume_packet: None,
             })
             .await
             .expect_err("unavailable model should fail");
@@ -2035,6 +2078,7 @@ mod tests {
                 agent: "sh".to_string(),
                 model: None,
                 working_dir: None,
+                resume_packet: None,
             })
             .await
             .expect("spawn should register session");
@@ -2517,6 +2561,7 @@ mod tests {
                 agent: "sh".to_string(),
                 model: None,
                 working_dir: None,
+                resume_packet: None,
             })
             .await
             .expect("session should spawn")
@@ -2528,6 +2573,7 @@ mod tests {
             agent: agent.to_string(),
             model: model.map(str::to_string),
             working_dir: working_dir.map(PathBuf::from),
+            resume_packet: None,
         }
     }
 

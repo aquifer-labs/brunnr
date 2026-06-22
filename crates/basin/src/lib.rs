@@ -532,6 +532,7 @@ async fn dispatch_task(
             agent: "worker".to_string(),
             model: None,
             working_dir: Some(lease.path.display().to_string()),
+            resume_packet: None,
         })
         .await?;
     let response = worker
@@ -583,6 +584,7 @@ async fn dispatch_task(
                 agent: "judge".to_string(),
                 model: None,
                 working_dir: None,
+                resume_packet: None,
             })
             .await?;
         let review = judge

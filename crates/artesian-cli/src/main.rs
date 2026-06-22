@@ -2,7 +2,7 @@
 
 use std::{
     env, fs,
-    io::Write,
+    io::{Read, Write},
     path::{Path, PathBuf},
     str::FromStr,
     sync::Arc,
@@ -37,6 +37,7 @@ use headrace::{
     ClaimRequest, CommandVerifier, FilesTaskStore, NewTask, TaskKind, TaskStore, VectorTaskStore,
     Verifier, VerifierGate,
 };
+use serde::Deserialize;
 use serde_json::{json, Value};
 use toml_edit::{value, Array, DocumentMut, Item, Table};
 
@@ -44,6 +45,27 @@ const DEFAULT_CONFIG: &str = "artesian.toml";
 const MCP_SERVER_NAME: &str = "artesian-memory";
 const MCP_TOOL_HINT: &str =
     "ALWAYS search the project memory before non-trivial work; store durable, reusable learnings.";
+const CLAUDE_SESSION_START_COMMAND: &str =
+    "artesian hooks claude session-start --config artesian.toml --root .artesian";
+const CLAUDE_PRE_COMPACT_COMMAND: &str =
+    "artesian hooks claude pre-compact --config artesian.toml --root .artesian";
+const CLAUDE_ARTESIAN_LOOP_SKILL: &str = r#"---
+name: artesian-loop
+description: Recall committed Artesian memory, act, verify, and checkpoint durable context with artesian-memory MCP tools.
+---
+
+# Artesian Loop
+
+Use this loop for non-trivial implementation work in an Artesian-enabled project.
+
+1. Recall committed context before acting. Prefer `memory.session.resume` when a user/session/task key is available; otherwise query with `memory.find` for the current goal and relevant constraints.
+2. Act in small, reversible steps. Keep durable project knowledge in memory, not transient chat.
+3. Verify the change with the repository's normal checks before claiming completion.
+4. Commit useful learnings with `memory.store`, scoped and tagged so future agents can retrieve them.
+5. Before handoff or compaction, call `memory.session.checkpoint` with the current user/session/task key, current task, next step, decisions, and last failed check when one exists.
+
+Use the `artesian-memory` MCP server and its `memory.find`, `memory.store`, `memory.session.resume`, and `memory.session.checkpoint` tools. Do not use stale `qdrant-find` or `qdrant-store` tool names.
+"#;
 
 mod artesiand;
 mod import;
@@ -107,6 +129,10 @@ enum Command {
     Agents {
         #[command(subcommand)]
         command: AgentsCommand,
+    },
+    Hooks {
+        #[command(subcommand)]
+        command: HooksCommand,
     },
     Run {
         #[arg(long, default_value = DEFAULT_CONFIG)]
@@ -330,6 +356,49 @@ enum AgentsCommand {
         #[arg(long)]
         cache: Option<PathBuf>,
     },
+}
+
+#[derive(Debug, Subcommand)]
+enum HooksCommand {
+    /// Install native agent hooks and skills.
+    Install {
+        /// Install Claude Code hooks. This is the default target today.
+        #[arg(long)]
+        claude: bool,
+        #[arg(long, value_enum, default_value_t = HookScope::Project)]
+        scope: HookScope,
+    },
+    #[command(hide = true)]
+    Claude {
+        #[command(subcommand)]
+        command: ClaudeHookCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum ClaudeHookCommand {
+    SessionStart {
+        #[arg(long, default_value = DEFAULT_CONFIG)]
+        config: PathBuf,
+        #[arg(long, default_value = ".artesian")]
+        root: PathBuf,
+        #[arg(long, value_enum)]
+        backend: Option<BackendArg>,
+    },
+    PreCompact {
+        #[arg(long, default_value = DEFAULT_CONFIG)]
+        config: PathBuf,
+        #[arg(long, default_value = ".artesian")]
+        root: PathBuf,
+        #[arg(long, value_enum)]
+        backend: Option<BackendArg>,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum HookScope {
+    User,
+    Project,
 }
 
 #[derive(Debug, Subcommand)]
@@ -865,6 +934,7 @@ async fn main() -> Result<()> {
             timeout_seconds,
         } => spawn(&role, &agent, args, model, timeout_seconds).await,
         Command::Agents { command } => agents(command).await,
+        Command::Hooks { command } => hooks(command).await,
         Command::Run {
             config,
             root,
@@ -1714,6 +1784,7 @@ async fn team(command: TeamCommand) -> Result<()> {
                         task_id,
                         approved,
                         execute,
+                        resume_packet: None,
                     },
                     event_sender,
                 )
@@ -1928,6 +1999,10 @@ async fn init(options: InitOptions, _non_interactive: bool) -> Result<()> {
             config.memory.backend,
         )?;
     }
+    if claude_code_detected(&config.agents) {
+        let report = install_claude_hooks(HookScope::Project)?;
+        print_claude_hooks_report(&report)?;
+    }
     write_master_role_skill(&options.memory_root)?;
     println!(
         "initialized Artesian memory mode at {} collection={} project={}",
@@ -1936,6 +2011,12 @@ async fn init(options: InitOptions, _non_interactive: bool) -> Result<()> {
         options.project.as_deref().unwrap_or("default")
     );
     Ok(())
+}
+
+fn claude_code_detected(agents: &[AgentBinding]) -> bool {
+    agents
+        .iter()
+        .any(|binding| matches!(binding.agent.as_str(), "claude" | "claude-code"))
 }
 
 fn prefill_models_from_catalog(agents: &mut [AgentBinding]) {
@@ -2008,6 +2089,217 @@ async fn agents(command: AgentsCommand) -> Result<()> {
     Ok(())
 }
 
+async fn hooks(command: HooksCommand) -> Result<()> {
+    match command {
+        HooksCommand::Install {
+            claude: _claude,
+            scope,
+        } => {
+            let report = install_claude_hooks(scope)?;
+            print_claude_hooks_report(&report)?;
+        }
+        HooksCommand::Claude { command } => match command {
+            ClaudeHookCommand::SessionStart {
+                config,
+                root,
+                backend,
+            } => claude_session_start(config, root, backend).await?,
+            ClaudeHookCommand::PreCompact {
+                config,
+                root,
+                backend,
+            } => claude_pre_compact(config, root, backend).await?,
+        },
+    }
+    Ok(())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ClaudeHooksInstallReport {
+    settings_path: PathBuf,
+    skill_path: PathBuf,
+    settings_changed: bool,
+    skill_created: bool,
+}
+
+fn install_claude_hooks(scope: HookScope) -> Result<ClaudeHooksInstallReport> {
+    let settings_path = claude_settings_path(scope)?;
+    let skill_path = claude_skill_path(scope)?;
+    install_claude_hooks_at(settings_path, skill_path)
+}
+
+fn install_claude_hooks_at(
+    settings_path: PathBuf,
+    skill_path: PathBuf,
+) -> Result<ClaudeHooksInstallReport> {
+    if let Some(parent) = settings_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let mut root = read_json_object(&settings_path)?;
+    let original = root.clone();
+    ensure_hook_command(&mut root, "SessionStart", CLAUDE_SESSION_START_COMMAND)?;
+    ensure_hook_command(&mut root, "PreCompact", CLAUDE_PRE_COMPACT_COMMAND)?;
+    let settings_changed = root != original;
+    if settings_changed {
+        write_json(&settings_path, &root)?;
+    }
+
+    let skill_created = write_claude_artesian_loop_skill(&skill_path)?;
+    Ok(ClaudeHooksInstallReport {
+        settings_path,
+        skill_path,
+        settings_changed,
+        skill_created,
+    })
+}
+
+fn print_claude_hooks_report(report: &ClaudeHooksInstallReport) -> Result<()> {
+    println!(
+        "Claude Code hooks {}: {}",
+        if report.settings_changed {
+            "written"
+        } else {
+            "already present"
+        },
+        report.settings_path.display()
+    );
+    println!("SessionStart command: {CLAUDE_SESSION_START_COMMAND}");
+    println!("PreCompact command: {CLAUDE_PRE_COMPACT_COMMAND}");
+    println!(
+        "Claude Code skill {}: {}",
+        if report.skill_created {
+            "written"
+        } else {
+            "already present"
+        },
+        report.skill_path.display()
+    );
+    println!(
+        "hooks JSON:\n{}",
+        serde_json::to_string_pretty(&claude_hooks_json())?
+    );
+    println!("skill content:\n{CLAUDE_ARTESIAN_LOOP_SKILL}");
+    Ok(())
+}
+
+fn claude_settings_path(scope: HookScope) -> Result<PathBuf> {
+    match scope {
+        HookScope::User => Ok(home_dir()?.join(".claude").join("settings.json")),
+        HookScope::Project => Ok(PathBuf::from(".claude").join("settings.json")),
+    }
+}
+
+fn claude_skill_path(scope: HookScope) -> Result<PathBuf> {
+    match scope {
+        HookScope::User => Ok(home_dir()?
+            .join(".claude")
+            .join("skills")
+            .join("artesian-loop")
+            .join("SKILL.md")),
+        HookScope::Project => Ok(PathBuf::from(".claude")
+            .join("skills")
+            .join("artesian-loop")
+            .join("SKILL.md")),
+    }
+}
+
+fn claude_hooks_json() -> Value {
+    json!({
+        "hooks": {
+            "SessionStart": [
+                {
+                    "hooks": [
+                        command_hook(CLAUDE_SESSION_START_COMMAND)
+                    ]
+                }
+            ],
+            "PreCompact": [
+                {
+                    "hooks": [
+                        command_hook(CLAUDE_PRE_COMPACT_COMMAND)
+                    ]
+                }
+            ]
+        }
+    })
+}
+
+fn command_hook(command: &str) -> Value {
+    json!({
+        "type": "command",
+        "command": command
+    })
+}
+
+fn ensure_hook_command(root: &mut Value, event: &str, command: &str) -> Result<bool> {
+    if !root.is_object() {
+        *root = json!({});
+    }
+    let hooks = ensure_object(root, "hooks")?;
+    let event_value = hooks
+        .entry(event.to_string())
+        .or_insert_with(|| Value::Array(Vec::new()));
+    let event_groups = event_value
+        .as_array_mut()
+        .with_context(|| format!("hooks.{event} must be a JSON array"))?;
+    if event_groups
+        .iter()
+        .any(|group| hook_group_has_command(group, command))
+    {
+        return Ok(false);
+    }
+
+    let handler = command_hook(command);
+    if let Some(group) = event_groups.iter_mut().find(|group| {
+        group
+            .as_object()
+            .and_then(|object| object.get("matcher"))
+            .is_none()
+    }) {
+        let object = group
+            .as_object_mut()
+            .with_context(|| format!("hooks.{event} entries must be JSON objects"))?;
+        let handlers = object
+            .entry("hooks".to_string())
+            .or_insert_with(|| Value::Array(Vec::new()))
+            .as_array_mut()
+            .with_context(|| format!("hooks.{event}[].hooks must be a JSON array"))?;
+        handlers.push(handler);
+    } else {
+        event_groups.push(json!({ "hooks": [handler] }));
+    }
+    Ok(true)
+}
+
+fn hook_group_has_command(group: &Value, command: &str) -> bool {
+    group
+        .get("hooks")
+        .and_then(Value::as_array)
+        .is_some_and(|handlers| {
+            handlers.iter().any(|handler| {
+                handler
+                    .get("type")
+                    .and_then(Value::as_str)
+                    .is_some_and(|hook_type| hook_type == "command")
+                    && handler
+                        .get("command")
+                        .and_then(Value::as_str)
+                        .is_some_and(|existing| existing == command)
+            })
+        })
+}
+
+fn write_claude_artesian_loop_skill(path: &Path) -> Result<bool> {
+    if path.exists() {
+        return Ok(false);
+    }
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(path, CLAUDE_ARTESIAN_LOOP_SKILL)?;
+    Ok(true)
+}
+
 async fn spawn(
     role: &str,
     agent: &str,
@@ -2030,6 +2322,7 @@ async fn spawn(
         agent: agent.to_string(),
         model,
         working_dir: Some(cwd.display().to_string()),
+        resume_packet: None,
     };
     let process = ProcessAgent::new(
         ProcessAgentConfig::new(agent)
@@ -2355,6 +2648,168 @@ async fn handoff(
     let packet = WorkingContextBundle::resume_packet_from_session(&session)?;
     println!("{}", serde_json::to_string_pretty(&packet)?);
     Ok(())
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct ClaudeHookInput {
+    session_id: Option<String>,
+    cwd: Option<String>,
+}
+
+async fn claude_session_start(
+    config: PathBuf,
+    root: PathBuf,
+    backend: Option<BackendArg>,
+) -> Result<()> {
+    let input = read_claude_hook_input()?;
+    enter_hook_cwd(&input)?;
+    let memory = memory_config_for_command(&config, root, backend)?;
+    let backend = open_memory_backend(&memory)?;
+    let key = SessionKey::new(None, input.session_id.clone(), None);
+    let store = SessionStore::new(backend.clone());
+    if let Some(session) = store.load(&key).await? {
+        let packet = WorkingContextBundle::resume_packet_from_session(&session)?;
+        println!("{}", serde_json::to_string_pretty(&packet)?);
+        return Ok(());
+    }
+
+    let anchor_store = AnchorAnchorStore::new(&memory.root);
+    if let Some(recovered) = recover_after_compaction(&anchor_store, backend.as_ref(), 5).await? {
+        let bundle = hook_recovery_bundle(&recovered.anchor, &recovered.hits);
+        let session = bundle.to_ocf_session(&key, Some("artesian".to_string()))?;
+        let packet = WorkingContextBundle::resume_packet_from_session(&session)?;
+        println!("{}", serde_json::to_string_pretty(&packet)?);
+    }
+    Ok(())
+}
+
+async fn claude_pre_compact(
+    config: PathBuf,
+    root: PathBuf,
+    backend: Option<BackendArg>,
+) -> Result<()> {
+    let input = read_claude_hook_input()?;
+    enter_hook_cwd(&input)?;
+    let memory = memory_config_for_command(&config, root, backend)?;
+    let backend = open_memory_backend(&memory)?;
+    let key = SessionKey::new(None, input.session_id.clone(), None);
+    let anchor_store = AnchorAnchorStore::new(&memory.root);
+    let anchor = anchor_store
+        .get_for_session(&key)
+        .await?
+        .or(anchor_store.get().await?)
+        .unwrap_or_else(|| {
+            SessionAnchor::new(
+                format!("Claude Code session {}", key.session_id),
+                "continue after compaction",
+            )
+        });
+    let query_text = format!("{} {}", anchor.current_task, anchor.next_step);
+    let hits = backend
+        .find(MemoryQuery::new(query_text).with_limit(8))
+        .await
+        .unwrap_or_default();
+    let bundle = hook_recovery_bundle(&anchor, &hits);
+    let session = bundle.to_ocf_session(&key, Some("claude-code".to_string()))?;
+    let packet = WorkingContextBundle::resume_packet_from_session(&session)?;
+    let summary = SessionStore::new(backend).store(session).await?;
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&json!({
+            "summary": summary,
+            "packet": packet
+        }))?
+    );
+    Ok(())
+}
+
+fn read_claude_hook_input() -> Result<ClaudeHookInput> {
+    let mut text = String::new();
+    std::io::stdin().read_to_string(&mut text)?;
+    if text.trim().is_empty() {
+        return Ok(ClaudeHookInput::default());
+    }
+    serde_json::from_str(&text).context("parse Claude Code hook input")
+}
+
+fn enter_hook_cwd(input: &ClaudeHookInput) -> Result<()> {
+    let Some(cwd) = input.cwd.as_deref().filter(|cwd| !cwd.trim().is_empty()) else {
+        return Ok(());
+    };
+    let path = Path::new(cwd);
+    if path.is_dir() {
+        env::set_current_dir(path).with_context(|| format!("enter Claude hook cwd {cwd}"))?;
+    }
+    Ok(())
+}
+
+fn hook_recovery_bundle(anchor: &SessionAnchor, hits: &[SearchHit]) -> WorkingContextBundle {
+    let mut entries = vec![
+        SnapshotEntry::now(
+            "anchor-current-task",
+            "task-state",
+            anchor.current_task.clone(),
+            1.0,
+        ),
+        SnapshotEntry::now(
+            "anchor-next-step",
+            "task-state",
+            anchor.next_step.clone(),
+            1.0,
+        ),
+    ];
+    if let Some(plan_pointer) = anchor
+        .plan_pointer
+        .as_ref()
+        .filter(|value| !value.is_empty())
+    {
+        entries.push(SnapshotEntry::now(
+            "anchor-plan-pointer",
+            "task-state",
+            plan_pointer.clone(),
+            1.0,
+        ));
+    }
+    for (index, decision) in anchor.last_decisions.iter().enumerate() {
+        if decision.trim().is_empty() {
+            continue;
+        }
+        entries.push(SnapshotEntry::now(
+            format!("anchor-decision-{index}"),
+            "decision",
+            decision.clone(),
+            1.0,
+        ));
+    }
+    for (index, hit) in hits.iter().enumerate() {
+        let mut entry = SnapshotEntry::now(
+            format!("memory-hit-{index}"),
+            "fact",
+            hit.record.content.clone(),
+            hit.score,
+        );
+        entry.unit_ref = Some(hit.record.node_id.clone());
+        entries.push(entry);
+    }
+    let token_count = entries.iter().map(|entry| entry.tokens).sum();
+    let lifecycle = entries
+        .iter()
+        .map(|entry| LifecycleEntry::commit(entry.id.as_str()))
+        .collect();
+    WorkingContextBundle::new(
+        WorkingContextSnapshot {
+            schema: vec![
+                "decision".to_string(),
+                "constraint".to_string(),
+                "fact".to_string(),
+                "task-state".to_string(),
+            ],
+            budget_tokens: 4096,
+            token_count,
+            entries,
+        },
+        lifecycle,
+    )
 }
 
 async fn session(command: SessionCommand) -> Result<()> {
@@ -3483,6 +3938,106 @@ mod tests {
     use super::*;
 
     #[test]
+    fn claude_hooks_install_merges_and_is_idempotent() {
+        let tmp = temp_path("artesian-claude-hooks");
+        let settings = tmp.join(".claude").join("settings.json");
+        let skill = tmp
+            .join(".claude")
+            .join("skills")
+            .join("artesian-loop")
+            .join("SKILL.md");
+        fs::create_dir_all(settings.parent().expect("settings parent")).expect("create settings");
+        fs::write(
+            &settings,
+            serde_json::to_string_pretty(&json!({
+                "theme": "dark",
+                "hooks": {
+                    "PostToolUse": [
+                        {
+                            "matcher": "Edit|Write",
+                            "hooks": [
+                                {
+                                    "type": "command",
+                                    "command": "prettier --write"
+                                }
+                            ]
+                        }
+                    ],
+                    "SessionStart": [
+                        {
+                            "hooks": [
+                                {
+                                    "type": "command",
+                                    "command": "echo existing"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            }))
+            .expect("settings should encode"),
+        )
+        .expect("settings should write");
+
+        let first =
+            install_claude_hooks_at(settings.clone(), skill.clone()).expect("hooks should install");
+        assert!(first.settings_changed);
+        assert!(first.skill_created);
+        let value: Value =
+            serde_json::from_str(&fs::read_to_string(&settings).expect("settings should read"))
+                .expect("settings should parse");
+        assert_eq!(value["theme"], "dark");
+        assert_eq!(
+            count_hook_command(&value, "PostToolUse", "prettier --write"),
+            1
+        );
+        assert_eq!(
+            count_hook_command(&value, "SessionStart", CLAUDE_SESSION_START_COMMAND),
+            1
+        );
+        assert_eq!(
+            count_hook_command(&value, "PreCompact", CLAUDE_PRE_COMPACT_COMMAND),
+            1
+        );
+
+        let second = install_claude_hooks_at(settings.clone(), skill.clone())
+            .expect("second install should be clean");
+        assert!(!second.settings_changed);
+        assert!(!second.skill_created);
+        let rerun: Value = serde_json::from_str(
+            &fs::read_to_string(&settings).expect("settings should read after rerun"),
+        )
+        .expect("settings should parse after rerun");
+        assert_eq!(value, rerun);
+        assert_eq!(
+            count_hook_command(&rerun, "SessionStart", CLAUDE_SESSION_START_COMMAND),
+            1
+        );
+        assert_eq!(
+            count_hook_command(&rerun, "PreCompact", CLAUDE_PRE_COMPACT_COMMAND),
+            1
+        );
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn claude_artesian_loop_skill_has_valid_frontmatter() {
+        let tmp = temp_path("artesian-claude-skill");
+        let skill = tmp.join("SKILL.md");
+        assert!(write_claude_artesian_loop_skill(&skill).expect("skill should write"));
+        let text = fs::read_to_string(&skill).expect("skill should read");
+        let (header, body) = text
+            .strip_prefix("---\n")
+            .and_then(|rest| rest.split_once("\n---\n"))
+            .expect("skill should have YAML frontmatter");
+        assert!(header.lines().any(|line| line == "name: artesian-loop"));
+        assert!(header.lines().any(|line| line.starts_with("description: ")));
+        assert!(body.contains("memory.session.resume"));
+        assert!(!write_claude_artesian_loop_skill(&skill).expect("existing skill should stay"));
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
     fn mcp_wrapper_sources_shell_rc_and_execs_server() {
         let tmp = std::env::temp_dir().join(format!("artesian-wrapper-{}", std::process::id()));
         let _ = fs::remove_dir_all(&tmp);
@@ -3508,5 +4063,32 @@ mod tests {
             assert_eq!(mode & 0o777, 0o755, "wrapper must be executable");
         }
         let _ = fs::remove_dir_all(&tmp);
+    }
+
+    fn count_hook_command(value: &Value, event: &str, command: &str) -> usize {
+        value["hooks"][event]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .flat_map(|group| {
+                group
+                    .get("hooks")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+            })
+            .filter(|handler| {
+                handler.get("type").and_then(Value::as_str) == Some("command")
+                    && handler.get("command").and_then(Value::as_str) == Some(command)
+            })
+            .count()
+    }
+
+    fn temp_path(name: &str) -> PathBuf {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or(0);
+        std::env::temp_dir().join(format!("{name}-{}-{unique}", std::process::id()))
     }
 }

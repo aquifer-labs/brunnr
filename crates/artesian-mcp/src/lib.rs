@@ -1117,6 +1117,7 @@ pub struct TeamMessageRequest {
     pub task_id: Option<String>,
     pub approved: Option<bool>,
     pub execute: Option<bool>,
+    pub resume_packet: Option<String>,
 }
 
 #[derive(Debug, Serialize, schemars::JsonSchema)]
@@ -1697,6 +1698,7 @@ Call when the project vision or current phase changes."
                 agent: binding.agent.clone(),
                 model: binding.model.clone(),
                 working_dir: Some(self.repo_root.display().to_string()),
+                resume_packet: None,
             })
             .await
             .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;
@@ -1968,6 +1970,7 @@ Call when the project vision or current phase changes."
                 task_id: request.task_id,
                 approved: request.approved,
                 execute: request.execute.unwrap_or(false),
+                resume_packet: request.resume_packet,
             })
             .await
             .map_err(|error| ErrorData::internal_error(error.to_string(), None))?;

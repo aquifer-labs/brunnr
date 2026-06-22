@@ -384,6 +384,8 @@ pub struct TeamMessage {
     pub task_id: Option<String>,
     pub approved: Option<bool>,
     pub execute: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resume_packet: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -498,6 +500,7 @@ impl TeamRuntime {
                 agent: binding.agent.clone(),
                 model: binding.model.clone(),
                 working_dir: Some(working_dir),
+                resume_packet: None,
             })
             .await?;
         let teammate = TeammateState {
@@ -655,7 +658,13 @@ impl TeamRuntime {
                 ));
             };
             let execution = self
-                .execute_teammate(&request.team_id, to, &request.content, event_sender)
+                .execute_teammate(
+                    &request.team_id,
+                    to,
+                    &request.content,
+                    request.resume_packet.as_deref(),
+                    event_sender,
+                )
                 .await?;
             (Some(execution.response), execution.events)
         } else {
@@ -706,6 +715,7 @@ impl TeamRuntime {
         team_id: &str,
         teammate_name: &str,
         content: &str,
+        resume_packet: Option<&str>,
         event_sender: Option<mpsc::UnboundedSender<TeamWorkerEvent>>,
     ) -> FlumeResult<TeamExecution> {
         let team = self.team(team_id)?;
@@ -731,6 +741,7 @@ impl TeamRuntime {
                 agent: binding.agent.clone(),
                 model: binding.model.clone(),
                 working_dir: Some(self.config.repo_root.display().to_string()),
+                resume_packet: resume_packet.map(str::to_string),
             })
             .await?;
         let prompt = format!("{}\n\n{}", definition.prompt_addendum, content);
@@ -1305,6 +1316,7 @@ mod tests {
                 task_id: Some(task.id.clone()),
                 approved: Some(true),
                 execute: false,
+                resume_packet: None,
             })
             .await
             .expect("review should approve plan");
@@ -1362,6 +1374,7 @@ mod tests {
                 task_id: None,
                 approved: None,
                 execute: true,
+                resume_packet: None,
             })
             .await
             .expect("message should execute");
@@ -1451,6 +1464,7 @@ mod tests {
                 task_id: Some(task.id.clone()),
                 approved: None,
                 execute: true,
+                resume_packet: None,
             })
             .await
             .expect_err("message should time out");

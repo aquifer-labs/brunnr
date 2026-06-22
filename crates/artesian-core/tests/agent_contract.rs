@@ -61,6 +61,7 @@ async fn mock_agent_satisfies_spawn_send_stream_contract() {
             agent: "codex".to_string(),
             model: None,
             working_dir: None,
+            resume_packet: None,
         })
         .await
         .expect("spawn should succeed");
