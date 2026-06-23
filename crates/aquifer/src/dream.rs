@@ -549,10 +549,7 @@ pub fn render_diary(result: &DreamResult, collection_name: &str) -> String {
         let _ = writeln!(
             out,
             "- **{}** (score {:.2}, {} accesses): {snippet}{}",
-            entry.id,
-            entry.score,
-            entry.access_count,
-            ellipsis,
+            entry.id, entry.score, entry.access_count, ellipsis,
         );
     }
     if result.admitted == 0 {
@@ -655,7 +652,12 @@ mod tests {
         let original = make_accessed_record("r1", "Rust was chosen", 5);
         let original_access_count = original.access_count;
         let original_content = original.content.clone();
-        let _ = dream(std::slice::from_ref(&original), &DreamOptions::default(), None).unwrap();
+        let _ = dream(
+            std::slice::from_ref(&original),
+            &DreamOptions::default(),
+            None,
+        )
+        .unwrap();
         // The record passed in is unchanged (we verify the value we still hold).
         assert_eq!(original.access_count, original_access_count);
         assert_eq!(original.content, original_content);

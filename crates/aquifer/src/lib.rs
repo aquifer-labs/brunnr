@@ -7,8 +7,10 @@ mod backend;
 mod backfill;
 mod chunking;
 mod compat;
+pub mod decay;
 pub mod entity;
 pub mod episode;
+pub mod eviction;
 mod files;
 pub mod graph;
 mod identity;
@@ -18,6 +20,7 @@ mod mmr;
 mod pgvector;
 #[cfg(feature = "qdrant")]
 mod qdrant;
+pub mod reconcile;
 mod retrieval;
 mod rrf;
 mod semantic_cache;
@@ -41,9 +44,15 @@ pub use backfill::{
 };
 pub use chunking::{chunk_text, Chunk, ChunkConfig};
 pub use compat::{CollectionCompat, COMPAT_POINT_ID, OKF_VERSION};
+pub use decay::{retrieval_strength, DecayConfig};
 pub use entity::{extract_entities, EntityIndex};
 pub use episode::EpisodeIndex;
-pub use files::FilesBackend;
+pub use eviction::{
+    append_eviction_log, evict, EvictionAction, EvictionLogEntry, EvictionPolicy, EvictionReport,
+};
+pub use files::{
+    parse_record as files_parse_record, render_record as files_render_record, FilesBackend,
+};
 pub use graph::{
     expand_hits_with_neighbors, Relation, DEFAULT_GRAPH_HOPS, GRAPH_EXPANSION_LIMIT,
     GRAPH_SCAN_LIMIT, MAX_GRAPH_HOPS,
@@ -59,6 +68,7 @@ pub use qdrant::{
     QdrantEndpoints, QdrantPreflightReport, QdrantVectorStore, QdrantVectorStoreConfig,
     ReplicateReport,
 };
+pub use reconcile::{reconcile, ReconcileConfig, ReconcileDecision, DEFAULT_RECONCILE_THRESHOLD};
 #[cfg(feature = "vector")]
 pub use retrieval::FastembedReranker;
 pub use retrieval::{LocalLexicalReranker, Reranker};
@@ -75,8 +85,8 @@ pub use sqlite_vec::{SqliteVecBackend, SqliteVecVectorStore, SqliteVecVectorStor
 pub use temporal::{apply_knowledge_supersession, apply_recency_decay};
 pub use txn::{sync_okf_directory, CommitLog, SyncReport, TransactionalMemory, TxnError, TxnSeq};
 pub use types::{
-    MemoryError, MemoryId, MemoryQuery, MemoryRecord, MemoryResult, MemoryScope, MemoryTier,
-    RrfOptions, SearchHit, SearchSource, StoreMemory,
+    MemoryError, MemoryId, MemoryQuery, MemoryRecord, MemoryResult, MemoryScope, MemoryState,
+    MemoryTier, RrfOptions, SearchHit, SearchSource, StoreMemory,
 };
 pub use upgrade::{
     default_migration_collection, export_okf_bundle, migrate_okf_bundle, migration_manifest_path,

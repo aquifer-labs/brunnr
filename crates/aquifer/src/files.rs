@@ -12,10 +12,11 @@ use serde::{Deserialize, Serialize};
 use tokio::{fs, io::AsyncWriteExt};
 
 use crate::{
+    decay::{retrieval_strength, DecayConfig},
     graph::{by_entity_node_ids, neighbor_node_ids, normalize_relations, records_by_node_ids},
     identity::stable_memory_id,
     MemoryBackend, MemoryError, MemoryId, MemoryQuery, MemoryRecord, MemoryResult, MemoryScope,
-    MemoryTier, Relation, SearchHit, SearchSource, SessionLaneLock, StoreMemory,
+    MemoryState, MemoryTier, Relation, SearchHit, SearchSource, SessionLaneLock, StoreMemory,
 };
 
 #[derive(Debug, Clone)]
@@ -24,6 +25,9 @@ pub struct FilesBackend {
     /// When `true` (the default), every `find` call bumps `access_count` and sets
     /// `last_access` on returned records (best-effort, non-blocking writeback).
     track_access: bool,
+    /// Configuration for recency-aware soft-decay re-ranking at retrieval time.
+    /// Records without `last_access` are unaffected (strength = 1.0).
+    decay_config: DecayConfig,
 }
 
 impl FilesBackend {
@@ -31,12 +35,19 @@ impl FilesBackend {
         Self {
             root: root.into(),
             track_access: true,
+            decay_config: DecayConfig::default(),
         }
     }
 
     /// Disable or enable access tracking for this backend instance.
     pub fn with_track_access(mut self, enabled: bool) -> Self {
         self.track_access = enabled;
+        self
+    }
+
+    /// Override the recency-decay configuration used at retrieval time.
+    pub fn with_decay_config(mut self, config: DecayConfig) -> Self {
+        self.decay_config = config;
         self
     }
 
@@ -114,10 +125,18 @@ impl FilesBackend {
 impl MemoryBackend for FilesBackend {
     fn find(&self, query: MemoryQuery) -> BoxFuture<'_, MemoryResult<Vec<SearchHit>>> {
         async move {
+            let now = Utc::now();
             let terms = query_terms(&query.text);
+            let include_archived = query.include_archived;
+            let decay_config = self.decay_config.clone();
+
             let mut hits = self
                 .load_records()?
                 .into_iter()
+                // Exclude Archived records unless --include-archived is set.
+                .filter(|record| {
+                    include_archived || record.state == MemoryState::Active
+                })
                 .filter(|record| matches_node_filter(record, query.node_id.as_deref()))
                 .filter(|record| matches_tags(record, &query.tags))
                 .filter(|record| matches_tenancy(record, &query))
@@ -126,10 +145,12 @@ impl MemoryBackend for FilesBackend {
                 .filter_map(|record| score_record(record, &terms, !query.tags.is_empty()))
                 .collect::<Vec<_>>();
 
+            // Apply recency-aware soft-decay: re-sort by (base_score * retrieval_strength).
+            // The stored `score` on the record is never mutated.
             hits.sort_by(|left, right| {
-                right
-                    .score
-                    .partial_cmp(&left.score)
+                let ls = left.score * retrieval_strength(&left.record, &decay_config, now);
+                let rs = right.score * retrieval_strength(&right.record, &decay_config, now);
+                rs.partial_cmp(&ls)
                     .unwrap_or(std::cmp::Ordering::Equal)
                     .then_with(|| right.record.created_at.cmp(&left.record.created_at))
             });
@@ -203,6 +224,7 @@ impl MemoryBackend for FilesBackend {
                 relations,
                 last_access: None,
                 access_count: 0,
+                state: MemoryState::Active,
             };
             let path = self.record_path(&date_tag, &record.id);
             if let Some(parent) = path.parent() {
@@ -279,6 +301,9 @@ struct FileHeader {
     last_access: Option<DateTime<Utc>>,
     #[serde(default)]
     access_count: u32,
+    /// Lifecycle state; serde-default `Active` for backward-compat.
+    #[serde(default)]
+    state: MemoryState,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -340,6 +365,10 @@ struct OkfHeader {
     #[serde(default)]
     #[serde(skip_serializing_if = "is_zero_u32")]
     access_count: u32,
+    /// Lifecycle state; omitted when Active (serde default) for backward-compat.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "is_active_state")]
+    state: MemoryState,
     #[serde(flatten)]
     unknown: BTreeMap<String, serde_yaml::Value>,
 }
@@ -360,7 +389,7 @@ fn collect_records(dir: &Path, records: &mut Vec<MemoryRecord>) -> MemoryResult<
     Ok(())
 }
 
-fn render_record(record: &MemoryRecord) -> MemoryResult<String> {
+pub fn render_record(record: &MemoryRecord) -> MemoryResult<String> {
     let header = FileHeader {
         id: record.id.clone(),
         node_id: record.node_id.clone(),
@@ -378,6 +407,7 @@ fn render_record(record: &MemoryRecord) -> MemoryResult<String> {
         relations: record.relations.clone(),
         last_access: record.last_access,
         access_count: record.access_count,
+        state: record.state,
     };
     Ok(format!(
         "---\n{}---\n\n{}\n",
@@ -407,12 +437,13 @@ fn render_okf_header(header: FileHeader) -> String {
         relations: header.relations,
         last_access: header.last_access,
         access_count: header.access_count,
+        state: header.state,
         unknown: BTreeMap::new(),
     };
     serde_yaml::to_string(&okf).expect("OKF header serialization should be infallible")
 }
 
-pub(crate) fn parse_record(text: &str) -> MemoryResult<MemoryRecord> {
+pub fn parse_record(text: &str) -> MemoryResult<MemoryRecord> {
     if text.starts_with("---\n") {
         return parse_okf_record(text);
     }
@@ -451,6 +482,7 @@ pub(crate) fn parse_record(text: &str) -> MemoryResult<MemoryRecord> {
         relations,
         last_access: header.last_access,
         access_count: header.access_count,
+        state: header.state,
     })
 }
 
@@ -528,6 +560,7 @@ fn parse_okf_record(text: &str) -> MemoryResult<MemoryRecord> {
         relations,
         last_access: header.last_access,
         access_count: header.access_count,
+        state: header.state,
     })
 }
 
@@ -559,6 +592,10 @@ fn collect_paths(dir: &Path, paths: &mut Vec<PathBuf>) -> MemoryResult<()> {
 
 fn is_zero_u32(v: &u32) -> bool {
     *v == 0
+}
+
+fn is_active_state(state: &MemoryState) -> bool {
+    *state == MemoryState::Active
 }
 
 fn query_terms(input: &str) -> Vec<String> {

@@ -4,7 +4,9 @@ use std::collections::BTreeMap;
 
 use chrono::Utc;
 
-use aquifer::{reciprocal_rank_fusion, MemoryId, MemoryRecord, MemoryTier, RrfOptions, SearchHit};
+use aquifer::{
+    reciprocal_rank_fusion, MemoryId, MemoryRecord, MemoryState, MemoryTier, RrfOptions, SearchHit,
+};
 
 fn record(id: &str, node_id: &str) -> MemoryRecord {
     MemoryRecord {
@@ -25,6 +27,7 @@ fn record(id: &str, node_id: &str) -> MemoryRecord {
         relations: Vec::new(),
         last_access: None,
         access_count: 0,
+        state: MemoryState::Active,
     }
 }
 

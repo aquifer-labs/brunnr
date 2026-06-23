@@ -652,3 +652,195 @@ title: Artesian Memory Log
 }
 ```
 <!-- /artesian:anchor -->
+
+<!-- artesian:anchor -->
+```json
+{
+  "current_task": "loop turn 1: true",
+  "plan_pointer": null,
+  "last_decisions": [],
+  "next_step": "verify goal: false",
+  "updated_at": "2026-06-22T22:15:39.780962Z"
+}
+```
+<!-- /artesian:anchor -->
+
+<!-- artesian:anchor -->
+```json
+{
+  "current_task": "loop turn 2: true",
+  "plan_pointer": null,
+  "last_decisions": [],
+  "next_step": "verify goal: false",
+  "updated_at": "2026-06-22T22:15:39.792605Z"
+}
+```
+<!-- /artesian:anchor -->
+
+<!-- artesian:anchor -->
+```json
+{
+  "current_task": "loop turn 1: true",
+  "plan_pointer": null,
+  "last_decisions": [],
+  "next_step": "verify goal: false",
+  "updated_at": "2026-06-22T22:21:19.725394Z"
+}
+```
+<!-- /artesian:anchor -->
+
+<!-- artesian:anchor -->
+```json
+{
+  "current_task": "loop turn 2: true",
+  "plan_pointer": null,
+  "last_decisions": [],
+  "next_step": "verify goal: false",
+  "updated_at": "2026-06-22T22:21:19.736667Z"
+}
+```
+<!-- /artesian:anchor -->
+
+<!-- artesian:anchor -->
+```json
+{
+  "current_task": "loop turn 1: true",
+  "plan_pointer": null,
+  "last_decisions": [],
+  "next_step": "verify goal: false",
+  "updated_at": "2026-06-22T22:22:22.071788Z"
+}
+```
+<!-- /artesian:anchor -->
+
+<!-- artesian:anchor -->
+```json
+{
+  "current_task": "loop turn 2: true",
+  "plan_pointer": null,
+  "last_decisions": [],
+  "next_step": "verify goal: false",
+  "updated_at": "2026-06-22T22:22:22.082721Z"
+}
+```
+<!-- /artesian:anchor -->
+
+<!-- artesian:anchor -->
+```json
+{
+  "current_task": "loop turn 1: true",
+  "plan_pointer": null,
+  "last_decisions": [],
+  "next_step": "verify goal: false",
+  "updated_at": "2026-06-22T22:24:27.622253Z"
+}
+```
+<!-- /artesian:anchor -->
+
+<!-- artesian:anchor -->
+```json
+{
+  "current_task": "loop turn 2: true",
+  "plan_pointer": null,
+  "last_decisions": [],
+  "next_step": "verify goal: false",
+  "updated_at": "2026-06-22T22:24:27.632931Z"
+}
+```
+<!-- /artesian:anchor -->
+
+<!-- artesian:anchor -->
+```json
+{
+  "current_task": "loop turn 1: true",
+  "plan_pointer": null,
+  "last_decisions": [],
+  "next_step": "verify goal: false",
+  "updated_at": "2026-06-22T22:26:30.337665Z"
+}
+```
+<!-- /artesian:anchor -->
+
+<!-- artesian:anchor -->
+```json
+{
+  "current_task": "loop turn 2: true",
+  "plan_pointer": null,
+  "last_decisions": [],
+  "next_step": "verify goal: false",
+  "updated_at": "2026-06-22T22:26:30.348620Z"
+}
+```
+<!-- /artesian:anchor -->
+
+<!-- artesian:anchor -->
+```json
+{
+  "current_task": "loop turn 1: true",
+  "plan_pointer": null,
+  "last_decisions": [],
+  "next_step": "verify goal: false",
+  "updated_at": "2026-06-22T22:27:04.796098Z"
+}
+```
+<!-- /artesian:anchor -->
+
+<!-- artesian:anchor -->
+```json
+{
+  "current_task": "loop turn 2: true",
+  "plan_pointer": null,
+  "last_decisions": [],
+  "next_step": "verify goal: false",
+  "updated_at": "2026-06-22T22:27:04.806773Z"
+}
+```
+<!-- /artesian:anchor -->
+
+<!-- artesian:anchor -->
+```json
+{
+  "current_task": "loop turn 1: true",
+  "plan_pointer": null,
+  "last_decisions": [],
+  "next_step": "verify goal: false",
+  "updated_at": "2026-06-22T22:27:34.959488Z"
+}
+```
+<!-- /artesian:anchor -->
+
+<!-- artesian:anchor -->
+```json
+{
+  "current_task": "loop turn 2: true",
+  "plan_pointer": null,
+  "last_decisions": [],
+  "next_step": "verify goal: false",
+  "updated_at": "2026-06-22T22:27:34.970748Z"
+}
+```
+<!-- /artesian:anchor -->
+
+<!-- artesian:anchor -->
+```json
+{
+  "current_task": "loop turn 1: true",
+  "plan_pointer": null,
+  "last_decisions": [],
+  "next_step": "verify goal: false",
+  "updated_at": "2026-06-22T22:28:06.164617Z"
+}
+```
+<!-- /artesian:anchor -->
+
+<!-- artesian:anchor -->
+```json
+{
+  "current_task": "loop turn 2: true",
+  "plan_pointer": null,
+  "last_decisions": [],
+  "next_step": "verify goal: false",
+  "updated_at": "2026-06-22T22:28:06.175493Z"
+}
+```
+<!-- /artesian:anchor -->

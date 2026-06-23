@@ -8,6 +8,26 @@ use thiserror::Error;
 
 use crate::Relation;
 
+// ── OCF-aligned record state ──────────────────────────────────────────────────
+
+/// Lifecycle state of a [`MemoryRecord`].
+///
+/// Mirrors the OCF forgetting model: decay dampens *accessibility* (retrieval strength) without
+/// silent deletion. `Archived` records are excluded from default `find` but remain stored and
+/// are reachable via `get_node` or `--include-archived`. Hard deletion is explicit and audited.
+///
+/// The serde default is `Active` so that records written before this field existed round-trip
+/// correctly (backward-compat).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum MemoryState {
+    /// Normal, retrieval-eligible state (default).
+    #[default]
+    Active,
+    /// Soft-archived: excluded from default `find`, stored, drillable via `get_node`.
+    Archived,
+}
+
 pub type MemoryResult<T> = Result<T, MemoryError>;
 
 #[derive(Debug, Error)]
@@ -121,6 +141,10 @@ pub struct MemoryRecord {
     /// Number of times this record has been returned by `find`. Zero for legacy records.
     #[serde(default)]
     pub access_count: u32,
+    /// Lifecycle state: `Active` (default) or `Archived` (soft-deleted, excluded from default find).
+    /// Serde-default `Active` preserves backward-compat for records that pre-date this field.
+    #[serde(default)]
+    pub state: MemoryState,
 }
 
 impl Eq for MemoryRecord {}
@@ -152,6 +176,7 @@ impl MemoryRecord {
             relations: Vec::new(),
             last_access: None,
             access_count: 0,
+            state: MemoryState::Active,
         }
     }
 }
@@ -234,6 +259,9 @@ pub struct MemoryQuery {
     pub task_id: Option<String>,
     #[serde(default)]
     pub user_id: Option<String>,
+    /// When `true`, include `Archived` records in results. Default `false` (exclude archived).
+    #[serde(default)]
+    pub include_archived: bool,
 }
 
 impl MemoryQuery {
@@ -248,6 +276,7 @@ impl MemoryQuery {
             session_id: None,
             task_id: None,
             user_id: None,
+            include_archived: false,
         }
     }
 

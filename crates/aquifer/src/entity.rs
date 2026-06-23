@@ -201,6 +201,7 @@ mod tests {
             relations: Vec::new(),
             last_access: None,
             access_count: 0,
+            state: crate::MemoryState::Active,
         }
     }
 

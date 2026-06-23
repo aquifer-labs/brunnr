@@ -12,10 +12,11 @@ use std::{
 
 use anyhow::{bail, Context, Result};
 use aquifer::{
-    consolidation_pass, default_migration_collection, export_okf_bundle, recover_after_compaction,
-    verify_okf_bundle, AnchorAnchorStore, CollectionCompat, ConsolidationOptions, MemoryBackend,
-    MemoryQuery, MemoryScope, MemoryTier, MigrationPlan, SearchHit, SessionAnchor, SessionKey,
-    SessionListFilter, SessionStore, StoreMemory, VectorMemoryConfig,
+    append_eviction_log, consolidation_pass, default_migration_collection, evict,
+    export_okf_bundle, recover_after_compaction, verify_okf_bundle, AnchorAnchorStore,
+    CollectionCompat, ConsolidationOptions, DecayConfig, EvictionPolicy, MemoryBackend,
+    MemoryQuery, MemoryScope, MemoryState, MemoryTier, MigrationPlan, SearchHit, SessionAnchor,
+    SessionKey, SessionListFilter, SessionStore, StoreMemory, VectorMemoryConfig,
 };
 use artesian_core::{
     Agent, AgentBinding, ArtesianConfig, MemoryBackendKind, MemoryConfig, Mode, Role, SpawnRequest,
@@ -743,6 +744,9 @@ enum MemoryCommand {
         /// MMR relevance/novelty trade-off in [0,1] (1 = pure relevance). Implies --mmr.
         #[arg(long)]
         mmr_lambda: Option<f32>,
+        /// Include Archived records in results (excluded by default).
+        #[arg(long, default_value_t = false)]
+        include_archived: bool,
         #[arg(long, default_value = DEFAULT_CONFIG)]
         config: PathBuf,
         #[arg(long, default_value = ".artesian")]
@@ -827,6 +831,39 @@ enum MemoryCommand {
     Anchor {
         #[command(subcommand)]
         command: AnchorCommand,
+    },
+    /// Evict memories: soft-archive (default) or hard-delete (--hard) by TTL, LRU, or score.
+    ///
+    /// Soft-archive sets `state=archived` — records remain stored and retrievable via
+    /// `get_node` or `--include-archived`, but are excluded from default `find` results.
+    /// Use `--hard` to permanently delete records that are already archived (two-pass safety).
+    /// Every archive/delete decision is appended to `~/.artesian/eviction.jsonl`.
+    Evict {
+        /// Archive records whose last-access (or created_at) is older than N days.
+        #[arg(long)]
+        ttl_days: Option<f32>,
+        /// Archive records with the lowest retrieval strength (bottom 50% by default).
+        #[arg(long, default_value_t = false)]
+        lru: bool,
+        /// Archive records whose decay-adjusted retrieval strength is below this threshold.
+        #[arg(long)]
+        min_strength: Option<f32>,
+        /// After other policies, archive lowest-strength records until at most N Active remain.
+        #[arg(long)]
+        max_keep: Option<usize>,
+        /// Permanently delete already-Archived records (does NOT archive additional records).
+        /// Combine with a prior `evict` run that used --ttl-days / --lru.
+        #[arg(long, default_value_t = false)]
+        hard: bool,
+        /// Dry-run: print what would be archived/deleted without changing any data.
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
+        #[arg(long, default_value = DEFAULT_CONFIG)]
+        config: PathBuf,
+        #[arg(long, default_value = ".artesian")]
+        root: PathBuf,
+        #[arg(long, value_enum)]
+        backend: Option<BackendArg>,
     },
 }
 
@@ -2482,6 +2519,7 @@ async fn memory(command: MemoryCommand) -> Result<()> {
             expand,
             mmr,
             mmr_lambda,
+            include_archived,
             config,
             root,
             backend,
@@ -2501,6 +2539,7 @@ async fn memory(command: MemoryCommand) -> Result<()> {
             memory_query.session_id = session_id;
             memory_query.task_id = task_id;
             memory_query.user_id = user_id;
+            memory_query.include_archived = include_archived;
             let mut hits = backend.find(memory_query).await?;
             if diversify {
                 hits = aquifer::mmr_diversify(
@@ -2640,6 +2679,190 @@ async fn memory(command: MemoryCommand) -> Result<()> {
             println!("{}", serde_json::to_string_pretty(&metrics)?);
         }
         MemoryCommand::Anchor { command } => anchor(command).await?,
+        MemoryCommand::Evict {
+            ttl_days,
+            lru,
+            min_strength,
+            max_keep,
+            hard,
+            dry_run,
+            config,
+            root,
+            backend,
+        } => {
+            memory_evict(EvictArgs {
+                ttl_days,
+                lru,
+                min_strength,
+                max_keep,
+                hard,
+                dry_run,
+                config,
+                root,
+                backend,
+            })
+            .await?
+        }
+    }
+    Ok(())
+}
+
+/// Bundled arguments for the `memory evict` sub-command (avoids a 9-arg function).
+struct EvictArgs {
+    ttl_days: Option<f32>,
+    lru: bool,
+    min_strength: Option<f32>,
+    max_keep: Option<usize>,
+    hard: bool,
+    dry_run: bool,
+    config: std::path::PathBuf,
+    root: PathBuf,
+    backend: Option<BackendArg>,
+}
+
+async fn memory_evict(args: EvictArgs) -> Result<()> {
+    let EvictArgs {
+        ttl_days,
+        lru,
+        min_strength,
+        max_keep,
+        hard,
+        dry_run,
+        config,
+        root,
+        backend,
+    } = args;
+    // Load all records via the files backend (both active and archived so --hard can delete).
+    let memory_config = memory_config_for_command(&config, root.clone(), backend)?;
+    let files_root = memory_config.root.clone();
+    let files_backend = aquifer::FilesBackend::new(&files_root).with_track_access(false);
+
+    // Collect all records (including archived) for the eviction pass.
+    let all_hits = files_backend
+        .find({
+            let mut q = MemoryQuery::new("").with_limit(usize::MAX);
+            q.include_archived = true;
+            q
+        })
+        .await?;
+    let all_records: Vec<aquifer::MemoryRecord> = all_hits.into_iter().map(|h| h.record).collect();
+
+    let policy = EvictionPolicy {
+        ttl_days,
+        lru,
+        min_strength,
+        max_keep,
+        hard,
+        decay_config: DecayConfig::default(),
+    };
+
+    let report = evict(&all_records, &policy);
+
+    if dry_run {
+        println!(
+            "dry-run: would archive {} record(s), would delete {} record(s)",
+            report.archived, report.deleted
+        );
+        for entry in &report.log_entries {
+            println!(
+                "  {:?} id={} node={} strength={:.3} reason={}",
+                entry.action,
+                entry.record_id,
+                entry.node_id,
+                entry.retrieval_strength,
+                entry.reason
+            );
+        }
+        return Ok(());
+    }
+
+    // Apply decisions: update the on-disk records.
+    // Build a quick lookup from id → decision action.
+    let archive_ids: std::collections::BTreeSet<String> = report
+        .log_entries
+        .iter()
+        .filter(|e| e.action == aquifer::EvictionAction::Archive)
+        .map(|e| e.record_id.clone())
+        .collect();
+    let delete_ids: std::collections::BTreeSet<String> = report
+        .log_entries
+        .iter()
+        .filter(|e| e.action == aquifer::EvictionAction::Delete)
+        .map(|e| e.record_id.clone())
+        .collect();
+
+    // Walk the memory directory and apply mutations.
+    let memory_dir = std::path::PathBuf::from(&files_root).join("memory");
+    let mut archived_count = 0usize;
+    let mut deleted_count = 0usize;
+
+    if memory_dir.exists() {
+        apply_eviction_to_dir(
+            &memory_dir,
+            &archive_ids,
+            &delete_ids,
+            &mut archived_count,
+            &mut deleted_count,
+        )?;
+    }
+
+    // Append to the eviction audit log.
+    if let Err(error) = append_eviction_log(&report.log_entries) {
+        eprintln!("warning: failed to write eviction log: {error}");
+    }
+
+    println!(
+        "eviction complete: archived={archived_count} deleted={deleted_count} (log: ~/.artesian/eviction.jsonl)"
+    );
+    Ok(())
+}
+
+/// Walk a directory tree and apply archive / delete decisions to `.md` files by their record ID.
+fn apply_eviction_to_dir(
+    dir: &std::path::Path,
+    archive_ids: &std::collections::BTreeSet<String>,
+    delete_ids: &std::collections::BTreeSet<String>,
+    archived: &mut usize,
+    deleted: &mut usize,
+) -> Result<()> {
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_dir() {
+            apply_eviction_to_dir(&path, archive_ids, delete_ids, archived, deleted)?;
+            continue;
+        }
+        let Some(ext) = path.extension() else {
+            continue;
+        };
+        if ext != "md" {
+            continue;
+        }
+        let stem = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or_default();
+        // Skip reserved OKF files (index.md, log.md).
+        if matches!(
+            path.file_name().and_then(|n| n.to_str()).unwrap_or(""),
+            "index.md" | "log.md"
+        ) {
+            continue;
+        }
+        if delete_ids.contains(stem) {
+            std::fs::remove_file(&path)?;
+            *deleted += 1;
+        } else if archive_ids.contains(stem) {
+            // Re-read, set state = Archived, write back.
+            let text = std::fs::read_to_string(&path)?;
+            if let Ok(mut record) = aquifer::files_parse_record(&text) {
+                record.state = MemoryState::Archived;
+                if let Ok(rendered) = aquifer::files_render_record(&record) {
+                    std::fs::write(&path, rendered)?;
+                    *archived += 1;
+                }
+            }
+        }
     }
     Ok(())
 }

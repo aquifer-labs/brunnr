@@ -20,9 +20,10 @@ use crate::{
     reciprocal_rank_fusion,
     temporal::{apply_knowledge_supersession, apply_recency_decay},
     CollectionCompat, Distance, Filter, FilterCondition, FilterValue, MemoryBackend, MemoryError,
-    MemoryId, MemoryQuery, MemoryRecord, MemoryResult, MemoryScope, MemoryTier, PayloadIndex,
-    Relation, RrfOptions, SearchHit, SearchSource, SessionLaneLock, StoreMemory, VectorCollection,
-    VectorPoint, VectorSearch, VectorSearchHit, VectorSearchSource, VectorStore, COMPAT_POINT_ID,
+    MemoryId, MemoryQuery, MemoryRecord, MemoryResult, MemoryScope, MemoryState, MemoryTier,
+    PayloadIndex, Relation, RrfOptions, SearchHit, SearchSource, SessionLaneLock, StoreMemory,
+    VectorCollection, VectorPoint, VectorSearch, VectorSearchHit, VectorSearchSource, VectorStore,
+    COMPAT_POINT_ID,
 };
 
 pub const PINNED_FASTEMBED_MODEL: &str = "intfloat/multilingual-e5-small";
@@ -673,6 +674,7 @@ impl<V: VectorStore> VectorMemoryBackend<V> {
                 relations,
                 last_access,
                 access_count,
+                state,
                 mut metadata,
                 ..
             } = record;
@@ -706,6 +708,7 @@ impl<V: VectorStore> VectorMemoryBackend<V> {
                     relations,
                     last_access,
                     access_count,
+                    state,
                 },
             });
         }
@@ -1088,6 +1091,7 @@ impl<V: VectorStore> MemoryBackend for VectorMemoryBackend<V> {
                     relations,
                     last_access: None,
                     access_count: 0,
+                    state: MemoryState::Active,
                 };
                 let vector = self.embedder.embed_passage(&record.content)?;
                 self.store
@@ -1346,6 +1350,7 @@ impl<V: VectorStore> MemoryBackend for VectorMemoryBackend<V> {
                         relations,
                         last_access: None,
                         access_count: 0,
+                        state: MemoryState::Active,
                     };
                     match self.embedder.embed_passage(&record.content) {
                         Ok(vector) => {
@@ -1438,6 +1443,7 @@ fn reconstruct_parent_record(parent_node: &str, siblings: Vec<MemoryRecord>) -> 
         relations: first.relations.clone(),
         last_access: first.last_access,
         access_count: first.access_count,
+        state: first.state,
     }
 }
 
@@ -1470,6 +1476,9 @@ struct MemoryPayload {
     last_access: Option<chrono::DateTime<Utc>>,
     #[serde(default)]
     access_count: u32,
+    /// Lifecycle state. Serde-default `Active` for backward-compat with old payloads.
+    #[serde(default)]
+    state: MemoryState,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1512,6 +1521,7 @@ impl From<&MemoryRecord> for MemoryPayload {
             relations: record.relations.clone(),
             last_access: record.last_access,
             access_count: record.access_count,
+            state: record.state,
         }
     }
 }
@@ -1536,6 +1546,7 @@ impl From<MemoryPayload> for MemoryRecord {
             relations: payload.relations,
             last_access: payload.last_access,
             access_count: payload.access_count,
+            state: payload.state,
         }
     }
 }
