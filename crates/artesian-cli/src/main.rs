@@ -112,6 +112,7 @@ struct InitOptions {
     qdrant_url: Option<String>,
     qdrant_rest_url: Option<String>,
     qdrant_api_key_env: String,
+    qdrant_api_key_file: Option<String>,
     register_mcp: bool,
 }
 
@@ -132,6 +133,8 @@ enum Command {
         qdrant_rest_url: Option<String>,
         #[arg(long, default_value = "QDRANT_API_KEY")]
         qdrant_api_key_env: String,
+        #[arg(long)]
+        qdrant_api_key_file: Option<String>,
         #[arg(long)]
         non_interactive: bool,
         #[arg(long, default_value_t = true)]
@@ -261,6 +264,8 @@ enum Command {
         qdrant_rest_url: Option<String>,
         #[arg(long, default_value = "QDRANT_API_KEY")]
         qdrant_api_key_env: String,
+        #[arg(long)]
+        qdrant_api_key_file: Option<String>,
         #[arg(long)]
         user_id: Option<String>,
         #[arg(long, default_value = DEFAULT_CONFIG)]
@@ -1228,6 +1233,7 @@ async fn main() -> Result<()> {
             qdrant_url,
             qdrant_rest_url,
             qdrant_api_key_env,
+            qdrant_api_key_file,
             non_interactive,
             register_mcp,
         } => {
@@ -1242,6 +1248,7 @@ async fn main() -> Result<()> {
                     qdrant_url,
                     qdrant_rest_url,
                     qdrant_api_key_env,
+                    qdrant_api_key_file,
                     register_mcp,
                 },
                 non_interactive,
@@ -1319,6 +1326,7 @@ async fn main() -> Result<()> {
             qdrant_url,
             qdrant_rest_url,
             qdrant_api_key_env,
+            qdrant_api_key_file,
             user_id,
             config,
             no_link,
@@ -1336,6 +1344,7 @@ async fn main() -> Result<()> {
                     qdrant_url,
                     qdrant_rest_url,
                     qdrant_api_key_env,
+                    qdrant_api_key_file,
                     register_mcp: true,
                     project: Some(project.clone()),
                 },
@@ -1766,6 +1775,99 @@ pub(crate) fn mcp_registration_status() -> Vec<(&'static str, bool)> {
     ]
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DoctorDiagnostic {
+    summary: String,
+    fix: String,
+}
+
+fn qdrant_backend_diagnostic(config: &MemoryConfig, error_text: &str) -> Option<DoctorDiagnostic> {
+    qdrant_backend_diagnostic_with_key_state(
+        config,
+        error_text,
+        config.resolve_qdrant_api_key().is_some(),
+    )
+}
+
+fn qdrant_backend_diagnostic_with_key_state(
+    config: &MemoryConfig,
+    error_text: &str,
+    api_key_set: bool,
+) -> Option<DoctorDiagnostic> {
+    if config.backend != MemoryBackendKind::Qdrant {
+        return None;
+    }
+    if qdrant_error_looks_auth(error_text) {
+        let env_name = qdrant_api_key_env_name(config);
+        let key_state = if api_key_set {
+            "Qdrant rejected the configured API key"
+        } else {
+            "the API key is not set"
+        };
+        return Some(DoctorDiagnostic {
+            summary: format!(
+                "Qdrant authentication failed — {key_state}. The key env for this config is `{env_name}` (from qdrant_api_key_env)."
+            ),
+            fix: qdrant_api_key_fix(config),
+        });
+    }
+    if qdrant_error_looks_connection(error_text) || error_text.contains("backend error:") {
+        return Some(DoctorDiagnostic {
+            summary: format!("Qdrant backend failed — {error_text}"),
+            fix: "check qdrant_url/qdrant_rest_url, the configured API key, and that the Qdrant server is reachable".to_string(),
+        });
+    }
+    None
+}
+
+fn qdrant_error_looks_auth(error_text: &str) -> bool {
+    let lower = error_text.to_ascii_lowercase();
+    lower.contains("unauthenticated")
+        || lower.contains("unauthorized")
+        || lower.contains("forbidden")
+        || lower.contains("401")
+        || lower.contains("403")
+        || lower.contains("api key")
+}
+
+fn qdrant_error_looks_connection(error_text: &str) -> bool {
+    let lower = error_text.to_ascii_lowercase();
+    lower.contains("connection refused")
+        || lower.contains("failed to connect")
+        || lower.contains("tcp connect")
+        || lower.contains("timeout")
+        || lower.contains("deadline")
+        || lower.contains("unavailable")
+        || lower.contains("transport error")
+        || lower.contains("qdrant grpc preflight failed")
+        || lower.contains("qdrant rest preflight failed")
+}
+
+fn qdrant_api_key_env_name(config: &MemoryConfig) -> &str {
+    config
+        .qdrant_api_key_env
+        .as_deref()
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .unwrap_or("QDRANT_API_KEY")
+}
+
+fn qdrant_api_key_fix(config: &MemoryConfig) -> String {
+    let env_name = qdrant_api_key_env_name(config);
+    if let Some(file) = config
+        .qdrant_api_key_file
+        .as_deref()
+        .map(str::trim)
+        .filter(|file| !file.is_empty())
+    {
+        format!(
+            "export `{env_name}`, or make `qdrant_api_key_file = \"{file}\"` readable and contain `{env_name}=...`"
+        )
+    } else {
+        format!("export `{env_name}`, or set `qdrant_api_key_file` in artesian.toml")
+    }
+}
+
 /// Health check: binary, config, backend reachability, collection compatibility, and MCP
 /// registrations — printing the exact fix for anything that drifted (e.g. after an upgrade).
 async fn doctor(config_path: PathBuf, root: PathBuf, backend: Option<BackendArg>) -> Result<()> {
@@ -1787,19 +1889,26 @@ async fn doctor(config_path: PathBuf, root: PathBuf, backend: Option<BackendArg>
     #[cfg(feature = "qdrant")]
     if memory_config.backend == MemoryBackendKind::Qdrant {
         match runtime::qdrant_config_from(&memory_config) {
-            Ok(qdrant_config) => {
-                match aquifer::preflight_qdrant(qdrant_config).await {
-                    Ok(report) => println!(
-                        "  qdrant:  reachable (gRPC {}, REST {})",
-                        report.grpc_url, report.rest_status
-                    ),
-                    Err(error) => {
-                        problems += 1;
+            Ok(qdrant_config) => match aquifer::preflight_qdrant(qdrant_config).await {
+                Ok(report) => println!(
+                    "  qdrant:  reachable (gRPC {}, REST {})",
+                    report.grpc_url, report.rest_status
+                ),
+                Err(error) => {
+                    problems += 1;
+                    if let Some(diagnostic) =
+                        qdrant_backend_diagnostic(&memory_config, &error.to_string())
+                    {
+                        println!("  qdrant:  ERROR — {}", diagnostic.summary);
+                        println!("           fix: {}", diagnostic.fix);
+                    } else {
                         println!("  qdrant:  UNREACHABLE — {error}");
-                        println!("           fix: check the URL + API key env, and that the server is up");
+                        println!(
+                                "           fix: check the URL + API key env, and that the server is up"
+                            );
                     }
                 }
-            }
+            },
             Err(error) => {
                 problems += 1;
                 println!("  qdrant:  misconfigured — {error}");
@@ -1823,15 +1932,28 @@ async fn doctor(config_path: PathBuf, root: PathBuf, backend: Option<BackendArg>
             ),
             Err(error) => {
                 problems += 1;
-                println!("  memory:  ERROR — {error}");
-                println!(
-                    "           fix: `artesian memory rebuild` (or `artesian migrate` if the embedding model changed)"
-                );
+                if let Some(diagnostic) =
+                    qdrant_backend_diagnostic(&memory_config, &error.to_string())
+                {
+                    println!("  memory:  ERROR — {}", diagnostic.summary);
+                    println!("           fix: {}", diagnostic.fix);
+                } else {
+                    println!("  memory:  ERROR — {error}");
+                    println!(
+                        "           fix: `artesian memory rebuild` (or `artesian migrate` if the embedding model changed)"
+                    );
+                }
             }
         },
         Err(error) => {
             problems += 1;
-            println!("  backend: ERROR opening — {error}");
+            if let Some(diagnostic) = qdrant_backend_diagnostic(&memory_config, &error.to_string())
+            {
+                println!("  backend: ERROR opening — {}", diagnostic.summary);
+                println!("           fix: {}", diagnostic.fix);
+            } else {
+                println!("  backend: ERROR opening — {error}");
+            }
         }
     }
 
@@ -2210,6 +2332,7 @@ async fn init(options: InitOptions, _non_interactive: bool) -> Result<()> {
             qdrant_url: options.qdrant_url,
             qdrant_rest_url: options.qdrant_rest_url,
             qdrant_api_key_env: Some(options.qdrant_api_key_env),
+            qdrant_api_key_file: options.qdrant_api_key_file,
             local_rerank_enabled: true,
             hyde_enabled: false,
             multi_query_enabled: false,
@@ -4733,9 +4856,7 @@ fn qdrant_config(memory: &MemoryConfig) -> Result<aquifer::QdrantVectorStoreConf
         .qdrant_rest_url
         .clone()
         .or_else(|| env::var("QDRANT_REST_URL").ok());
-    if let Some(env_name) = &memory.qdrant_api_key_env {
-        config.api_key = env::var(env_name).ok();
-    }
+    config.api_key = memory.resolve_qdrant_api_key();
     Ok(config)
 }
 
@@ -4762,6 +4883,7 @@ async fn preflight_qdrant_options(options: &InitOptions) -> Result<()> {
         qdrant_url: options.qdrant_url.clone(),
         qdrant_rest_url: options.qdrant_rest_url.clone(),
         qdrant_api_key_env: Some(options.qdrant_api_key_env.clone()),
+        qdrant_api_key_file: options.qdrant_api_key_file.clone(),
         local_rerank_enabled: true,
         hyde_enabled: false,
         multi_query_enabled: false,
@@ -4805,6 +4927,7 @@ fn memory_config_for_command(
             qdrant_url: env::var("QDRANT_URL").ok(),
             qdrant_rest_url: env::var("QDRANT_REST_URL").ok(),
             qdrant_api_key_env: Some("QDRANT_API_KEY".to_string()),
+            qdrant_api_key_file: None,
             local_rerank_enabled: true,
             hyde_enabled: false,
             multi_query_enabled: false,
@@ -5246,6 +5369,40 @@ mod tests {
         LOOP_INVARIANT_TAG as INVARIANT_TAG, LOOP_SKILL_TAG as SKILL_TAG, LOOP_SPEC_TAG as SPEC_TAG,
     };
     use std::collections::VecDeque;
+
+    #[test]
+    fn qdrant_auth_failure_diagnostic_names_key_env_without_rebuild_hint() {
+        let config = MemoryConfig {
+            backend: MemoryBackendKind::Qdrant,
+            root: ".artesian".to_string(),
+            collection: "artesian-memory".to_string(),
+            qdrant_url: Some("http://127.0.0.1:6334".to_string()),
+            qdrant_rest_url: None,
+            qdrant_api_key_env: Some("QDRANT__SERVICE__API_KEY".to_string()),
+            qdrant_api_key_file: Some("~/.macray/qdrant.env".to_string()),
+            local_rerank_enabled: true,
+            hyde_enabled: false,
+            multi_query_enabled: false,
+            debate_enabled: false,
+            llm_consolidation_enabled: false,
+            semantic_cache: Default::default(),
+            track_access: true,
+            track_savings: true,
+        };
+
+        let diagnostic = qdrant_backend_diagnostic_with_key_state(
+            &config,
+            "backend error: status: Unauthenticated, message: invalid API key",
+            false,
+        )
+        .expect("auth failures should produce a Qdrant diagnostic");
+
+        assert!(diagnostic.summary.contains("QDRANT__SERVICE__API_KEY"));
+        assert!(diagnostic.fix.contains("QDRANT__SERVICE__API_KEY"));
+        assert!(diagnostic.fix.contains("qdrant_api_key_file"));
+        assert!(!diagnostic.summary.contains("not available in this build"));
+        assert!(!diagnostic.fix.contains("memory rebuild"));
+    }
 
     struct ScriptedLoopCommands {
         verify_results: VecDeque<(bool, String)>,

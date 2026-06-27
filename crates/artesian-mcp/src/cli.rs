@@ -24,6 +24,8 @@ struct Args {
     qdrant_rest_url: Option<String>,
     #[arg(long, default_value = "QDRANT_API_KEY")]
     qdrant_api_key_env: String,
+    #[arg(long)]
+    qdrant_api_key_file: Option<String>,
     /// Transport: `stdio` (default, for one local client) or `http` (streamable HTTP, for shared /
     /// networked memory; requires a build with `--features http`).
     #[arg(long, value_enum, default_value_t = TransportArg::Stdio)]
@@ -105,6 +107,7 @@ fn load_runtime_config(args: &Args) -> anyhow::Result<ArtesianConfig> {
                 .clone()
                 .or_else(|| env::var("QDRANT_REST_URL").ok()),
             qdrant_api_key_env: Some(args.qdrant_api_key_env.clone()),
+            qdrant_api_key_file: args.qdrant_api_key_file.clone(),
             local_rerank_enabled: true,
             hyde_enabled: false,
             multi_query_enabled: false,

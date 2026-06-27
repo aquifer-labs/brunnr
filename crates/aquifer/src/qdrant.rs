@@ -119,7 +119,7 @@ impl QdrantVectorStore {
         }
         let client = builder
             .build()
-            .map_err(|error| MemoryError::BackendUnavailable(error.to_string()))?;
+            .map_err(|error| MemoryError::Backend(error.to_string()))?;
         Ok(Self { config, client })
     }
 
@@ -158,7 +158,7 @@ impl QdrantVectorStore {
             .into_iter()
             .map(|point| {
                 let payload = Payload::try_from(point.payload)
-                    .map_err(|error| MemoryError::BackendUnavailable(error.to_string()))?;
+                    .map_err(|error| MemoryError::Backend(error.to_string()))?;
                 Ok(PointStruct::new(
                     qdrant_point_id(&point.id),
                     point.vector,
@@ -249,9 +249,9 @@ pub async fn preflight_qdrant(
     }
     let client = builder
         .build()
-        .map_err(|error| MemoryError::BackendUnavailable(error.to_string()))?;
+        .map_err(|error| MemoryError::Backend(error.to_string()))?;
     let health = client.health_check().await.map_err(|error| {
-        MemoryError::BackendUnavailable(format!(
+        MemoryError::Backend(format!(
             "Qdrant gRPC preflight failed for {}; expected the gRPC endpoint (default :6334). \
              Check that the gRPC port is exposed and that --qdrant-url is not pointing at an unrelated service. details: {error}",
             config.url
@@ -262,26 +262,26 @@ pub async fn preflight_qdrant(
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(3))
         .build()
-        .map_err(|error| MemoryError::BackendUnavailable(error.to_string()))?;
+        .map_err(|error| MemoryError::Backend(error.to_string()))?;
     let mut request = client.get(format!("{rest_url}/healthz"));
     if let Some(api_key) = &config.api_key {
         request = request.header("api-key", api_key);
     }
     let response = request.send().await.map_err(|error| {
-        MemoryError::BackendUnavailable(format!(
+        MemoryError::Backend(format!(
             "Qdrant REST preflight failed for {rest_url}/healthz; expected the REST endpoint \
              (default :6333). Check the REST port or pass --qdrant-rest-url explicitly. details: {error}"
         ))
     })?;
     let status = response.status();
     if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
-        return Err(MemoryError::BackendUnavailable(format!(
+        return Err(MemoryError::Backend(format!(
             "Qdrant REST preflight failed for {rest_url}/healthz with {status}; set the configured API key env var or remove Qdrant auth for local testing"
         )));
     }
     if !status.is_success() {
         let text = response.text().await.unwrap_or_default();
-        return Err(MemoryError::BackendUnavailable(format!(
+        return Err(MemoryError::Backend(format!(
             "Qdrant REST preflight failed for {rest_url}/healthz with {status}: {text}"
         )));
     }
@@ -523,7 +523,7 @@ pub async fn replicate_collection(
         if !ensured {
             let dimensions = extract_vector(&retrieved[0].vectors)
                 .ok_or_else(|| {
-                    MemoryError::BackendUnavailable(
+                    MemoryError::Backend(
                         "source points carry no single unnamed vector to replicate".to_string(),
                     )
                 })?
@@ -592,7 +592,7 @@ pub async fn replicate_collection_incremental(
         .scroll_all_ids(source_collection, batch)
         .await
         .map_err(|error| {
-            MemoryError::BackendUnavailable(format!(
+            MemoryError::Backend(format!(
                 "failed to scroll source IDs from {source_collection}: {error}"
             ))
         })?;
@@ -642,7 +642,7 @@ pub async fn replicate_collection_incremental(
         if let Some(fp) = first_point {
             let dimensions = extract_vector(&fp.vectors)
                 .ok_or_else(|| {
-                    MemoryError::BackendUnavailable(
+                    MemoryError::Backend(
                         "source points carry no single unnamed vector to replicate".to_string(),
                     )
                 })?
@@ -792,11 +792,11 @@ impl VectorCollectionAdmin for QdrantVectorStore {
             let response = request
                 .send()
                 .await
-                .map_err(|error| MemoryError::BackendUnavailable(error.to_string()))?;
+                .map_err(|error| MemoryError::Backend(error.to_string()))?;
             if !response.status().is_success() {
                 let status = response.status();
                 let text = response.text().await.unwrap_or_default();
-                return Err(MemoryError::BackendUnavailable(format!(
+                return Err(MemoryError::Backend(format!(
                     "Qdrant alias swap failed with {status}: {text}"
                 )));
             }
@@ -821,9 +821,7 @@ impl VectorCollectionAdmin for QdrantVectorStore {
                 .map_err(qdrant_error)?
                 .snapshot_description
                 .ok_or_else(|| {
-                    MemoryError::BackendUnavailable(
-                        "Qdrant returned no snapshot description".to_string(),
-                    )
+                    MemoryError::Backend("Qdrant returned no snapshot description".to_string())
                 })?;
             let path = target_dir.join(&snapshot.name);
             download_snapshot_file(&self.config, &collection, &snapshot.name, &path).await?;
@@ -1011,7 +1009,7 @@ fn retrieved_point_to_point(point: RetrievedPoint) -> MemoryResult<VectorPoint> 
 
 fn json_from_payload(payload: HashMap<String, Value>) -> MemoryResult<JsonValue> {
     serde_json::to_value(Payload::from(payload))
-        .map_err(|error| MemoryError::BackendUnavailable(error.to_string()))
+        .map_err(|error| MemoryError::Backend(error.to_string()))
 }
 
 fn payload_id(payload: &JsonValue) -> String {
@@ -1073,7 +1071,7 @@ fn point_id_to_string(id: &PointId) -> String {
 }
 
 fn qdrant_error(error: qdrant_client::QdrantError) -> MemoryError {
-    MemoryError::BackendUnavailable(error.to_string())
+    MemoryError::Backend(error.to_string())
 }
 
 async fn download_snapshot_file(
@@ -1096,18 +1094,18 @@ async fn download_snapshot_file(
     let response = request
         .send()
         .await
-        .map_err(|error| MemoryError::BackendUnavailable(error.to_string()))?;
+        .map_err(|error| MemoryError::Backend(error.to_string()))?;
     if !response.status().is_success() {
         let status = response.status();
         let text = response.text().await.unwrap_or_default();
-        return Err(MemoryError::BackendUnavailable(format!(
+        return Err(MemoryError::Backend(format!(
             "Qdrant snapshot download failed with {status}: {text}"
         )));
     }
     let bytes = response
         .bytes()
         .await
-        .map_err(|error| MemoryError::BackendUnavailable(error.to_string()))?;
+        .map_err(|error| MemoryError::Backend(error.to_string()))?;
     std::fs::write(path, bytes)?;
     Ok(())
 }

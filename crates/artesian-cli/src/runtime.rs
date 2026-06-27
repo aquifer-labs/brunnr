@@ -272,9 +272,7 @@ fn open_qdrant_backend_inner(
         .qdrant_rest_url
         .clone()
         .or_else(|| env::var("QDRANT_REST_URL").ok());
-    if let Some(env_name) = &config.qdrant_api_key_env {
-        vector_config.api_key = env::var(env_name).ok();
-    }
+    vector_config.api_key = config.resolve_qdrant_api_key();
     let store = QdrantVectorStore::connect(vector_config)?;
     let mem_config = VectorMemoryConfig::new(&config.collection)
         .with_relation_extraction(relation_extraction)
@@ -291,7 +289,7 @@ fn open_qdrant_backend_inner(
     bail!("Qdrant backend requires building artesian-cli with the qdrant feature")
 }
 
-/// Build a Qdrant store config from the memory config (URLs + API key from env), for preflight.
+/// Build a Qdrant store config from the memory config (URLs + configured API key), for preflight.
 #[cfg(feature = "qdrant")]
 pub fn qdrant_config_from(config: &MemoryConfig) -> Result<QdrantVectorStoreConfig> {
     let url = config
@@ -304,9 +302,7 @@ pub fn qdrant_config_from(config: &MemoryConfig) -> Result<QdrantVectorStoreConf
         .qdrant_rest_url
         .clone()
         .or_else(|| env::var("QDRANT_REST_URL").ok());
-    if let Some(env_name) = &config.qdrant_api_key_env {
-        vector_config.api_key = env::var(env_name).ok();
-    }
+    vector_config.api_key = config.resolve_qdrant_api_key();
     Ok(vector_config)
 }
 

@@ -50,6 +50,8 @@ pub enum MemoryError {
     InvalidConfidence(f32),
     #[error("database error: {0}")]
     Database(String),
+    #[error("backend error: {0}")]
+    Backend(String),
     #[error("backend is not available in this build: {0}")]
     BackendUnavailable(String),
     #[error("collection embedding metadata mismatch: collection={collection_model}/{collection_dimensions}, configured={configured_model}/{configured_dimensions}; run artesian migrate before reading or writing")]

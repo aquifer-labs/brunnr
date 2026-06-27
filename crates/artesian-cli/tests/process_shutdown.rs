@@ -43,6 +43,7 @@ async fn sigterm_to_orchestrator_kills_tracked_worker_process_group() {
             qdrant_url: None,
             qdrant_rest_url: None,
             qdrant_api_key_env: None,
+            qdrant_api_key_file: None,
             local_rerank_enabled: true,
             hyde_enabled: false,
             multi_query_enabled: false,

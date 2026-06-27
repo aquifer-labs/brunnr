@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+use std::{env, fs, path::PathBuf};
+
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -35,6 +37,8 @@ pub struct MemoryConfig {
     pub qdrant_rest_url: Option<String>,
     #[serde(default)]
     pub qdrant_api_key_env: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub qdrant_api_key_file: Option<String>,
     #[serde(default = "default_local_rerank_enabled")]
     pub local_rerank_enabled: bool,
     #[serde(default)]
@@ -59,6 +63,132 @@ pub struct MemoryConfig {
     /// disable stats collection entirely; failures are always silent and non-blocking.
     #[serde(default = "default_track_savings")]
     pub track_savings: bool,
+}
+
+impl MemoryConfig {
+    /// Resolve the configured Qdrant API key without logging or exposing the secret.
+    ///
+    /// Precedence is:
+    /// 1. the environment variable named by `qdrant_api_key_env`, when present and non-empty;
+    /// 2. the file named by `qdrant_api_key_file`, supporting either a plain key file or an
+    ///    env-style file containing the configured variable name.
+    pub fn resolve_qdrant_api_key(&self) -> Option<String> {
+        resolve_qdrant_api_key_from(
+            self.qdrant_api_key_env.as_deref(),
+            self.qdrant_api_key_file.as_deref(),
+            |name| env::var(name).ok(),
+            env::home_dir,
+        )
+    }
+}
+
+fn resolve_qdrant_api_key_from<E, H>(
+    env_name: Option<&str>,
+    file: Option<&str>,
+    getenv: E,
+    home_dir: H,
+) -> Option<String>
+where
+    E: Fn(&str) -> Option<String>,
+    H: Fn() -> Option<PathBuf>,
+{
+    let env_name = env_name.and_then(non_empty_trimmed);
+    if let Some(env_name) = env_name {
+        if let Some(value) = getenv(env_name).filter(|value| !value.is_empty()) {
+            return Some(value);
+        }
+    }
+
+    let path = file
+        .and_then(non_empty_trimmed)
+        .and_then(|path| expand_qdrant_api_key_path(path, home_dir))?;
+    let contents = fs::read_to_string(path).ok()?;
+    qdrant_api_key_from_file_contents(&contents, env_name)
+}
+
+fn non_empty_trimmed(value: &str) -> Option<&str> {
+    let trimmed = value.trim();
+    (!trimmed.is_empty()).then_some(trimmed)
+}
+
+fn expand_qdrant_api_key_path<H>(path: &str, home_dir: H) -> Option<PathBuf>
+where
+    H: Fn() -> Option<PathBuf>,
+{
+    if path == "~" || path == "$HOME" {
+        return home_dir();
+    }
+    if let Some(rest) = path.strip_prefix("~/") {
+        return home_dir().map(|home| home.join(rest));
+    }
+    if let Some(rest) = path.strip_prefix("$HOME/") {
+        return home_dir().map(|home| home.join(rest));
+    }
+    Some(PathBuf::from(path))
+}
+
+fn qdrant_api_key_from_file_contents(contents: &str, env_name: Option<&str>) -> Option<String> {
+    if let Some(env_name) = env_name {
+        for line in contents.lines() {
+            if let Some((name, value)) = parse_env_assignment(line) {
+                if name == env_name {
+                    return clean_file_api_key_value(value);
+                }
+            }
+        }
+    }
+
+    let mut non_empty_lines = contents
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with('#'));
+    let first = non_empty_lines.next()?;
+    if non_empty_lines.next().is_some() {
+        return None;
+    }
+    if let Some((_, value)) = parse_env_assignment(first) {
+        if env_name.is_none() {
+            clean_file_api_key_value(value)
+        } else {
+            None
+        }
+    } else {
+        clean_file_api_key_value(first)
+    }
+}
+
+fn parse_env_assignment(line: &str) -> Option<(&str, &str)> {
+    let trimmed = line.trim();
+    if trimmed.is_empty() || trimmed.starts_with('#') {
+        return None;
+    }
+    let assignment = if let Some(rest) = trimmed.strip_prefix("export") {
+        if rest.chars().next().is_some_and(char::is_whitespace) {
+            rest.trim_start()
+        } else {
+            trimmed
+        }
+    } else {
+        trimmed
+    };
+    let (name, value) = assignment.split_once('=')?;
+    let name = name.trim();
+    (!name.is_empty()).then_some((name, value))
+}
+
+fn clean_file_api_key_value(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    let unquoted = trimmed
+        .strip_prefix('"')
+        .and_then(|value| value.strip_suffix('"'))
+        .or_else(|| {
+            trimmed
+                .strip_prefix('\'')
+                .and_then(|value| value.strip_suffix('\''))
+        })
+        .unwrap_or(trimmed)
+        .trim();
+    (!unquoted.is_empty()).then(|| unquoted.to_string())
 }
 
 /// Settings for the semantic query cache (see `aquifer::SemanticCache`).
@@ -245,6 +375,7 @@ impl ArtesianConfig {
                 qdrant_url: None,
                 qdrant_rest_url: None,
                 qdrant_api_key_env: None,
+                qdrant_api_key_file: None,
                 local_rerank_enabled: default_local_rerank_enabled(),
                 hyde_enabled: false,
                 multi_query_enabled: false,
@@ -312,4 +443,101 @@ fn default_track_access() -> bool {
 
 fn default_track_savings() -> bool {
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_qdrant_api_key_from;
+    use std::{
+        fs,
+        path::PathBuf,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    #[test]
+    fn qdrant_api_key_reads_plain_file_with_tilde_and_trims_quotes() {
+        let home = temp_dir("artesian-core-qdrant-home");
+        fs::create_dir_all(&home).expect("create home");
+        fs::write(home.join("plain.key"), "  \"plain-file-key\" \n").expect("write key");
+
+        let key = resolve_qdrant_api_key_from(
+            Some("QDRANT__SERVICE__API_KEY"),
+            Some("~/plain.key"),
+            |_| None,
+            || Some(home.clone()),
+        );
+
+        assert_eq!(key.as_deref(), Some("plain-file-key"));
+        let _ = fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn qdrant_api_key_reads_env_style_file_by_configured_name_with_home() {
+        let home = temp_dir("artesian-core-qdrant-env-home");
+        fs::create_dir_all(home.join(".macray")).expect("create key dir");
+        fs::write(
+            home.join(".macray").join("qdrant.env"),
+            "OTHER_KEY=ignored\nexport QDRANT__SERVICE__API_KEY='env-file-key'\n",
+        )
+        .expect("write env file");
+
+        let key = resolve_qdrant_api_key_from(
+            Some("QDRANT__SERVICE__API_KEY"),
+            Some("$HOME/.macray/qdrant.env"),
+            |_| None,
+            || Some(home.clone()),
+        );
+
+        assert_eq!(key.as_deref(), Some("env-file-key"));
+        let _ = fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn qdrant_api_key_env_var_wins_over_file() {
+        let home = temp_dir("artesian-core-qdrant-precedence-home");
+        fs::create_dir_all(&home).expect("create home");
+        fs::write(home.join("plain.key"), "file-key\n").expect("write key");
+
+        let key = resolve_qdrant_api_key_from(
+            Some("QDRANT__SERVICE__API_KEY"),
+            Some("~/plain.key"),
+            |name| (name == "QDRANT__SERVICE__API_KEY").then(|| "env-key".to_string()),
+            || Some(home.clone()),
+        );
+
+        assert_eq!(key.as_deref(), Some("env-key"));
+        let _ = fs::remove_dir_all(&home);
+    }
+
+    #[test]
+    fn qdrant_api_key_missing_file_or_absent_key_resolves_to_none() {
+        let home = temp_dir("artesian-core-qdrant-missing-home");
+        fs::create_dir_all(&home).expect("create home");
+        fs::write(home.join("qdrant.env"), "OTHER_KEY=ignored\n").expect("write env file");
+
+        let missing = resolve_qdrant_api_key_from(
+            Some("QDRANT__SERVICE__API_KEY"),
+            Some("~/missing.env"),
+            |_| None,
+            || Some(home.clone()),
+        );
+        let absent = resolve_qdrant_api_key_from(
+            Some("QDRANT__SERVICE__API_KEY"),
+            Some("~/qdrant.env"),
+            |_| None,
+            || Some(home.clone()),
+        );
+
+        assert_eq!(missing, None);
+        assert_eq!(absent, None);
+        let _ = fs::remove_dir_all(&home);
+    }
+
+    fn temp_dir(name: &str) -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or(0);
+        std::env::temp_dir().join(format!("{name}-{}-{unique}", std::process::id()))
+    }
 }

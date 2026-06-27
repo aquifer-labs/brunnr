@@ -3781,9 +3781,7 @@ fn open_qdrant_backend(config: &MemoryConfig) -> anyhow::Result<Arc<dyn MemoryBa
         .qdrant_rest_url
         .clone()
         .or_else(|| env::var("QDRANT_REST_URL").ok());
-    if let Some(env_name) = &config.qdrant_api_key_env {
-        vector_config.api_key = env::var(env_name).ok();
-    }
+    vector_config.api_key = config.resolve_qdrant_api_key();
     let store = QdrantVectorStore::connect(vector_config)?;
     let backend = VectorMemoryBackend::new(
         store,
