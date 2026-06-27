@@ -1,20 +1,131 @@
 // SPDX-License-Identifier: Apache-2.0
 
-use std::{process::Command, sync::Arc};
+use std::{
+    env,
+    ffi::OsString,
+    path::{Path, PathBuf},
+    process::Command,
+    sync::Arc,
+};
 
 use aquifer::{FilesBackend, SessionKey, SessionStore};
 use artesian_test_support::TempDir;
 use headgate::{LifecycleEntry, SnapshotEntry, WorkingContextBundle, WorkingContextSnapshot};
 
+struct IsolatedRegistrationEnv {
+    artesian_home: PathBuf,
+    real_home: PathBuf,
+    path: OsString,
+}
+
+impl IsolatedRegistrationEnv {
+    fn new(tempdir: &TempDir, name: &str) -> Self {
+        let artesian_home = tempdir.join(format!("{name}-artesian-home"));
+        let real_home = tempdir.join(format!("{name}-real-home"));
+        let fake_bin = tempdir.join(format!("{name}-bin"));
+        std::fs::create_dir_all(&artesian_home).expect("create ARTESIAN_HOME");
+        std::fs::create_dir_all(&real_home).expect("create HOME");
+        std::fs::create_dir_all(&fake_bin).expect("create fake bin");
+
+        let fake_claude = fake_bin.join("claude");
+        std::fs::write(
+            &fake_claude,
+            "#!/bin/sh\n\
+mkdir -p \"$HOME\"\n\
+printf 'external claude invoked\\n' > \"$HOME/claude-invoked\"\n\
+printf '{\"leaked\":true}\\n' > \"$HOME/.claude.json\"\n\
+exit 0\n",
+        )
+        .expect("write fake claude");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&fake_claude, std::fs::Permissions::from_mode(0o755))
+                .expect("make fake claude executable");
+        }
+
+        let mut path_entries = vec![fake_bin];
+        if let Some(existing_path) = env::var_os("PATH") {
+            path_entries.extend(env::split_paths(&existing_path));
+        }
+        let path = env::join_paths(path_entries).expect("join PATH");
+
+        Self {
+            artesian_home,
+            real_home,
+            path,
+        }
+    }
+
+    fn command(&self, binary: &str) -> Command {
+        let mut command = Command::new(binary);
+        command
+            .env("ARTESIAN_HOME", &self.artesian_home)
+            .env("HOME", &self.real_home)
+            .env("PATH", &self.path);
+        command
+    }
+
+    fn assert_registration_isolated(&self, project_dir: &Path) {
+        let claude_user = self.artesian_home.join(".claude.json");
+        let claude = std::fs::read_to_string(&claude_user)
+            .expect("Claude user registration should be written under ARTESIAN_HOME");
+        assert!(
+            claude.contains("artesian-mcp"),
+            "Claude registration should mention artesian-mcp: {claude}"
+        );
+        assert!(
+            claude.contains("artesian.toml"),
+            "Claude registration should mention the project config: {claude}"
+        );
+
+        let codex = std::fs::read_to_string(self.artesian_home.join(".codex").join("config.toml"))
+            .expect("Codex config should be written under ARTESIAN_HOME");
+        assert!(
+            codex.contains("artesian-mcp"),
+            "Codex registration should mention artesian-mcp: {codex}"
+        );
+
+        let zed = std::fs::read_to_string(
+            self.artesian_home
+                .join(".config")
+                .join("zed")
+                .join("settings.json"),
+        )
+        .expect("Zed settings should be written under ARTESIAN_HOME");
+        assert!(
+            zed.contains("artesian-mcp"),
+            "Zed registration should mention artesian-mcp: {zed}"
+        );
+
+        assert!(
+            project_dir.join(".mcp.json").exists(),
+            "project-scoped Claude MCP config should still be written"
+        );
+        assert!(
+            !self.real_home.join(".claude.json").exists(),
+            "registration must not write Claude config under HOME when ARTESIAN_HOME is sandboxed"
+        );
+        assert!(
+            !self.real_home.join("claude-invoked").exists(),
+            "sandboxed registration must not invoke the external claude CLI"
+        );
+        assert!(
+            !self.real_home.join(".codex").join("config.toml").exists(),
+            "registration must not write Codex config under HOME when ARTESIAN_HOME is sandboxed"
+        );
+    }
+}
+
 #[test]
 fn cli_memory_mode_round_trip_and_spawn_alias_work() {
     let tempdir = TempDir::new("cli");
-    let home = tempdir.join("home");
+    let isolated = IsolatedRegistrationEnv::new(&tempdir, "round-trip");
     let binary = env!("CARGO_BIN_EXE_artesian");
 
-    let init = Command::new(binary)
+    let mut init_cmd = isolated.command(binary);
+    let init = init_cmd
         .arg("init")
-        .env("ARTESIAN_HOME", &home)
         .current_dir(tempdir.path())
         .output()
         .expect("init should run");
@@ -22,18 +133,10 @@ fn cli_memory_mode_round_trip_and_spawn_alias_work() {
     assert!(std::fs::read_to_string(tempdir.join(".mcp.json"))
         .expect("Claude MCP config should be written")
         .contains("artesian-mcp"));
-    assert!(
-        std::fs::read_to_string(home.join(".codex").join("config.toml"))
-            .expect("Codex config should be written")
-            .contains("artesian-mcp")
-    );
-    assert!(
-        std::fs::read_to_string(home.join(".config").join("zed").join("settings.json"))
-            .expect("Zed settings should be written")
-            .contains("artesian-mcp")
-    );
+    isolated.assert_registration_isolated(tempdir.path());
 
-    let spawn = Command::new(binary)
+    let mut spawn_cmd = isolated.command(binary);
+    let spawn = spawn_cmd
         .args(["spawn", "worker", "echo", "--arg", "artesian-spawn"])
         .current_dir(tempdir.path())
         .output()
@@ -42,7 +145,8 @@ fn cli_memory_mode_round_trip_and_spawn_alias_work() {
     assert!(stdout(&spawn).contains("role=worker agent=echo"));
     assert!(stdout(&spawn).contains("artesian-spawn"));
 
-    let store = Command::new(binary)
+    let mut store_cmd = isolated.command(binary);
+    let store = store_cmd
         .args([
             "memory",
             "store",
@@ -61,7 +165,8 @@ fn cli_memory_mode_round_trip_and_spawn_alias_work() {
         .expect("store should run");
     assert!(store.status.success(), "{}", stderr(&store));
 
-    let find = Command::new(binary)
+    let mut find_cmd = isolated.command(binary);
+    let find = find_cmd
         .args(["memory", "find", "works", "--node-id", "node:cli"])
         .current_dir(tempdir.path())
         .output()
@@ -72,7 +177,8 @@ fn cli_memory_mode_round_trip_and_spawn_alias_work() {
     assert!(find_out.contains("source=cli-test"));
     assert!(find_out.contains("confidence=0.75"));
 
-    let answer = Command::new(binary)
+    let mut answer_cmd = isolated.command(binary);
+    let answer = answer_cmd
         .args([
             "memory",
             "answer",
@@ -93,7 +199,8 @@ fn cli_memory_mode_round_trip_and_spawn_alias_work() {
         .expect("answer should be a string")
         .contains("[node:cli]"));
 
-    let commit = Command::new(binary)
+    let mut commit_cmd = isolated.command(binary);
+    let commit = commit_cmd
         .args(["memory", "commit", "memory works", "--budget-tokens", "256"])
         .current_dir(tempdir.path())
         .output()
@@ -106,7 +213,8 @@ fn cli_memory_mode_round_trip_and_spawn_alias_work() {
     );
     assert!(commit_out.contains("\"admitted\": 1"), "{commit_out}");
 
-    let qualify_admit = Command::new(binary)
+    let mut qualify_admit_cmd = isolated.command(binary);
+    let qualify_admit = qualify_admit_cmd
         .args([
             "qualify",
             "Rust qualify gate admits fresh candidate",
@@ -137,7 +245,8 @@ fn cli_memory_mode_round_trip_and_spawn_alias_work() {
         .expect("confidence should be numeric");
     assert!((0.0..=1.0).contains(&confidence));
 
-    let qualify_reject = Command::new(binary)
+    let mut qualify_reject_cmd = isolated.command(binary);
+    let qualify_reject = qualify_reject_cmd
         .args(["qualify", "Artesian memory mode works", "--json"])
         .current_dir(tempdir.path())
         .output()
@@ -162,14 +271,16 @@ fn cli_memory_mode_round_trip_and_spawn_alias_work() {
         "[2026-01-02] CLI backfill is idempotent",
     )
     .expect("import file should be written");
-    let backfill = Command::new(binary)
+    let mut backfill_cmd = isolated.command(binary);
+    let backfill = backfill_cmd
         .args(["backfill", import_dir.to_str().expect("utf8 path")])
         .current_dir(tempdir.path())
         .output()
         .expect("backfill should run");
     assert!(backfill.status.success(), "{}", stderr(&backfill));
     assert!(stdout(&backfill).contains("imported=1 skipped_duplicates=0"));
-    let backfill_again = Command::new(binary)
+    let mut backfill_again_cmd = isolated.command(binary);
+    let backfill_again = backfill_again_cmd
         .args(["backfill", import_dir.to_str().expect("utf8 path")])
         .current_dir(tempdir.path())
         .output()
@@ -792,30 +903,31 @@ fn cli_skill_replay_guards_dry_run_and_savings() {
 #[test]
 fn memory_find_records_savings_entry_and_tokens_reflects_it() {
     let tempdir = TempDir::new("cli-savings-find");
-    let home = tempdir.join("home"); // isolate MCP registration writes from the real home dir
+    let isolated = IsolatedRegistrationEnv::new(&tempdir, "savings-find");
     let stats_dir = tempdir.join("stats");
     let binary = env!("CARGO_BIN_EXE_artesian");
 
-    let init = Command::new(binary)
+    let mut init_cmd = isolated.command(binary);
+    let init = init_cmd
         .arg("init")
-        .env("ARTESIAN_HOME", &home)
         .current_dir(tempdir.path())
         .output()
         .expect("init should run");
     assert!(init.status.success(), "{}", stderr(&init));
+    isolated.assert_registration_isolated(tempdir.path());
 
-    let store = Command::new(binary)
+    let mut store_cmd = isolated.command(binary);
+    let store = store_cmd
         .args(["memory", "store", "Rust is used for core crates"])
-        .env("ARTESIAN_HOME", &home)
         .current_dir(tempdir.path())
         .output()
         .expect("store should run");
     assert!(store.status.success(), "{}", stderr(&store));
 
     // `memory find` with ARTESIAN_STATS_DIR pointing to our temp dir.
-    let find = Command::new(binary)
+    let mut find_cmd = isolated.command(binary);
+    let find = find_cmd
         .args(["memory", "find", "rust"])
-        .env("ARTESIAN_HOME", &home)
         .env("ARTESIAN_STATS_DIR", &stats_dir)
         .current_dir(tempdir.path())
         .output()
@@ -839,9 +951,9 @@ fn memory_find_records_savings_entry_and_tokens_reflects_it() {
     );
 
     // `artesian tokens` must acknowledge the recorded recall.
-    let tokens = Command::new(binary)
+    let mut tokens_cmd = isolated.command(binary);
+    let tokens = tokens_cmd
         .args(["tokens"])
-        .env("ARTESIAN_HOME", &home)
         .env("ARTESIAN_STATS_DIR", &stats_dir)
         .current_dir(tempdir.path())
         .output()
@@ -863,29 +975,30 @@ fn memory_find_records_savings_entry_and_tokens_reflects_it() {
 #[test]
 fn memory_context_records_savings_entry() {
     let tempdir = TempDir::new("cli-savings-context");
-    let home = tempdir.join("home");
+    let isolated = IsolatedRegistrationEnv::new(&tempdir, "savings-context");
     let stats_dir = tempdir.join("stats");
     let binary = env!("CARGO_BIN_EXE_artesian");
 
-    let init = Command::new(binary)
+    let mut init_cmd = isolated.command(binary);
+    let init = init_cmd
         .arg("init")
-        .env("ARTESIAN_HOME", &home)
         .current_dir(tempdir.path())
         .output()
         .expect("init should run");
     assert!(init.status.success(), "{}", stderr(&init));
+    isolated.assert_registration_isolated(tempdir.path());
 
-    let store = Command::new(binary)
+    let mut store_cmd = isolated.command(binary);
+    let store = store_cmd
         .args(["memory", "store", "Rust is used for core crates"])
-        .env("ARTESIAN_HOME", &home)
         .current_dir(tempdir.path())
         .output()
         .expect("store should run");
     assert!(store.status.success(), "{}", stderr(&store));
 
-    let context = Command::new(binary)
+    let mut context_cmd = isolated.command(binary);
+    let context = context_cmd
         .args(["memory", "context", "rust"])
-        .env("ARTESIAN_HOME", &home)
         .env("ARTESIAN_STATS_DIR", &stats_dir)
         .current_dir(tempdir.path())
         .output()
@@ -912,17 +1025,18 @@ fn memory_context_records_savings_entry() {
 #[test]
 fn memory_find_track_savings_false_writes_nothing() {
     let tempdir = TempDir::new("cli-savings-off");
-    let home = tempdir.join("home");
+    let isolated = IsolatedRegistrationEnv::new(&tempdir, "savings-off");
     let stats_dir = tempdir.join("stats");
     let binary = env!("CARGO_BIN_EXE_artesian");
 
-    let init = Command::new(binary)
+    let mut init_cmd = isolated.command(binary);
+    let init = init_cmd
         .arg("init")
-        .env("ARTESIAN_HOME", &home)
         .current_dir(tempdir.path())
         .output()
         .expect("init should run");
     assert!(init.status.success(), "{}", stderr(&init));
+    isolated.assert_registration_isolated(tempdir.path());
 
     // Patch track_savings = false into artesian.toml.
     let config_path = tempdir.join("artesian.toml");
@@ -935,17 +1049,17 @@ fn memory_find_track_savings_false_writes_nothing() {
     };
     std::fs::write(&config_path, patched).expect("write patched config");
 
-    let store = Command::new(binary)
+    let mut store_cmd = isolated.command(binary);
+    let store = store_cmd
         .args(["memory", "store", "some content"])
-        .env("ARTESIAN_HOME", &home)
         .current_dir(tempdir.path())
         .output()
         .expect("store should run");
     assert!(store.status.success(), "{}", stderr(&store));
 
-    let find = Command::new(binary)
+    let mut find_cmd = isolated.command(binary);
+    let find = find_cmd
         .args(["memory", "find", "content"])
-        .env("ARTESIAN_HOME", &home)
         .env("ARTESIAN_STATS_DIR", &stats_dir)
         .current_dir(tempdir.path())
         .output()

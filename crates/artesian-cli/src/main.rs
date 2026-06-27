@@ -5001,12 +5001,63 @@ fn command_on_path(cmd: &str) -> bool {
         .unwrap_or(false)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ClaudeUserRegistrationStrategy {
+    ExternalCli,
+    DirectFile,
+}
+
+fn claude_user_registration_strategy() -> ClaudeUserRegistrationStrategy {
+    let artesian_home = env::var_os("ARTESIAN_HOME").map(PathBuf::from);
+    let real_home = env::var_os("HOME").map(PathBuf::from);
+    claude_user_registration_strategy_for(
+        artesian_home.as_deref(),
+        real_home.as_deref(),
+        command_on_path("claude"),
+    )
+}
+
+fn claude_user_registration_strategy_for(
+    artesian_home: Option<&Path>,
+    real_home: Option<&Path>,
+    claude_on_path: bool,
+) -> ClaudeUserRegistrationStrategy {
+    let sandboxed_home = artesian_home.is_some_and(|home| {
+        real_home
+            .map(|real_home| paths_resolve_differently(home, real_home))
+            .unwrap_or(true)
+    });
+    if sandboxed_home || !claude_on_path {
+        ClaudeUserRegistrationStrategy::DirectFile
+    } else {
+        ClaudeUserRegistrationStrategy::ExternalCli
+    }
+}
+
+fn paths_resolve_differently(left: &Path, right: &Path) -> bool {
+    resolved_home_path(left) != resolved_home_path(right)
+}
+
+fn resolved_home_path(path: &Path) -> PathBuf {
+    path.canonicalize().unwrap_or_else(|_| {
+        if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            env::current_dir()
+                .map(|current_dir| current_dir.join(path))
+                .unwrap_or_else(|_| path.to_path_buf())
+        }
+    })
+}
+
 /// Register the server at Claude Code **user scope** (project `.mcp.json` is not
 /// auto-loaded). Prefer the `claude` CLI; fall back to editing `~/.claude.json`.
 /// Best-effort: never fail `init` if Claude Code is absent.
 fn register_claude_user_scope(command: &str, config_path: &Path) {
     let config_arg = config_path.display().to_string();
-    if command_on_path("claude") {
+    // ARTESIAN_HOME is the test/sandbox home. The external `claude` CLI ignores it
+    // and writes to the real HOME, so sandboxed runs must use the direct writer.
+    if claude_user_registration_strategy() == ClaudeUserRegistrationStrategy::ExternalCli {
         // Idempotent: drop any prior entry, then add fresh.
         let _ = std::process::Command::new("claude")
             .args(["mcp", "remove", "--scope", "user", MCP_SERVER_NAME])
@@ -5035,6 +5086,9 @@ fn register_claude_user_scope(command: &str, config_path: &Path) {
 
 fn write_claude_user_json(command: &str, config_path: &Path) -> Result<()> {
     let path = home_dir()?.join(".claude.json");
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
     let mut root = read_json_object(&path)?;
     let server = json!({
         "command": command,
@@ -5402,6 +5456,30 @@ mod tests {
         assert!(diagnostic.fix.contains("qdrant_api_key_file"));
         assert!(!diagnostic.summary.contains("not available in this build"));
         assert!(!diagnostic.fix.contains("memory rebuild"));
+    }
+
+    #[test]
+    fn claude_registration_strategy_uses_file_for_sandboxed_artesian_home() {
+        let tmp = temp_path("artesian-claude-home-strategy");
+        let real_home = tmp.join("real-home");
+        let artesian_home = tmp.join("artesian-home");
+        fs::create_dir_all(&real_home).expect("create real home");
+        fs::create_dir_all(&artesian_home).expect("create artesian home");
+
+        assert_eq!(
+            claude_user_registration_strategy_for(Some(&artesian_home), Some(&real_home), true),
+            ClaudeUserRegistrationStrategy::DirectFile
+        );
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn claude_registration_strategy_prefers_cli_without_artesian_home() {
+        assert_eq!(
+            claude_user_registration_strategy_for(None, Some(Path::new("/home/user")), true),
+            ClaudeUserRegistrationStrategy::ExternalCli
+        );
     }
 
     struct ScriptedLoopCommands {
