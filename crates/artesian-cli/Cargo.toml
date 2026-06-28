@@ -42,6 +42,7 @@ path = "src/main.rs"
 
 [dev-dependencies]
 artesian-test-support.workspace = true
+rusqlite.workspace = true
 
 [lints]
 workspace = true

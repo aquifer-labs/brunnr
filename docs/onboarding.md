@@ -31,6 +31,12 @@ artesian init --backend qdrant \            # shared / multi-user
   --project my-project --qdrant-url http://HOST:6333
 ```
 
+`init` writes `[memory] project = "..."` to `artesian.toml` (`shared` when omitted) and ensures the
+vector collection has a `project` payload index. Recall and context use the configured project by
+default and return that project's memory plus `shared`; discover current partitions with
+`artesian projects` or the MCP `memory.projects` tool. Use `--projects a,b,c` to document the known
+project set during setup; project names are free strings supplied by the operator.
+
 For Qdrant, one URL is enough on default ports: `:6333` is treated as REST and the gRPC sibling
 `:6334` is derived; `:6334` derives REST `:6333`. If you use custom ports, pass both
 `--qdrant-url` and `--qdrant-rest-url`. `init` and import commands preflight both endpoints
@@ -77,12 +83,14 @@ still present and `memory.find` + `neighbors` work — consolidate only adds LLM
 For a non-expert second project/user on the same Qdrant, use the wrapper:
 
 ```shell
-artesian onboard my-project ./memory-export \
+artesian onboard --project my-project ./memory-export \
   --qdrant-url http://HOST:6333 --user-id user-a
 ```
 
-Each project gets its own collection. `user_id` is also written as payload tenancy metadata inside
-the project collection.
+Projects share the configured collection and are partitioned by the `project` payload field. The
+wrapper also writes the memory-routing snippet into the working directory's `CLAUDE.md` and
+`AGENTS.md` unless they already contain the Artesian marker. `user_id` is also written as payload
+tenancy metadata.
 
 **Many agents on one project (Flume teams).** A team of agents shares the project collection and
 reads each other's `shared` knowledge while keeping per-teammate `agent`/`task` scratch isolated —
@@ -160,18 +168,21 @@ without breaking anything**.
 - `backend`: `files` (default) | `sqlite-vec` | `qdrant`
 - `qdrant_url` and API key — only if `backend = qdrant`; `qdrant_rest_url` is optional on default
   ports
-- `project`: the project name (becomes the collection / OKF bundle scope) and the path to any
-  existing memory to backfill
+- `project`: the project partition name (defaults to `shared` when omitted), optional known
+  `projects`, and the path to any existing memory to backfill
 
 **Steps:**
 1. Build or locate the binary: `cargo build --workspace` (or use a prebuilt `artesian`).
-2. `artesian init --project <project> --backend <backend> [--qdrant-url …]`. This is
-   idempotent and only writes Artesian's own MCP entry; it must NOT touch unrelated config.
+2. `artesian init --project <project> --projects <a,b,c> --backend <backend> [--qdrant-url …]`.
+   This writes `[memory] project`, ensures the `project` payload index, and only writes Artesian's
+   own MCP entry; it must NOT touch unrelated config.
 3. If `backend = qdrant`: verify the server is reachable (`/healthz`) and that the collection's
    compat metadata (model + dim) matches the pinned model; if it mismatches, STOP and ask — run
    `artesian migrate` rather than mixing vector spaces.
 4. Backfill the project's existing memory/tasks into the OKF bundle and selected backend:
-   `artesian backfill <path>` (idempotent, content-hash dedup; never deletes the originals).
+   `artesian backfill <path> --project <project>` (idempotent, content-hash dedup; never deletes
+   the originals). Recall returns project ∪ `shared`; verify the applied filter with the
+   `scope_applied` block.
    Relations are extracted automatically — no LLM needed. To opt out: `--no-link`.
    To also run LLM consolidation in one step (requires [acc.compressor/judge]): `--consolidate`.
 5. Verify: `artesian memory store "<probe>"` then `artesian memory find "<probe>"` returns it; report
@@ -204,8 +215,9 @@ the user's existing Markdown notes, and wire agents to use it. Act autonomously 
 below; the user fills only the CONFIGURE block.
 
 ==================== CONFIGURE BEFORE RUNNING ====================
-# Collection / project name (your choice, lowercase):
-COLLECTION="personal"
+# Collection and default project names (your choice, lowercase):
+COLLECTION="artesian-memory"
+PROJECT="personal"
 
 # Root directories with .md notes (one per line; nested subfolders are scanned RECURSIVELY, so
 # list only the roots):
@@ -246,11 +258,11 @@ Steps:
    artesian-memory MCP server for Codex/Zed/Claude Code, and recursively imports the directory).
    Entity relations are extracted automatically (no LLM); pass --no-link to opt out:
    mkdir -p ~/artesian && cd ~/artesian
-   artesian onboard "$COLLECTION" "${DIRS[0]}" --collection "$COLLECTION" "${BACKEND_ARGS[@]}"
+   artesian onboard --project "$PROJECT" "${DIRS[0]}" --collection "$COLLECTION" "${BACKEND_ARGS[@]}"
 
 4) Import the remaining directories (recursive, idempotent, entity relations on by default):
    cd ~/artesian
-   for d in "${DIRS[@]:1}"; do artesian backfill "$d"; done
+   for d in "${DIRS[@]:1}"; do artesian backfill "$d" --project "$PROJECT"; done
 
    Optional — run the LLM consolidation pass after all directories are imported.
    Requires ANTHROPIC_API_KEY or another LLM configured in artesian.toml.

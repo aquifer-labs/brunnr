@@ -161,6 +161,7 @@ dependencies = [
  "headgate",
  "headrace",
  "nix",
+ "rusqlite",
  "sandbox",
  "serde",
  "serde_json",

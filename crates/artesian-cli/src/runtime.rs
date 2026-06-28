@@ -12,8 +12,8 @@ use std::env;
 
 use anyhow::{bail, Context, Result};
 use aquifer::{
-    FilesBackend, MemoryBackend, SqliteVecVectorStore, SqliteVecVectorStoreConfig,
-    VectorMemoryBackend, VectorMemoryConfig,
+    FilesBackend, MemoryBackend, PayloadIndex, SqliteVecVectorStore, SqliteVecVectorStoreConfig,
+    VectorCollection, VectorMemoryBackend, VectorMemoryConfig, VectorStore,
 };
 use artesian_core::{Agent, AgentBinding, ArtesianConfig, MemoryBackendKind, MemoryConfig, Role};
 use artesian_process_agent::{ProcessAgent, ProcessAgentConfig, ProcessSupervisor};
@@ -124,6 +124,52 @@ pub fn open_memory_backend(config: &MemoryConfig) -> Result<Arc<dyn MemoryBacken
 /// default); import paths call this variant so every ingested chunk arrives pre-linked.
 pub fn open_memory_backend_with_relations(config: &MemoryConfig) -> Result<Arc<dyn MemoryBackend>> {
     open_memory_backend_inner(config, true)
+}
+
+pub async fn ensure_memory_collection(config: &MemoryConfig) -> Result<()> {
+    match config.backend {
+        MemoryBackendKind::Files => Ok(()),
+        MemoryBackendKind::SqliteVec => {
+            let store = SqliteVecVectorStore::open(SqliteVecVectorStoreConfig::new(sqlite_path(
+                &config.root,
+            )))?;
+            ensure_vector_collection(&store, config).await
+        }
+        MemoryBackendKind::Qdrant => ensure_qdrant_memory_collection(config).await,
+        MemoryBackendKind::TencentDb => bail!("TencentDB backend is not available yet"),
+    }
+}
+
+async fn ensure_vector_collection<S>(store: &S, config: &MemoryConfig) -> Result<()>
+where
+    S: VectorStore,
+{
+    let vector_config = vector_memory_config_from(config, false);
+    store
+        .ensure_collection(VectorCollection {
+            name: vector_config.collection.clone(),
+            dimensions: vector_config.dimensions,
+            distance: vector_config.distance,
+            quantization: vector_config.quantization,
+        })
+        .await
+        .with_context(|| format!("ensure memory collection {}", vector_config.collection))?;
+    ensure_project_payload_index(store, &vector_config.collection).await
+}
+
+async fn ensure_project_payload_index<S>(store: &S, collection: &str) -> Result<()>
+where
+    S: VectorStore,
+{
+    store
+        .ensure_payload_index(
+            collection,
+            PayloadIndex {
+                field: "project".to_string(),
+            },
+        )
+        .await
+        .with_context(|| format!("ensure project payload index on collection {collection}"))
 }
 
 fn open_memory_backend_inner(
@@ -338,6 +384,17 @@ fn open_qdrant_backend_inner(
     _config: &MemoryConfig,
     _relation_extraction: bool,
 ) -> Result<Arc<dyn MemoryBackend>> {
+    bail!("Qdrant backend requires building artesian-cli with the qdrant feature")
+}
+
+#[cfg(feature = "qdrant")]
+async fn ensure_qdrant_memory_collection(config: &MemoryConfig) -> Result<()> {
+    let store = QdrantVectorStore::connect(qdrant_config_from(config)?)?;
+    ensure_vector_collection(&store, config).await
+}
+
+#[cfg(not(feature = "qdrant"))]
+async fn ensure_qdrant_memory_collection(_config: &MemoryConfig) -> Result<()> {
     bail!("Qdrant backend requires building artesian-cli with the qdrant feature")
 }
 

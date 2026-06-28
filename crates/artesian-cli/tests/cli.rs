@@ -297,6 +297,106 @@ fn cli_memory_mode_round_trip_and_spawn_alias_work() {
 }
 
 #[test]
+fn cli_init_project_writes_config_and_routing_snippets_idempotently() {
+    let tempdir = TempDir::new("cli-init-project-routing");
+    let isolated = IsolatedRegistrationEnv::new(&tempdir, "init-project");
+    let binary = env!("CARGO_BIN_EXE_artesian");
+
+    for _ in 0..2 {
+        let mut init_cmd = isolated.command(binary);
+        let init = init_cmd
+            .args(["init", "--project", "foo", "--projects", "foo,bar"])
+            .current_dir(tempdir.path())
+            .output()
+            .expect("init should run");
+        assert!(init.status.success(), "{}", stderr(&init));
+    }
+
+    let config = std::fs::read_to_string(tempdir.join("artesian.toml"))
+        .expect("init should write artesian.toml");
+    assert!(config.contains("project = \"foo\""), "{config}");
+
+    for file in ["CLAUDE.md", "AGENTS.md"] {
+        let text = std::fs::read_to_string(tempdir.join(file))
+            .unwrap_or_else(|error| panic!("{file} should be written: {error}"));
+        assert!(text.contains("Memory & Context — via Artesian"), "{text}");
+        assert!(text.contains("foo"), "{text}");
+        assert_eq!(
+            text.matches("Memory & Context — via Artesian").count(),
+            1,
+            "{file} should contain one routing snippet after two init runs: {text}"
+        );
+    }
+
+    isolated.assert_registration_isolated(tempdir.path());
+}
+
+#[test]
+fn cli_init_defaults_project_to_shared() {
+    let tempdir = TempDir::new("cli-init-shared-routing");
+    let isolated = IsolatedRegistrationEnv::new(&tempdir, "init-shared");
+    let binary = env!("CARGO_BIN_EXE_artesian");
+
+    let mut init_cmd = isolated.command(binary);
+    let init = init_cmd
+        .arg("init")
+        .current_dir(tempdir.path())
+        .output()
+        .expect("init should run");
+    assert!(init.status.success(), "{}", stderr(&init));
+
+    let config = std::fs::read_to_string(tempdir.join("artesian.toml"))
+        .expect("init should write artesian.toml");
+    assert!(config.contains("project = \"shared\""), "{config}");
+    let agents =
+        std::fs::read_to_string(tempdir.join("AGENTS.md")).expect("AGENTS.md should be written");
+    assert!(agents.contains("shared"), "{agents}");
+
+    isolated.assert_registration_isolated(tempdir.path());
+}
+
+#[test]
+fn cli_init_sqlite_vec_ensures_project_payload_index() {
+    let tempdir = TempDir::new("cli-init-project-index");
+    let isolated = IsolatedRegistrationEnv::new(&tempdir, "init-index");
+    let binary = env!("CARGO_BIN_EXE_artesian");
+
+    let mut init_cmd = isolated.command(binary);
+    let init = init_cmd
+        .args(["init", "--backend", "sqlite-vec", "--project", "foo"])
+        .current_dir(tempdir.path())
+        .output()
+        .expect("init should run");
+    assert!(init.status.success(), "{}", stderr(&init));
+
+    let database = tempdir.join(".artesian").join("memory.sqlite3");
+    assert!(database.exists(), "sqlite init should create {database:?}");
+    let connection = rusqlite::Connection::open(database).expect("open sqlite memory db");
+    let mut statement = connection
+        .prepare(
+            "SELECT name, sql FROM sqlite_master \
+             WHERE type = 'index' AND name LIKE '%project_idx'",
+        )
+        .expect("prepare sqlite_master query");
+    let indexes = statement
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?))
+        })
+        .expect("query indexes")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("read index rows");
+
+    assert!(
+        indexes
+            .iter()
+            .any(|(_name, sql)| sql.as_deref().is_some_and(|sql| sql.contains("$.project"))),
+        "init should create a JSON payload index for project: {indexes:?}"
+    );
+
+    isolated.assert_registration_isolated(tempdir.path());
+}
+
+#[test]
 fn cli_backfill_reports_bad_markdown_and_imports_tasks() {
     let tempdir = TempDir::new("cli-import");
     let binary = env!("CARGO_BIN_EXE_artesian");

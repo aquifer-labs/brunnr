@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     env,
     ffi::OsString,
     fs,
@@ -60,6 +60,7 @@ use tokio::process::Command as TokioCommand;
 use toml_edit::{value, Array, DocumentMut, Item, Table};
 
 const DEFAULT_CONFIG: &str = "artesian.toml";
+const ROUTING_SNIPPET_MARKER: &str = "Memory & Context — via Artesian";
 const MCP_SERVER_NAME: &str = "artesian-memory";
 const MCP_TOOL_HINT: &str =
     "ALWAYS search the project memory before non-trivial work; store durable, reusable learnings.";
@@ -92,8 +93,8 @@ mod runtime;
 mod update;
 use import::{import_directory, ImportOptions};
 use runtime::{
-    build_orchestrator, load_config, open_memory_backend, open_memory_backend_with_relations,
-    process_supervisor_from_config, shutdown_signal,
+    build_orchestrator, ensure_memory_collection, load_config, open_memory_backend,
+    open_memory_backend_with_relations, process_supervisor_from_config, shutdown_signal,
 };
 
 #[derive(Debug, Parser)]
@@ -111,7 +112,9 @@ struct InitOptions {
     memory_root: PathBuf,
     backend: BackendArg,
     collection: String,
-    project: Option<String>,
+    project: String,
+    explicit_project: bool,
+    projects: Vec<String>,
     qdrant_url: Option<String>,
     qdrant_rest_url: Option<String>,
     qdrant_api_key_env: String,
@@ -126,6 +129,8 @@ enum Command {
         memory_root: Option<PathBuf>,
         #[arg(long)]
         project: Option<String>,
+        #[arg(long, value_delimiter = ',')]
+        projects: Vec<String>,
         #[arg(long, value_enum, default_value_t = BackendArg::Files)]
         backend: BackendArg,
         #[arg(long)]
@@ -276,8 +281,14 @@ enum Command {
         consolidate: bool,
     },
     Onboard {
-        project: String,
-        directory: PathBuf,
+        #[arg(value_name = "PROJECT_OR_DIRECTORY")]
+        project_or_directory: String,
+        #[arg(value_name = "DIRECTORY")]
+        directory: Option<PathBuf>,
+        #[arg(long = "project")]
+        default_project: Option<String>,
+        #[arg(long, value_delimiter = ',')]
+        projects: Vec<String>,
         #[arg(long, value_enum, default_value_t = BackendArg::Qdrant)]
         backend: BackendArg,
         #[arg(long)]
@@ -1281,6 +1292,7 @@ async fn main() -> Result<()> {
         Command::Init {
             memory_root,
             project,
+            projects,
             backend,
             collection,
             qdrant_url,
@@ -1290,14 +1302,19 @@ async fn main() -> Result<()> {
             non_interactive,
             register_mcp,
         } => {
-            let memory_root = project_memory_root(memory_root, project.as_deref());
-            let collection = project_collection(collection, project.as_deref());
+            let explicit_project = project.is_some();
+            let project = project_or_shared(project);
+            let projects = normalize_known_projects(projects, &project);
+            let memory_root = project_memory_root(memory_root, None);
+            let collection = project_collection(collection, None);
             init(
                 InitOptions {
                     memory_root,
                     backend,
                     collection,
                     project,
+                    explicit_project,
+                    projects,
                     qdrant_url,
                     qdrant_rest_url,
                     qdrant_api_key_env,
@@ -1388,8 +1405,10 @@ async fn main() -> Result<()> {
             .await
         }
         Command::Onboard {
-            project,
+            project_or_directory,
             directory,
+            default_project,
+            projects,
             backend,
             memory_root,
             collection,
@@ -1402,11 +1421,13 @@ async fn main() -> Result<()> {
             no_link,
             consolidate,
         } => {
-            let memory_root = project_memory_root(memory_root, Some(&project));
-            let collection = project_collection(collection, Some(&project));
+            let target = onboard_target(project_or_directory, directory, default_project);
+            let projects = normalize_known_projects(projects, &target.project);
+            let memory_root = project_memory_root(memory_root, None);
+            let collection = project_collection(collection, None);
             onboard(
-                project.clone(),
-                directory,
+                target.project.clone(),
+                target.directory,
                 InitOptions {
                     memory_root,
                     backend,
@@ -1416,7 +1437,9 @@ async fn main() -> Result<()> {
                     qdrant_api_key_env,
                     qdrant_api_key_file,
                     register_mcp: true,
-                    project: Some(project.clone()),
+                    project: target.project,
+                    explicit_project: true,
+                    projects,
                 },
                 config,
                 user_id,
@@ -2415,7 +2438,7 @@ async fn init(options: InitOptions, _non_interactive: bool) -> Result<()> {
             backend: options.backend.into(),
             root: options.memory_root.display().to_string(),
             collection: options.collection,
-            project: options.project.clone(),
+            project: Some(options.project.clone()),
             qdrant_url: options.qdrant_url,
             qdrant_rest_url: options.qdrant_rest_url,
             qdrant_api_key_env: Some(options.qdrant_api_key_env),
@@ -2437,15 +2460,18 @@ async fn init(options: InitOptions, _non_interactive: bool) -> Result<()> {
         dream_on_compact: false,
     };
     let config_path = Path::new(DEFAULT_CONFIG);
-    if !config_path.exists() || options.project.is_some() {
+    if !config_path.exists() || options.explicit_project {
         fs::write(config_path, config.to_toml()?)?;
     }
+    ensure_memory_collection(&config.memory).await?;
     if options.register_mcp {
         write_mcp_registrations(
             &env::current_dir()?.join(config_path),
             config.memory.backend,
         )?;
     }
+    let cwd = env::current_dir()?;
+    write_memory_routing_snippets(&cwd, &options.project, &options.projects)?;
     if claude_code_detected(&config.agents) {
         let report = install_claude_hooks(HookScope::Project)?;
         print_claude_hooks_report(&report)?;
@@ -2455,8 +2481,15 @@ async fn init(options: InitOptions, _non_interactive: bool) -> Result<()> {
         "initialized Artesian memory mode at {} collection={} project={}",
         options.memory_root.display(),
         config.memory.collection,
-        options.project.as_deref().unwrap_or("default")
+        options.project
     );
+    println!(
+        "project routing: default project={} (recall returns project ∪ shared; discover with `artesian projects` or MCP `memory.projects`)",
+        options.project
+    );
+    if !options.projects.is_empty() {
+        println!("known projects: {}", options.projects.join(","));
+    }
     Ok(())
 }
 
@@ -2491,6 +2524,102 @@ fn write_master_role_skill(memory_root: &Path) -> Result<()> {
         "<!-- SPDX-License-Identifier: Apache-2.0 -->\n\n# Artesian Lead Role Skill\n\nWhen Artesian is running in `orchestrate` or `full` mode, inspect `agents.list` for reachable agents, models, and role definitions. Use `memory.context` for compact project recall. For multi-teammate work, create a Flume with `team.create`, admit definitions with `team.spawn`, coordinate through `team.task.*` and `team.message`, and gate accepted outcomes through the judge/master path before marking work done. For a single bounded subtask, `orchestrate.delegate(worker)` is still sufficient.\n",
     )?;
     Ok(())
+}
+
+fn write_memory_routing_snippets(
+    directory: &Path,
+    project: &str,
+    _known_projects: &[String],
+) -> Result<()> {
+    let snippet = memory_routing_snippet(project);
+    for file in ["CLAUDE.md", "AGENTS.md"] {
+        append_memory_routing_snippet(&directory.join(file), &snippet)?;
+    }
+    Ok(())
+}
+
+fn append_memory_routing_snippet(path: &Path, snippet: &str) -> Result<()> {
+    let mut text = fs::read_to_string(path).unwrap_or_default();
+    if text.contains(ROUTING_SNIPPET_MARKER) {
+        return Ok(());
+    }
+    if !text.is_empty() && !text.ends_with('\n') {
+        text.push('\n');
+    }
+    if !text.trim().is_empty() {
+        text.push('\n');
+    }
+    text.push_str(snippet.trim_end());
+    text.push('\n');
+    fs::write(path, text)
+        .with_context(|| format!("write memory routing snippet to {}", path.display()))
+}
+
+fn memory_routing_snippet(project: &str) -> String {
+    // The routing snippet is embedded in the binary (no external template file dependency).
+    embedded_routing_snippet().replace("__PROJECT__", project)
+}
+
+fn embedded_routing_snippet() -> String {
+    "## Memory & Context — via Artesian (project: __PROJECT__)\n\n\
+Long-term memory and context for this project live in **Artesian**. Markdown memory files are \
+legacy/reference; Artesian is the source of truth. This project routes to **`__PROJECT__`**.\n\n\
+- **Before non-trivial work** — recall: `artesian memory context \"<task>\" --project __PROJECT__` \
+(or the `memory.context` / `memory.find` MCP tool with `project: \"__PROJECT__\"`). Recall returns \
+this project's memory **∪ `shared`**.\n\
+- **After a durable learning** — store it with `artesian memory store \"<fact>\" --project __PROJECT__` \
+(or `memory.store` with `project`). Use `--project shared` for cross-cutting facts.\n\
+- **Discover projects** — `artesian projects` / the `memory.projects` MCP tool. Never hard-code names.\n\
+- Recall responses carry a `scope_applied` block so you can verify the project∪shared filter that ran.\n"
+        .to_string()
+}
+
+struct OnboardTarget {
+    project: String,
+    directory: PathBuf,
+}
+
+fn onboard_target(
+    project_or_directory: String,
+    directory: Option<PathBuf>,
+    requested_project: Option<String>,
+) -> OnboardTarget {
+    match directory {
+        Some(directory) => {
+            let legacy_project = project_or_shared(Some(project_or_directory));
+            let project = requested_project
+                .and_then(normalize_project)
+                .unwrap_or(legacy_project);
+            OnboardTarget { project, directory }
+        }
+        None => OnboardTarget {
+            project: project_or_shared(requested_project),
+            directory: PathBuf::from(project_or_directory),
+        },
+    }
+}
+
+fn project_or_shared(project: Option<String>) -> String {
+    project
+        .and_then(normalize_project)
+        .unwrap_or_else(|| SHARED_PROJECT.to_string())
+}
+
+fn normalize_known_projects(projects: Vec<String>, selected_project: &str) -> Vec<String> {
+    if projects.is_empty() {
+        return Vec::new();
+    }
+    let mut seen = BTreeSet::new();
+    let mut normalized = Vec::new();
+    for project in std::iter::once(selected_project.to_string()).chain(projects) {
+        let Some(project) = normalize_project(project) else {
+            continue;
+        };
+        if seen.insert(project.clone()) {
+            normalized.push(project);
+        }
+    }
+    normalized
 }
 
 fn project_memory_root(memory_root: Option<PathBuf>, project: Option<&str>) -> PathBuf {
@@ -5021,7 +5150,7 @@ async fn preflight_qdrant_options(options: &InitOptions) -> Result<()> {
         backend: MemoryBackendKind::Qdrant,
         root: options.memory_root.display().to_string(),
         collection: options.collection.clone(),
-        project: options.project.clone(),
+        project: Some(options.project.clone()),
         qdrant_url: options.qdrant_url.clone(),
         qdrant_rest_url: options.qdrant_rest_url.clone(),
         qdrant_api_key_env: Some(options.qdrant_api_key_env.clone()),
