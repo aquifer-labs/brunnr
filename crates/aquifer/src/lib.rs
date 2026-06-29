@@ -14,6 +14,7 @@ pub mod event;
 pub mod eviction;
 mod files;
 pub mod graph;
+mod harness_import;
 mod identity;
 mod lane_lock;
 mod mmr;
@@ -59,6 +60,9 @@ pub use files::{
 pub use graph::{
     expand_hits_with_neighbors, Relation, DEFAULT_GRAPH_HOPS, GRAPH_EXPANSION_LIMIT,
     GRAPH_SCAN_LIMIT, MAX_GRAPH_HOPS,
+};
+pub use harness_import::{
+    parse_harness_candidates, HarnessKind, HarnessMemoryCandidate, HarnessParseReport,
 };
 pub use identity::stable_memory_id;
 pub use lane_lock::{SessionLaneGuard, SessionLaneLock};

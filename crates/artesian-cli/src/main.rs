@@ -91,7 +91,7 @@ mod import;
 mod runs;
 mod runtime;
 mod update;
-use import::{import_directory, ImportOptions};
+use import::{import_directory, import_harness, HarnessImportOptions, ImportOptions};
 use runtime::{
     build_orchestrator, ensure_memory_collection, load_config, open_memory_backend,
     open_memory_backend_with_relations, process_supervisor_from_config, shutdown_signal,
@@ -279,6 +279,20 @@ enum Command {
         /// If no LLM is configured, prints a note and continues without failing.
         #[arg(long)]
         consolidate: bool,
+    },
+    ImportHarness {
+        harness: HarnessArg,
+        path: PathBuf,
+        #[arg(long)]
+        project: String,
+        #[arg(long, default_value = DEFAULT_CONFIG)]
+        config: PathBuf,
+        #[arg(long, default_value = ".artesian")]
+        root: PathBuf,
+        #[arg(long, value_enum)]
+        backend: Option<BackendArg>,
+        #[arg(long)]
+        user_id: Option<String>,
     },
     Onboard {
         #[arg(value_name = "PROJECT_OR_DIRECTORY")]
@@ -1264,6 +1278,23 @@ enum BackendArg {
     Qdrant,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum HarnessArg {
+    Hermes,
+    ClaudeCode,
+    Codex,
+}
+
+impl From<HarnessArg> for aquifer::HarnessKind {
+    fn from(value: HarnessArg) -> Self {
+        match value {
+            HarnessArg::Hermes => Self::Hermes,
+            HarnessArg::ClaudeCode => Self::ClaudeCode,
+            HarnessArg::Codex => Self::Codex,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum ScopeArg {
     Shared,
@@ -1429,6 +1460,15 @@ async fn main() -> Result<()> {
             )
             .await
         }
+        Command::ImportHarness {
+            harness,
+            path,
+            project,
+            config,
+            root,
+            backend,
+            user_id,
+        } => import_harness_command(harness, path, project, config, root, backend, user_id).await,
         Command::Onboard {
             project_or_directory,
             directory,
@@ -4792,6 +4832,53 @@ async fn backfill(
              (entity relations were extracted automatically; consolidate adds LLM semantic grouping)"
         );
     }
+    Ok(())
+}
+
+async fn import_harness_command(
+    harness: HarnessArg,
+    path: PathBuf,
+    project: String,
+    config: PathBuf,
+    root: PathBuf,
+    backend: Option<BackendArg>,
+    user_id: Option<String>,
+) -> Result<()> {
+    let project = normalize_project(project).ok_or_else(|| {
+        anyhow::anyhow!("--project is required and must not be empty for import-harness")
+    })?;
+    let memory = memory_config_for_command(&config, root, backend)?;
+    if memory.backend == MemoryBackendKind::Qdrant {
+        preflight_qdrant_memory(&memory).await?;
+    }
+    let backend = open_memory_backend(&memory)?;
+    let acc = load_config(&config)
+        .map(|loaded| loaded.acc)
+        .unwrap_or_default();
+    let report = import_harness(
+        HarnessImportOptions {
+            harness: harness.into(),
+            path,
+            project,
+            user_id,
+            gate: HeadgateConfig::from(&acc),
+        },
+        backend.as_ref(),
+    )
+    .await?;
+    println!(
+        "import-harness harness={} project={} scanned={} candidates={} admitted={} rejected={} imported={} skipped_duplicates={} failed={}",
+        report.harness,
+        report.project,
+        report.scanned,
+        report.candidates,
+        report.admitted,
+        report.rejected,
+        report.imported,
+        report.skipped_duplicates,
+        report.failed.len()
+    );
+    println!("{}", serde_json::to_string_pretty(&report)?);
     Ok(())
 }
 

@@ -8,8 +8,13 @@ use std::{
 
 use anyhow::Result;
 use aquifer::{
-    collect_memory_paths, parse_memory_path, BackfillFailure, FilesBackend, MemoryBackend,
-    MemoryScope, StoreMemory,
+    collect_memory_paths, parse_harness_candidates, parse_memory_path, stable_memory_id,
+    BackfillFailure, FilesBackend, HarnessKind, MemoryBackend, MemoryQuery, MemoryScope,
+    StoreMemory,
+};
+use headgate::{
+    CcsSchema, CommittedContextState, CommittedEntry, DefaultQualifyGate, HeadgateConfig,
+    QualifyGate, RecallItem,
 };
 use headrace::{FilesTaskStore, VectorTaskStore};
 use serde::Serialize;
@@ -33,6 +38,28 @@ pub struct ImportOptions {
     pub project: Option<String>,
     /// Emit per-file progress to stderr (stdout stays reserved for the machine-readable summary).
     pub progress: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct HarnessImportOptions {
+    pub harness: HarnessKind,
+    pub path: PathBuf,
+    pub project: String,
+    pub user_id: Option<String>,
+    pub gate: HeadgateConfig,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct HarnessImportReport {
+    pub harness: String,
+    pub project: String,
+    pub scanned: usize,
+    pub candidates: usize,
+    pub admitted: usize,
+    pub rejected: usize,
+    pub imported: usize,
+    pub skipped_duplicates: usize,
+    pub failed: Vec<BackfillFailure>,
 }
 
 #[derive(Debug, Clone)]
@@ -148,6 +175,153 @@ pub async fn import_directory(
     }
 
     Ok(report)
+}
+
+pub async fn import_harness(
+    options: HarnessImportOptions,
+    backend: &dyn MemoryBackend,
+) -> Result<HarnessImportReport> {
+    let parsed = parse_harness_candidates(
+        options.harness,
+        &options.path,
+        options.project.clone(),
+        options.user_id.as_deref(),
+    )?;
+    let gate = DefaultQualifyGate::new(options.gate.min_score, options.gate.redundancy_threshold);
+    let mut committed =
+        CommittedContextState::new(CcsSchema::default(), options.gate.budget_tokens);
+    let mut report = HarnessImportReport {
+        harness: options.harness.source().to_string(),
+        project: options.project.clone(),
+        scanned: parsed.scanned,
+        candidates: parsed.candidates.len(),
+        ..HarnessImportReport::default()
+    };
+
+    for candidate in parsed.candidates {
+        let mut memory = candidate.memory;
+        let node_id = memory
+            .node_id
+            .clone()
+            .unwrap_or_else(|| stable_memory_id(&memory).to_string());
+        let ccs = committed_state_for_candidate(
+            backend,
+            &committed,
+            &memory.content,
+            &options.project,
+            options.gate.recall_limit,
+            options.gate.budget_tokens,
+        )
+        .await;
+        let ccs = match ccs {
+            Ok(ccs) => ccs,
+            Err(error) => {
+                report.failed.push(BackfillFailure {
+                    file: options.path.clone(),
+                    reason: error.to_string(),
+                });
+                continue;
+            }
+        };
+        let item = RecallItem::new(
+            node_id.clone(),
+            memory.content.clone(),
+            candidate.qualify_score,
+        )
+        .with_source(options.harness.source());
+        let decision = gate.qualify(&item, &ccs).await;
+        memory
+            .metadata
+            .insert("qualify_reason".to_string(), decision.reason.clone());
+        memory.metadata.insert(
+            "qualify_score".to_string(),
+            format!("{:.3}", decision.score),
+        );
+        if let Some(slot) = &decision.slot {
+            memory.metadata.insert("ocf_slot".to_string(), slot.clone());
+            memory.tags.push(format!("ocf-slot:{slot}"));
+        }
+        if let Some(audit) = &decision.audit {
+            memory.confidence = Some(audit.confidence);
+            memory.metadata.insert(
+                "qualify_confidence".to_string(),
+                format!("{:.3}", audit.confidence),
+            );
+        }
+        if !decision.admitted {
+            let id = stable_memory_id(&memory);
+            match backend.get_node(id.as_str()).await {
+                Ok(Some(_)) => report.skipped_duplicates += 1,
+                Ok(None) => report.rejected += 1,
+                Err(error) => report.failed.push(BackfillFailure {
+                    file: options.path.clone(),
+                    reason: format!("[{id}]: {error}"),
+                }),
+            }
+            continue;
+        }
+
+        let id = stable_memory_id(&memory);
+        match backend.get_node(id.as_str()).await {
+            Ok(Some(_)) => {
+                report.admitted += 1;
+                report.skipped_duplicates += 1;
+            }
+            Ok(None) => match backend.store(memory).await {
+                Ok(record) => {
+                    report.admitted += 1;
+                    report.imported += 1;
+                    let slot = decision.slot.unwrap_or_else(|| "fact".to_string());
+                    committed.admit(CommittedEntry::new(
+                        record.node_id,
+                        slot,
+                        record.content,
+                        decision.score,
+                    ));
+                }
+                Err(error) => report.failed.push(BackfillFailure {
+                    file: options.path.clone(),
+                    reason: format!("[{id}]: {error}"),
+                }),
+            },
+            Err(error) => report.failed.push(BackfillFailure {
+                file: options.path.clone(),
+                reason: format!("[{id}]: {error}"),
+            }),
+        }
+    }
+
+    Ok(report)
+}
+
+async fn committed_state_for_candidate(
+    backend: &dyn MemoryBackend,
+    committed: &CommittedContextState,
+    content: &str,
+    project: &str,
+    recall_limit: usize,
+    budget_tokens: usize,
+) -> Result<CommittedContextState> {
+    let mut ccs = CommittedContextState::new(CcsSchema::default(), budget_tokens);
+    for entry in committed.entries() {
+        ccs.admit(entry.clone());
+    }
+    let hits = backend
+        .find(
+            MemoryQuery::new(content)
+                .with_project(project)
+                .with_limit(recall_limit.max(1)),
+        )
+        .await?;
+    for hit in hits {
+        ccs.admit(CommittedEntry::new(
+            hit.record.node_id,
+            "fact",
+            hit.record.content,
+            hit.score,
+        ));
+    }
+    Ok(ccs)
 }
 
 async fn import_task_path(
@@ -358,6 +532,110 @@ mod tests {
         )
         .expect("backend should construct");
         assert_import_stamps_project(tempdir.path(), source, Arc::new(backend)).await;
+    }
+
+    #[tokio::test]
+    async fn import_harness_hermes_preserves_structure_scrubs_and_is_idempotent() {
+        let tempdir = TempDir::new("import-harness-hermes");
+        let source = tempdir.join("hermes");
+        std::fs::create_dir_all(&source).expect("source dir should be created");
+        std::fs::write(
+            source.join("MEMORY.md"),
+            r#"§ Project Rules
+- Always route this project through Artesian memory.
+- The deployment API token: sk-testsecret1234567890 must stay hidden.
+- temporary scratch note
+
+## Procedures
+- Run `cargo fmt --all` before handing off implementation work.
+"#,
+        )
+        .expect("hermes memory should be written");
+
+        let backend = FilesBackend::new(tempdir.join("files")).with_track_access(false);
+        let options = HarnessImportOptions {
+            harness: HarnessKind::Hermes,
+            path: source.clone(),
+            project: "artesian".to_string(),
+            user_id: None,
+            gate: HeadgateConfig::default(),
+        };
+        let report = import_harness(options.clone(), &backend)
+            .await
+            .expect("harness import should succeed");
+
+        assert_eq!(report.scanned, 1);
+        assert_eq!(report.candidates, 4);
+        assert_eq!(report.imported, 3);
+        assert_eq!(report.rejected, 1);
+        assert_eq!(report.skipped_duplicates, 0);
+        assert!(report.failed.is_empty());
+
+        let hits = backend
+            .find(MemoryQuery::new("").with_project("artesian").with_limit(10))
+            .await
+            .expect("find should succeed");
+        assert_eq!(hits.len(), 3, "{hits:#?}");
+        assert!(
+            hits.iter()
+                .all(|hit| hit.record.source.as_deref() == Some("hermes")),
+            "source should be hermes: {hits:#?}"
+        );
+        assert!(
+            hits.iter()
+                .all(|hit| hit.record.project.as_deref() == Some("artesian")),
+            "project should be stamped: {hits:#?}"
+        );
+        assert!(
+            hits.iter()
+                .any(|hit| hit.record.metadata.get("section").map(String::as_str)
+                    == Some("Project Rules")
+                    && hit
+                        .record
+                        .relations
+                        .iter()
+                        .any(|relation| relation.predicate == "member_of")),
+            "section grouping relation should be preserved: {hits:#?}"
+        );
+        assert!(
+            hits.iter().any(|hit| {
+                hit.record
+                    .tags
+                    .contains(&"memory-type:procedural".to_string())
+                    && hit.record.metadata.get("memory_type").map(String::as_str)
+                        == Some("procedural")
+            }),
+            "procedural memory type should be tagged: {hits:#?}"
+        );
+        let scrubbed = hits
+            .iter()
+            .find(|hit| hit.record.content.contains("[REDACTED_SECRET]"))
+            .expect("secret-bearing record should be imported and scrubbed");
+        assert!(!scrubbed.record.content.contains("sk-testsecret"));
+        assert_eq!(
+            scrubbed
+                .record
+                .metadata
+                .get("secret_scrubbed")
+                .map(String::as_str),
+            Some("true")
+        );
+        assert!(
+            hits.iter()
+                .all(|hit| !hit.record.content.contains("temporary scratch note")),
+            "rejected transient line must not land: {hits:#?}"
+        );
+
+        let second = import_harness(options, &backend)
+            .await
+            .expect("second import should succeed");
+        assert_eq!(second.imported, 0);
+        assert_eq!(second.skipped_duplicates, 3);
+        let hits_after = backend
+            .find(MemoryQuery::new("").with_project("artesian").with_limit(10))
+            .await
+            .expect("find should succeed");
+        assert_eq!(hits_after.len(), 3, "{hits_after:#?}");
     }
 
     async fn assert_import_stamps_project(
