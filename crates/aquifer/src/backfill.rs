@@ -9,8 +9,8 @@ use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    files::parse_record, identity::stable_memory_id, MemoryBackend, MemoryRecord, MemoryResult,
-    MemoryTier, StoreMemory,
+    files::parse_record, identity::stable_memory_id, normalize_project, MemoryBackend,
+    MemoryRecord, MemoryResult, MemoryTier, StoreMemory,
 };
 
 const MAX_SECTION_CHARS: usize = 8_000;
@@ -29,9 +29,40 @@ pub struct BackfillFailure {
     pub reason: String,
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BackfillOptions {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
+}
+
+impl BackfillOptions {
+    pub fn with_project(project: impl Into<String>) -> Self {
+        Self {
+            project: normalize_project(project),
+        }
+    }
+}
+
 pub async fn backfill_directory(
     backend: &dyn MemoryBackend,
     directory: impl AsRef<Path>,
+) -> MemoryResult<BackfillStats> {
+    backfill_directory_with_options(backend, directory, BackfillOptions::default()).await
+}
+
+pub async fn backfill_directory_with_project(
+    backend: &dyn MemoryBackend,
+    directory: impl AsRef<Path>,
+    project: impl Into<String>,
+) -> MemoryResult<BackfillStats> {
+    backfill_directory_with_options(backend, directory, BackfillOptions::with_project(project))
+        .await
+}
+
+pub async fn backfill_directory_with_options(
+    backend: &dyn MemoryBackend,
+    directory: impl AsRef<Path>,
+    options: BackfillOptions,
 ) -> MemoryResult<BackfillStats> {
     let mut paths = collect_memory_paths(directory.as_ref())?;
     paths.sort();
@@ -49,7 +80,10 @@ pub async fn backfill_directory(
                 continue;
             }
         };
-        for memory in memories {
+        for memory in memories
+            .into_iter()
+            .map(|memory| apply_backfill_options(memory, &options))
+        {
             let id = stable_memory_id(&memory);
             match backend.get_node(id.as_str()).await {
                 Ok(Some(_)) => {
@@ -76,6 +110,13 @@ pub async fn backfill_directory(
         }
     }
     Ok(stats)
+}
+
+fn apply_backfill_options(mut memory: StoreMemory, options: &BackfillOptions) -> StoreMemory {
+    if let Some(project) = &options.project {
+        memory.project = Some(project.clone());
+    }
+    memory
 }
 
 pub fn collect_memory_paths(directory: &Path) -> MemoryResult<Vec<PathBuf>> {

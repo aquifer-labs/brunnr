@@ -41,8 +41,13 @@ configured model or dimension. This prevents silent vector mixing. A mismatch me
 
 5. Keep the old collection for at least one backup cycle before deleting it manually.
 
-For a first Qdrant deployment, configure `memory.collection` as an alias target. Atomic alias swap
-requires an alias; it cannot safely shadow a concrete collection with the same name.
+Before deleting any Qdrant collection by hand, inspect `GET /collections/aliases` and confirm no
+logical collection name still points at that physical collection. Normal runtime open/init uses the
+configured collection name literally; alias swaps are only part of the Qdrant migration flow.
+
+For deployments that use `artesian migrate okf-bundle`, configure `memory.collection` as a Qdrant
+alias. Atomic alias swap requires an alias; it cannot safely shadow a concrete collection with the
+same name.
 
 ## Snapshots and OKF Exports
 

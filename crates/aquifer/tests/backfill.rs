@@ -3,8 +3,8 @@
 use std::sync::Arc;
 
 use aquifer::{
-    backfill_directory, FilesBackend, MemoryBackend, MemoryQuery, MemoryResult,
-    SqliteVecVectorStore, TextEmbedder, VectorMemoryBackend, VectorMemoryConfig,
+    backfill_directory, backfill_directory_with_project, FilesBackend, MemoryBackend, MemoryQuery,
+    MemoryResult, SqliteVecVectorStore, TextEmbedder, VectorMemoryBackend, VectorMemoryConfig,
 };
 use artesian_test_support::TempDir;
 
@@ -48,6 +48,36 @@ async fn backfill_is_idempotent_for_sqlite_vec_backend() {
     assert_backfill_idempotency(&backend, &source).await;
 }
 
+#[tokio::test]
+async fn backfill_with_project_stamps_raw_and_ocf_records_for_files_backend() {
+    let tempdir = TempDir::new("backfill-project-files");
+    let source = tempdir.join("source");
+    write_mixed_project_source(&source);
+
+    let backend = FilesBackend::new(tempdir.join("files"));
+    assert_project_stamped_backfill(&backend, &source).await;
+}
+
+#[tokio::test]
+async fn backfill_with_project_stamps_raw_and_ocf_records_for_sqlite_vec_backend() {
+    let tempdir = TempDir::new("backfill-project-sqlite");
+    let source = tempdir.join("source");
+    write_mixed_project_source(&source);
+
+    let store = SqliteVecVectorStore::in_memory().expect("sqlite-vec should open");
+    let backend = VectorMemoryBackend::with_embedder(
+        store,
+        VectorMemoryConfig {
+            collection: "backfill-project".to_string(),
+            dimensions: TEST_DIMENSIONS,
+            ..VectorMemoryConfig::new("backfill-project")
+        },
+        Arc::new(TestEmbedder),
+    )
+    .expect("backend should construct");
+    assert_project_stamped_backfill(&backend, &source).await;
+}
+
 async fn assert_backfill_idempotency(backend: &dyn MemoryBackend, source: &std::path::Path) {
     let first = backfill_directory(backend, source)
         .await
@@ -70,6 +100,74 @@ async fn assert_backfill_idempotency(backend: &dyn MemoryBackend, source: &std::
     assert!(second.failed.is_empty());
     assert_eq!(hits.len(), 1);
     assert_eq!(hits[0].record.content, "Durable imported memory");
+}
+
+async fn assert_project_stamped_backfill(backend: &dyn MemoryBackend, source: &std::path::Path) {
+    let stats = backfill_directory_with_project(backend, source, "foo")
+        .await
+        .expect("backfill should succeed");
+    let hits = backend
+        .find(
+            MemoryQuery::new("project stamp sentinel")
+                .with_project("foo")
+                .with_limit(10),
+        )
+        .await
+        .expect("find should succeed");
+
+    assert_eq!(stats.scanned, 3);
+    assert_eq!(stats.imported, 3);
+    assert!(stats.failed.is_empty());
+    assert_eq!(hits.len(), 3, "{hits:#?}");
+    assert!(
+        hits.iter()
+            .all(|hit| hit.record.project.as_deref() == Some("foo")),
+        "every imported record should be stamped with foo: {hits:#?}"
+    );
+}
+
+fn write_mixed_project_source(source: &std::path::Path) {
+    std::fs::create_dir_all(source).expect("source dir should be created");
+    std::fs::write(
+        source.join("raw.md"),
+        "# Raw\n\nraw project stamp sentinel from markdown",
+    )
+    .expect("raw memory should be written");
+    std::fs::write(
+        source.join("structured.md"),
+        r#"---
+type: memory
+timestamp: "2026-01-03T00:00:00Z"
+node_id: node:structured-project-stamp
+tier: l2-scenario
+tags:
+  - homelab
+  - imported
+  - memory
+---
+
+structured project stamp sentinel from an OCF record
+"#,
+    )
+    .expect("structured memory should be written");
+    std::fs::write(
+        source.join("structured-stale.md"),
+        r#"---
+type: memory
+timestamp: "2026-01-04T00:00:00Z"
+node_id: node:structured-stale-project-stamp
+tier: l2-scenario
+tags:
+  - homelab
+  - imported
+  - memory
+project: stale-project
+---
+
+structured project stamp sentinel from a stale-project OCF record
+"#,
+    )
+    .expect("stale-project structured memory should be written");
 }
 
 #[tokio::test]

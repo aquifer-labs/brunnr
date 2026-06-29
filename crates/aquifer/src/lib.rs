@@ -41,7 +41,8 @@ mod working;
 pub use anchor::{recover_after_compaction, AnchorAnchorStore, RecoveryContext, SessionAnchor};
 pub use backend::{BulkStoreReport, MemoryBackend};
 pub use backfill::{
-    backfill_directory, collect_memory_paths, parse_memory_path, BackfillFailure, BackfillStats,
+    backfill_directory, backfill_directory_with_options, backfill_directory_with_project,
+    collect_memory_paths, parse_memory_path, BackfillFailure, BackfillOptions, BackfillStats,
 };
 pub use chunking::{chunk_text, Chunk, ChunkConfig};
 pub use compat::{CollectionCompat, COMPAT_POINT_ID, OKF_VERSION};

@@ -273,9 +273,7 @@ fn with_user_and_project(
         }
     }
     if let Some(project) = project {
-        if memory.project.is_none() {
-            memory.project = Some(project.to_string());
-        }
+        memory.project = Some(project.to_string());
     }
     memory
 }
@@ -321,4 +319,160 @@ fn push_failure(report: &mut ImportReport, path: &Path, error: impl std::fmt::Di
         file: path.to_path_buf(),
         reason: error.to_string(),
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use aquifer::{
+        MemoryQuery, MemoryResult, SqliteVecVectorStore, TextEmbedder, VectorMemoryBackend,
+        VectorMemoryConfig,
+    };
+    use artesian_test_support::TempDir;
+
+    #[tokio::test]
+    async fn import_directory_stamps_requested_project_for_files_backend() {
+        let tempdir = TempDir::new("import-project-files");
+        let source = tempdir.join("source");
+        write_mixed_project_source(&source);
+
+        let backend: Arc<dyn MemoryBackend> = Arc::new(FilesBackend::new(tempdir.join("files")));
+        assert_import_stamps_project(tempdir.path(), source, backend).await;
+    }
+
+    #[tokio::test]
+    async fn import_directory_stamps_requested_project_for_sqlite_vec_backend() {
+        let tempdir = TempDir::new("import-project-sqlite");
+        let source = tempdir.join("source");
+        write_mixed_project_source(&source);
+
+        let store = SqliteVecVectorStore::in_memory().expect("sqlite-vec should open");
+        let backend = VectorMemoryBackend::with_embedder(
+            store,
+            VectorMemoryConfig {
+                collection: "import-project".to_string(),
+                dimensions: TEST_DIMENSIONS,
+                ..VectorMemoryConfig::new("import-project")
+            },
+            Arc::new(TestEmbedder),
+        )
+        .expect("backend should construct");
+        assert_import_stamps_project(tempdir.path(), source, Arc::new(backend)).await;
+    }
+
+    async fn assert_import_stamps_project(
+        root: &Path,
+        source: PathBuf,
+        backend: Arc<dyn MemoryBackend>,
+    ) {
+        let task_store =
+            VectorTaskStore::new(FilesTaskStore::new(root.join("tasks")), backend.clone());
+        let report = import_directory(
+            ImportOptions {
+                directory: source,
+                okf_root: root.join("okf"),
+                user_id: None,
+                project: Some("foo".to_string()),
+                progress: false,
+            },
+            backend.clone(),
+            false,
+            &task_store,
+        )
+        .await
+        .expect("import should succeed");
+        let hits = backend
+            .find(
+                MemoryQuery::new("project stamp sentinel")
+                    .with_project("foo")
+                    .with_limit(10),
+            )
+            .await
+            .expect("find should succeed");
+
+        assert_eq!(report.scanned, 3);
+        assert_eq!(report.memory_imported, 3);
+        assert!(report.failed.is_empty());
+        assert_eq!(hits.len(), 3, "{hits:#?}");
+        assert!(
+            hits.iter()
+                .all(|hit| hit.record.project.as_deref() == Some("foo")),
+            "every imported record should be stamped with foo: {hits:#?}"
+        );
+    }
+
+    fn write_mixed_project_source(source: &Path) {
+        std::fs::create_dir_all(source).expect("source dir should be created");
+        std::fs::write(
+            source.join("raw.md"),
+            "# Raw\n\nraw project stamp sentinel from markdown",
+        )
+        .expect("raw memory should be written");
+        std::fs::write(
+            source.join("structured.md"),
+            r#"---
+type: memory
+timestamp: "2026-01-03T00:00:00Z"
+node_id: node:structured-project-stamp
+tier: l2-scenario
+tags:
+  - homelab
+  - imported
+  - memory
+---
+
+structured project stamp sentinel from an OCF record
+"#,
+        )
+        .expect("structured memory should be written");
+        std::fs::write(
+            source.join("structured-stale.md"),
+            r#"---
+type: memory
+timestamp: "2026-01-04T00:00:00Z"
+node_id: node:structured-stale-project-stamp
+tier: l2-scenario
+tags:
+  - homelab
+  - imported
+  - memory
+project: stale-project
+---
+
+structured project stamp sentinel from a stale-project OCF record
+"#,
+        )
+        .expect("stale-project structured memory should be written");
+    }
+
+    const TEST_DIMENSIONS: usize = 8;
+
+    struct TestEmbedder;
+
+    impl TextEmbedder for TestEmbedder {
+        fn embed_query(&self, text: &str) -> MemoryResult<Vec<f32>> {
+            Ok(test_embedding(text))
+        }
+
+        fn embed_passage(&self, text: &str) -> MemoryResult<Vec<f32>> {
+            Ok(test_embedding(text))
+        }
+    }
+
+    fn test_embedding(text: &str) -> Vec<f32> {
+        let mut vector = vec![0.0; TEST_DIMENSIONS];
+        for token in text.split_whitespace() {
+            let index = token.bytes().fold(0usize, |hash, byte| {
+                hash.wrapping_mul(31).wrapping_add(byte as usize)
+            }) % TEST_DIMENSIONS;
+            vector[index] += 1.0;
+        }
+        let magnitude = vector.iter().map(|value| value * value).sum::<f32>().sqrt();
+        if magnitude > 0.0 {
+            for value in &mut vector {
+                *value /= magnitude;
+            }
+        }
+        vector
+    }
 }

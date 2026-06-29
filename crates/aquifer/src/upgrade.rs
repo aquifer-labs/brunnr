@@ -73,6 +73,7 @@ pub trait VectorCollectionAdmin: VectorStore {
     ) -> BoxFuture<'_, MemoryResult<SnapshotReport>>;
 
     /// Delete a collection. Idempotent: deleting a missing collection succeeds.
+    /// Operators should inspect Qdrant aliases before deleting physical collections.
     fn delete_collection(&self, collection: &str) -> BoxFuture<'_, MemoryResult<()>>;
 }
 
